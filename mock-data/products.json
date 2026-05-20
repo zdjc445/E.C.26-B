@@ -1,0 +1,81 @@
+[
+  {
+    "productId": 4001,
+    "name": "低噪音宿舍吹风机",
+    "category": "吹风机",
+    "brand": "MockCare",
+    "model": "HD-001",
+    "attributes": {
+      "power": "1600W",
+      "noiseLevel": "低噪音",
+      "scenario": "宿舍"
+    }
+  },
+  {
+    "productId": 4002,
+    "name": "主动降噪蓝牙耳机",
+    "category": "耳机",
+    "brand": "MockSound",
+    "model": "ANC-20",
+    "attributes": {
+      "noiseCancellation": true,
+      "batteryLife": "32h"
+    }
+  },
+  {
+    "productId": 4003,
+    "name": "轻薄 5G 智能手机",
+    "category": "手机",
+    "brand": "MockPhone",
+    "model": "M5",
+    "attributes": {
+      "storage": "256GB",
+      "network": "5G"
+    }
+  },
+  {
+    "productId": 4004,
+    "name": "机械键盘 87 键",
+    "category": "键盘",
+    "brand": "MockKey",
+    "model": "K87",
+    "attributes": {
+      "layout": "87键",
+      "switch": "茶轴"
+    }
+  },
+  {
+    "productId": 4005,
+    "name": "便携保温水杯",
+    "category": "水杯",
+    "brand": "MockCup",
+    "model": "T500",
+    "attributes": {
+      "capacity": "500ml",
+      "material": "316不锈钢"
+    }
+  },
+  {
+    "productId": 4006,
+    "name": "缓震运动鞋",
+    "category": "运动鞋",
+    "brand": "MockRun",
+    "model": "R2",
+    "attributes": {
+      "gender": "unisex",
+      "scene": "日常跑步"
+    }
+  },
+  {
+    "productId": 4007,
+    "name": "温和保湿护肤乳",
+    "category": "护肤品",
+    "brand": "MockSkin",
+    "model": "H100",
+    "attributes": {
+      "skinType": "敏感肌",
+      "effect": "保湿"
+    }
+  }
+]
+

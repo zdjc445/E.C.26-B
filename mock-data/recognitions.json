@@ -1,0 +1,81 @@
+[
+  {
+    "mockImageName": "hair-dryer.jpg",
+    "category": "吹风机",
+    "brand": "未知",
+    "model": null,
+    "keywords": ["吹风机", "低噪音", "宿舍"],
+    "attributes": {
+      "color": "白色",
+      "shape": "手持式"
+    },
+    "confidence": 0.86
+  },
+  {
+    "mockImageName": "headphones.jpg",
+    "category": "耳机",
+    "brand": "未知",
+    "model": null,
+    "keywords": ["蓝牙耳机", "主动降噪", "长续航"],
+    "attributes": {
+      "type": "头戴式"
+    },
+    "confidence": 0.84
+  },
+  {
+    "mockImageName": "phone.jpg",
+    "category": "手机",
+    "brand": "未知",
+    "model": null,
+    "keywords": ["智能手机", "5G", "大存储"],
+    "attributes": {
+      "color": "黑色"
+    },
+    "confidence": 0.88
+  },
+  {
+    "mockImageName": "keyboard.jpg",
+    "category": "键盘",
+    "brand": "未知",
+    "model": null,
+    "keywords": ["机械键盘", "87键", "茶轴"],
+    "attributes": {
+      "layout": "87键"
+    },
+    "confidence": 0.9
+  },
+  {
+    "mockImageName": "cup.jpg",
+    "category": "水杯",
+    "brand": "未知",
+    "model": null,
+    "keywords": ["保温杯", "便携", "500ml"],
+    "attributes": {
+      "material": "不锈钢"
+    },
+    "confidence": 0.83
+  },
+  {
+    "mockImageName": "running-shoes.jpg",
+    "category": "运动鞋",
+    "brand": "未知",
+    "model": null,
+    "keywords": ["运动鞋", "缓震", "跑步"],
+    "attributes": {
+      "scene": "跑步"
+    },
+    "confidence": 0.85
+  },
+  {
+    "mockImageName": "skincare.jpg",
+    "category": "护肤品",
+    "brand": "未知",
+    "model": null,
+    "keywords": ["护肤乳", "保湿", "敏感肌"],
+    "attributes": {
+      "effect": "保湿"
+    },
+    "confidence": 0.82
+  }
+]
+

@@ -1,0 +1,129 @@
+[
+  {
+    "platformProductId": 5001,
+    "productId": 4001,
+    "platform": "jd",
+    "title": "MockCare 低噪音宿舍吹风机 HD-001",
+    "imageUrl": "https://cdn.example.com/products/5001.jpg",
+    "price": {
+      "amount": "199.00",
+      "currency": "CNY"
+    },
+    "originalPrice": {
+      "amount": "259.00",
+      "currency": "CNY"
+    },
+    "url": "https://example.com/jd/5001",
+    "shopName": "MockCare 官方旗舰店",
+    "sourceType": "mock"
+  },
+  {
+    "platformProductId": 5002,
+    "productId": 4002,
+    "platform": "tmall",
+    "title": "MockSound ANC-20 主动降噪蓝牙耳机",
+    "imageUrl": "https://cdn.example.com/products/5002.jpg",
+    "price": {
+      "amount": "299.00",
+      "currency": "CNY"
+    },
+    "originalPrice": {
+      "amount": "399.00",
+      "currency": "CNY"
+    },
+    "url": "https://example.com/tmall/5002",
+    "shopName": "MockSound 旗舰店",
+    "sourceType": "mock"
+  },
+  {
+    "platformProductId": 5003,
+    "productId": 4003,
+    "platform": "jd",
+    "title": "MockPhone M5 轻薄 5G 智能手机 256GB",
+    "imageUrl": "https://cdn.example.com/products/5003.jpg",
+    "price": {
+      "amount": "2199.00",
+      "currency": "CNY"
+    },
+    "originalPrice": {
+      "amount": "2499.00",
+      "currency": "CNY"
+    },
+    "url": "https://example.com/jd/5003",
+    "shopName": "MockPhone 官方店",
+    "sourceType": "mock"
+  },
+  {
+    "platformProductId": 5004,
+    "productId": 4004,
+    "platform": "pdd",
+    "title": "MockKey K87 机械键盘 茶轴",
+    "imageUrl": "https://cdn.example.com/products/5004.jpg",
+    "price": {
+      "amount": "169.00",
+      "currency": "CNY"
+    },
+    "originalPrice": {
+      "amount": "229.00",
+      "currency": "CNY"
+    },
+    "url": "https://example.com/pdd/5004",
+    "shopName": "MockKey 数码专营店",
+    "sourceType": "mock"
+  },
+  {
+    "platformProductId": 5005,
+    "productId": 4005,
+    "platform": "taobao",
+    "title": "MockCup 便携保温水杯 500ml",
+    "imageUrl": "https://cdn.example.com/products/5005.jpg",
+    "price": {
+      "amount": "69.00",
+      "currency": "CNY"
+    },
+    "originalPrice": {
+      "amount": "99.00",
+      "currency": "CNY"
+    },
+    "url": "https://example.com/taobao/5005",
+    "shopName": "MockCup 家居店",
+    "sourceType": "mock"
+  },
+  {
+    "platformProductId": 5006,
+    "productId": 4006,
+    "platform": "jd",
+    "title": "MockRun R2 缓震运动鞋",
+    "imageUrl": "https://cdn.example.com/products/5006.jpg",
+    "price": {
+      "amount": "359.00",
+      "currency": "CNY"
+    },
+    "originalPrice": {
+      "amount": "499.00",
+      "currency": "CNY"
+    },
+    "url": "https://example.com/jd/5006",
+    "shopName": "MockRun 运动旗舰店",
+    "sourceType": "mock"
+  },
+  {
+    "platformProductId": 5007,
+    "productId": 4007,
+    "platform": "tmall",
+    "title": "MockSkin 温和保湿护肤乳 H100",
+    "imageUrl": "https://cdn.example.com/products/5007.jpg",
+    "price": {
+      "amount": "129.00",
+      "currency": "CNY"
+    },
+    "originalPrice": {
+      "amount": "169.00",
+      "currency": "CNY"
+    },
+    "url": "https://example.com/tmall/5007",
+    "shopName": "MockSkin 官方旗舰店",
+    "sourceType": "mock"
+  }
+]
+

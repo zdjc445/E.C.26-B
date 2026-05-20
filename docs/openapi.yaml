@@ -1,0 +1,1048 @@
+openapi: 3.1.0
+info:
+  title: Smart Shopping Agent API
+  version: 0.1.0
+  description: 智能识物比价购物 AI APP 助手 API 契约。
+servers:
+  - url: /api
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Images
+  - name: Recognitions
+  - name: SearchTasks
+  - name: Products
+  - name: Comparisons
+  - name: AgentRecommendations
+  - name: Favorites
+  - name: PriceAlerts
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      summary: 用户注册
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: 注册成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: 用户登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      security: []
+      summary: 刷新 Token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: 刷新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshTokenResponse'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      security: []
+      summary: 退出登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: 退出成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: 当前用户
+      responses:
+        '200':
+          description: 当前用户信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+
+  /images:
+    post:
+      tags: [Images]
+      summary: 上传图片
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                scene:
+                  type: string
+                  default: recognition
+      responses:
+        '200':
+          description: 上传成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+    get:
+      tags: [Images]
+      summary: 查询图片列表
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 图片列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImagePageResponse'
+
+  /images/{imageId}:
+    delete:
+      tags: [Images]
+      summary: 删除图片
+      parameters:
+        - $ref: '#/components/parameters/ImageId'
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+
+  /recognitions:
+    post:
+      tags: [Recognitions]
+      summary: 创建识别任务
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecognitionRequest'
+      responses:
+        '200':
+          description: 识别结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecognitionResponse'
+
+  /recognitions/{recognitionId}:
+    get:
+      tags: [Recognitions]
+      summary: 查询识别结果
+      parameters:
+        - $ref: '#/components/parameters/RecognitionId'
+      responses:
+        '200':
+          description: 识别结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecognitionResponse'
+
+  /search-tasks:
+    post:
+      tags: [SearchTasks]
+      summary: 创建搜索任务
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSearchTaskRequest'
+      responses:
+        '200':
+          description: 搜索任务详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchTaskResponse'
+    get:
+      tags: [SearchTasks]
+      summary: 查询搜索历史
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 搜索历史
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchTaskSummaryPageResponse'
+
+  /search-tasks/{searchTaskId}:
+    get:
+      tags: [SearchTasks]
+      summary: 查询搜索任务详情
+      parameters:
+        - $ref: '#/components/parameters/SearchTaskId'
+      responses:
+        '200':
+          description: 搜索任务详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchTaskResponse'
+
+  /products/{productId}:
+    get:
+      tags: [Products]
+      summary: 查询标准商品详情
+      parameters:
+        - $ref: '#/components/parameters/ProductId'
+      responses:
+        '200':
+          description: 标准商品详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+
+  /platform-products/{platformProductId}:
+    get:
+      tags: [Products]
+      summary: 查询平台商品详情
+      parameters:
+        - $ref: '#/components/parameters/PlatformProductId'
+      responses:
+        '200':
+          description: 平台商品详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformProductResponse'
+
+  /platform-products/{platformProductId}/price-history:
+    get:
+      tags: [Products]
+      summary: 查询平台商品历史价格
+      parameters:
+        - $ref: '#/components/parameters/PlatformProductId'
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 90
+            minimum: 1
+      responses:
+        '200':
+          description: 历史价格
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceHistoryResponse'
+
+  /platform-products/{platformProductId}/review-summary:
+    get:
+      tags: [Products]
+      summary: 查询评价摘要
+      parameters:
+        - $ref: '#/components/parameters/PlatformProductId'
+      responses:
+        '200':
+          description: 评价摘要
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewSummaryResponse'
+
+  /comparisons:
+    post:
+      tags: [Comparisons]
+      summary: 创建比价
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateComparisonRequest'
+      responses:
+        '200':
+          description: 比价结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComparisonResponse'
+
+  /agent/recommendations:
+    post:
+      tags: [AgentRecommendations]
+      summary: 创建购物推荐
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecommendationRequest'
+      responses:
+        '200':
+          description: 推荐结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+
+  /agent/recommendations/{recommendationId}:
+    get:
+      tags: [AgentRecommendations]
+      summary: 查询推荐记录
+      parameters:
+        - $ref: '#/components/parameters/RecommendationId'
+      responses:
+        '200':
+          description: 推荐记录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+
+  /favorites:
+    post:
+      tags: [Favorites]
+      summary: 创建收藏
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFavoriteRequest'
+      responses:
+        '200':
+          description: 收藏记录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FavoriteResponse'
+    get:
+      tags: [Favorites]
+      summary: 查询收藏列表
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 收藏列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FavoritePageResponse'
+
+  /favorites/{favoriteId}:
+    delete:
+      tags: [Favorites]
+      summary: 删除收藏
+      parameters:
+        - $ref: '#/components/parameters/FavoriteId'
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+
+  /price-alerts:
+    post:
+      tags: [PriceAlerts]
+      summary: 创建价格提醒
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePriceAlertRequest'
+      responses:
+        '200':
+          description: 价格提醒记录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceAlertResponse'
+    get:
+      tags: [PriceAlerts]
+      summary: 查询价格提醒列表
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: 价格提醒列表
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceAlertPageResponse'
+
+  /price-alerts/{priceAlertId}:
+    patch:
+      tags: [PriceAlerts]
+      summary: 更新价格提醒
+      parameters:
+        - $ref: '#/components/parameters/PriceAlertId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePriceAlertRequest'
+      responses:
+        '200':
+          description: 价格提醒记录
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceAlertResponse'
+    delete:
+      tags: [PriceAlerts]
+      summary: 删除价格提醒
+      parameters:
+        - $ref: '#/components/parameters/PriceAlertId'
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptyResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+        minimum: 1
+    PageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+    ImageId:
+      name: imageId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    RecognitionId:
+      name: recognitionId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    SearchTaskId:
+      name: searchTaskId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    ProductId:
+      name: productId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    PlatformProductId:
+      name: platformProductId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    RecommendationId:
+      name: recommendationId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    FavoriteId:
+      name: favoriteId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    PriceAlertId:
+      name: priceAlertId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+
+  schemas:
+    SourceType:
+      type: string
+      enum: [mock, official_api, crawler]
+    Platform:
+      type: string
+      enum: [jd, taobao, pdd, tmall, other]
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: string
+          example: '199.00'
+        currency:
+          type: string
+          example: CNY
+    ApiMeta:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+    EmptyResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              type: 'null'
+    RegisterRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 3, maxLength: 32 }
+        password: { type: string, minLength: 8 }
+        nickname: { type: string, nullable: true }
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    User:
+      type: object
+      required: [id, username, status]
+      properties:
+        id: { type: integer, format: int64 }
+        username: { type: string }
+        nickname: { type: string, nullable: true }
+        avatarUrl: { type: string, nullable: true }
+        status: { type: string, enum: [active, disabled] }
+    AuthPayload:
+      type: object
+      required: [accessToken, refreshToken, expiresIn, user]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: integer, example: 7200 }
+        user:
+          $ref: '#/components/schemas/User'
+    AuthResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AuthPayload'
+    RefreshTokenResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [accessToken, refreshToken, expiresIn]
+              properties:
+                accessToken: { type: string }
+                refreshToken: { type: string }
+                expiresIn: { type: integer, example: 7200 }
+    UserResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/User'
+    Image:
+      type: object
+      required: [imageId, imageUrl, contentType, createdAt]
+      properties:
+        imageId: { type: integer, format: int64 }
+        imageUrl: { type: string }
+        contentType: { type: string }
+        size: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+    ImageResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Image'
+    ImagePageResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ImagePage'
+    ImagePage:
+      allOf:
+        - $ref: '#/components/schemas/PageBase'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Image'
+    CreateRecognitionRequest:
+      type: object
+      required: [imageId]
+      properties:
+        imageId: { type: integer, format: int64 }
+    Recognition:
+      type: object
+      required: [recognitionId, imageId, category, keywords, confidence, status, createdAt]
+      properties:
+        recognitionId: { type: integer, format: int64 }
+        imageId: { type: integer, format: int64 }
+        category: { type: string }
+        brand: { type: string, nullable: true }
+        model: { type: string, nullable: true }
+        keywords:
+          type: array
+          items: { type: string }
+        attributes:
+          type: object
+          additionalProperties: true
+        confidence: { type: number, format: double }
+        status: { type: string, enum: [pending, succeeded, failed] }
+        createdAt: { type: string, format: date-time }
+    RecognitionResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Recognition'
+    CreateSearchTaskRequest:
+      type: object
+      properties:
+        recognitionId: { type: integer, format: int64, nullable: true }
+        query: { type: string, nullable: true }
+        platforms:
+          type: array
+          items:
+            $ref: '#/components/schemas/Platform'
+        sourceType:
+          $ref: '#/components/schemas/SourceType'
+        filters:
+          type: object
+          additionalProperties: true
+    SearchTaskItem:
+      type: object
+      required: [platformProductId, productId, platform, title, price, matchScore, sourceType]
+      properties:
+        platformProductId: { type: integer, format: int64 }
+        productId: { type: integer, format: int64 }
+        platform:
+          $ref: '#/components/schemas/Platform'
+        title: { type: string }
+        imageUrl: { type: string, nullable: true }
+        price:
+          $ref: '#/components/schemas/Money'
+        originalPrice:
+          $ref: '#/components/schemas/Money'
+        url: { type: string, nullable: true }
+        matchScore: { type: number, format: double }
+        sourceType:
+          $ref: '#/components/schemas/SourceType'
+        updatedAt: { type: string, format: date-time, nullable: true }
+    SearchTask:
+      type: object
+      required: [searchTaskId, status, sourceType, items, createdAt]
+      properties:
+        searchTaskId: { type: integer, format: int64 }
+        status: { type: string, enum: [pending, succeeded, failed] }
+        query: { type: string, nullable: true }
+        sourceType:
+          $ref: '#/components/schemas/SourceType'
+        recognition:
+          $ref: '#/components/schemas/Recognition'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchTaskItem'
+        createdAt: { type: string, format: date-time }
+    SearchTaskResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/SearchTask'
+    SearchTaskSummary:
+      type: object
+      required: [searchTaskId, status, sourceType, resultCount, createdAt]
+      properties:
+        searchTaskId: { type: integer, format: int64 }
+        query: { type: string, nullable: true }
+        status: { type: string, enum: [pending, succeeded, failed] }
+        sourceType:
+          $ref: '#/components/schemas/SourceType'
+        resultCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+    SearchTaskSummaryPage:
+      allOf:
+        - $ref: '#/components/schemas/PageBase'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/SearchTaskSummary'
+    SearchTaskSummaryPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/SearchTaskSummaryPage'
+    Product:
+      type: object
+      required: [productId, name, category]
+      properties:
+        productId: { type: integer, format: int64 }
+        name: { type: string }
+        category: { type: string }
+        brand: { type: string, nullable: true }
+        model: { type: string, nullable: true }
+        attributes:
+          type: object
+          additionalProperties: true
+        createdAt: { type: string, format: date-time, nullable: true }
+    ProductResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Product'
+    PlatformProduct:
+      type: object
+      required: [platformProductId, productId, platform, title, price, sourceType]
+      properties:
+        platformProductId: { type: integer, format: int64 }
+        productId: { type: integer, format: int64 }
+        platform:
+          $ref: '#/components/schemas/Platform'
+        title: { type: string }
+        imageUrl: { type: string, nullable: true }
+        price:
+          $ref: '#/components/schemas/Money'
+        originalPrice:
+          $ref: '#/components/schemas/Money'
+        url: { type: string, nullable: true }
+        shopName: { type: string, nullable: true }
+        sourceType:
+          $ref: '#/components/schemas/SourceType'
+        updatedAt: { type: string, format: date-time, nullable: true }
+    PlatformProductResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/PlatformProduct'
+    PricePoint:
+      type: object
+      required: [recordedAt, price]
+      properties:
+        recordedAt: { type: string, format: date-time }
+        price:
+          $ref: '#/components/schemas/Money'
+    PriceHistory:
+      type: object
+      required: [platformProductId, days, trend, points]
+      properties:
+        platformProductId: { type: integer, format: int64 }
+        days: { type: integer }
+        currentPrice:
+          $ref: '#/components/schemas/Money'
+        lowestPrice:
+          $ref: '#/components/schemas/Money'
+        highestPrice:
+          $ref: '#/components/schemas/Money'
+        trend: { type: string, enum: [low, normal, high, unknown] }
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/PricePoint'
+    PriceHistoryResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/PriceHistory'
+    ReviewSummary:
+      type: object
+      required: [platformProductId, riskScore]
+      properties:
+        platformProductId: { type: integer, format: int64 }
+        rating: { type: number, format: double, nullable: true }
+        reviewCount: { type: integer, nullable: true }
+        positiveTags:
+          type: array
+          items: { type: string }
+        riskTags:
+          type: array
+          items: { type: string }
+        riskScore: { type: number, format: double }
+        summary: { type: string, nullable: true }
+    ReviewSummaryResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/ReviewSummary'
+    CreateComparisonRequest:
+      type: object
+      required: [searchTaskId, platformProductIds]
+      properties:
+        searchTaskId: { type: integer, format: int64 }
+        platformProductIds:
+          type: array
+          items: { type: integer, format: int64 }
+    Comparison:
+      type: object
+      required: [comparisonId, searchTaskId, items, createdAt]
+      properties:
+        comparisonId: { type: integer, format: int64 }
+        searchTaskId: { type: integer, format: int64 }
+        lowestPlatformProductId: { type: integer, format: int64, nullable: true }
+        lowestPrice:
+          $ref: '#/components/schemas/Money'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchTaskItem'
+        createdAt: { type: string, format: date-time }
+    ComparisonResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Comparison'
+    CreateRecommendationRequest:
+      type: object
+      required: [searchTaskId, userQuery, candidateIds]
+      properties:
+        searchTaskId: { type: integer, format: int64 }
+        userQuery: { type: string }
+        candidateIds:
+          type: array
+          items: { type: integer, format: int64 }
+    RecommendationEvidence:
+      type: object
+      required: [type, content]
+      properties:
+        type: { type: string, enum: [price, history, match, review, constraint] }
+        platformProductId: { type: integer, format: int64, nullable: true }
+        content: { type: string }
+    RecommendedPlatformProduct:
+      type: object
+      required: [platformProductId, platform, title, price, matchScore]
+      properties:
+        platformProductId: { type: integer, format: int64 }
+        platform:
+          $ref: '#/components/schemas/Platform'
+        title: { type: string }
+        price:
+          $ref: '#/components/schemas/Money'
+        matchScore: { type: number, format: double }
+    Recommendation:
+      type: object
+      required: [recommendationId, searchTaskId, suggestion, reasons, risks, evidence, createdAt]
+      properties:
+        recommendationId: { type: integer, format: int64 }
+        searchTaskId: { type: integer, format: int64 }
+        suggestion: { type: string, enum: [buy, wait, avoid, compare] }
+        recommendedPlatformProduct:
+          $ref: '#/components/schemas/RecommendedPlatformProduct'
+        reasons:
+          type: array
+          items: { type: string }
+        risks:
+          type: array
+          items: { type: string }
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecommendationEvidence'
+        createdAt: { type: string, format: date-time }
+    RecommendationResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Recommendation'
+    CreateFavoriteRequest:
+      type: object
+      required: [platformProductId]
+      properties:
+        platformProductId: { type: integer, format: int64 }
+        note: { type: string, nullable: true }
+    Favorite:
+      type: object
+      required: [favoriteId, platformProductId, createdAt]
+      properties:
+        favoriteId: { type: integer, format: int64 }
+        platformProductId: { type: integer, format: int64 }
+        platform:
+          $ref: '#/components/schemas/Platform'
+        title: { type: string, nullable: true }
+        price:
+          $ref: '#/components/schemas/Money'
+        note: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    FavoriteResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Favorite'
+    FavoritePage:
+      allOf:
+        - $ref: '#/components/schemas/PageBase'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Favorite'
+    FavoritePageResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/FavoritePage'
+    CreatePriceAlertRequest:
+      type: object
+      required: [platformProductId, targetPrice]
+      properties:
+        platformProductId: { type: integer, format: int64 }
+        targetPrice:
+          $ref: '#/components/schemas/Money'
+        enabled: { type: boolean, default: true }
+    UpdatePriceAlertRequest:
+      type: object
+      properties:
+        targetPrice:
+          $ref: '#/components/schemas/Money'
+        enabled: { type: boolean }
+    PriceAlert:
+      type: object
+      required: [priceAlertId, platformProductId, targetPrice, enabled, createdAt]
+      properties:
+        priceAlertId: { type: integer, format: int64 }
+        platformProductId: { type: integer, format: int64 }
+        title: { type: string, nullable: true }
+        currentPrice:
+          $ref: '#/components/schemas/Money'
+        targetPrice:
+          $ref: '#/components/schemas/Money'
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time, nullable: true }
+    PriceAlertResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/PriceAlert'
+    PriceAlertPage:
+      allOf:
+        - $ref: '#/components/schemas/PageBase'
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PriceAlert'
+    PriceAlertPageResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/PriceAlertPage'
+    PageBase:
+      type: object
+      required: [items, page, pageSize, total]
+      properties:
+        items:
+          type: array
+          items: {}
+        page: { type: integer }
+        pageSize: { type: integer }
+        total: { type: integer }
+

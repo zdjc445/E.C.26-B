@@ -1,0 +1,66 @@
+[
+  {
+    "platformProductId": 5001,
+    "rating": 4.7,
+    "reviewCount": 1280,
+    "positiveTags": ["风力大", "噪音低", "适合宿舍"],
+    "riskTags": ["物流较慢"],
+    "riskScore": 0.18,
+    "summary": "整体评价较好，主要风险集中在物流时效。"
+  },
+  {
+    "platformProductId": 5002,
+    "rating": 4.6,
+    "reviewCount": 932,
+    "positiveTags": ["降噪明显", "续航长"],
+    "riskTags": ["耳罩偏紧"],
+    "riskScore": 0.22,
+    "summary": "适合通勤和学习，佩戴舒适度需要结合个人情况。"
+  },
+  {
+    "platformProductId": 5003,
+    "rating": 4.5,
+    "reviewCount": 2100,
+    "positiveTags": ["屏幕清晰", "系统流畅"],
+    "riskTags": ["夜拍一般"],
+    "riskScore": 0.26,
+    "summary": "综合配置均衡，影像能力不是主要优势。"
+  },
+  {
+    "platformProductId": 5004,
+    "rating": 4.8,
+    "reviewCount": 760,
+    "positiveTags": ["手感好", "声音适中"],
+    "riskTags": ["键帽容易沾油"],
+    "riskScore": 0.16,
+    "summary": "入门机械键盘中性价比较高。"
+  },
+  {
+    "platformProductId": 5005,
+    "rating": 4.4,
+    "reviewCount": 530,
+    "positiveTags": ["保温不错", "便携"],
+    "riskTags": ["杯盖需要拧紧"],
+    "riskScore": 0.28,
+    "summary": "日常携带合适，需注意密封使用方式。"
+  },
+  {
+    "platformProductId": 5006,
+    "rating": 4.6,
+    "reviewCount": 1140,
+    "positiveTags": ["缓震好", "透气"],
+    "riskTags": ["尺码偏小"],
+    "riskScore": 0.21,
+    "summary": "适合日常跑步，建议购买前确认尺码。"
+  },
+  {
+    "platformProductId": 5007,
+    "rating": 4.7,
+    "reviewCount": 870,
+    "positiveTags": ["保湿", "温和"],
+    "riskTags": ["油皮夏天略厚"],
+    "riskScore": 0.19,
+    "summary": "敏感肌反馈较好，油皮用户建议少量使用。"
+  }
+]
+
