@@ -213,7 +213,13 @@ public final class ApiModels {
     ) {
     }
 
-    public record EcommerceProviderStatus(String platform, boolean configured) {
+    public record EcommerceProviderStatus(
+            String platform,
+            boolean enabled,
+            boolean configured,
+            List<String> requiredConfig,
+            List<String> missingConfig
+    ) {
     }
 
     public record EcommerceStatusPayload(

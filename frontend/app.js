@@ -373,9 +373,14 @@ function renderStats(stats) {
 
 function renderEcommerceStatus(fallbackText) {
   els.ecommerceStatus.classList.remove("ok");
+  els.ecommerceStatus.title = "";
   if (fallbackText) {
     els.ecommerceStatus.textContent = fallbackText;
     return;
+  }
+  const missing = ecommerceMissingConfig();
+  if (missing.length) {
+    els.ecommerceStatus.title = `缺少配置：${missing.join("、")}`;
   }
   if (!state.ecommerceStatus?.enabled) {
     els.ecommerceStatus.textContent = "未启用";
@@ -390,7 +395,15 @@ function renderEcommerceStatus(fallbackText) {
     els.ecommerceStatus.classList.add("ok");
     return;
   }
-  els.ecommerceStatus.textContent = "未配置";
+  els.ecommerceStatus.textContent = missing.length ? "缺少配置" : "未配置";
+}
+
+function ecommerceMissingConfig() {
+  const missing = new Set();
+  (state.ecommerceStatus?.providers || []).forEach((provider) => {
+    (provider.missingConfig || []).forEach((item) => missing.add(item));
+  });
+  return Array.from(missing);
 }
 
 function renderProducts(items) {
@@ -552,7 +565,8 @@ els.sourceType.addEventListener("change", () => {
   state.sourceType = els.sourceType.value;
   localStorage.setItem("sourceType", state.sourceType);
   if (state.sourceType === "official_api" && !state.ecommerceStatus?.hasConfiguredClient) {
-    toast("官方 API 尚未配置");
+    const missing = ecommerceMissingConfig();
+    toast(missing.length ? `官方 API 尚未配置：${missing.slice(0, 4).join("、")}` : "官方 API 尚未配置");
   }
   state.searchTask = null;
   state.items = [];

@@ -118,6 +118,10 @@ class ShoppingAgentFlowTests {
         JsonNode statusPayload = getJson(null, "/api/ecommerce/status").get("data");
         assertThat(statusPayload.get("enabled").asBoolean()).isFalse();
         assertThat(statusPayload.get("hasConfiguredClient").asBoolean()).isFalse();
+        assertThat(statusPayload.get("providers").toString())
+                .contains("ECOMMERCE_API_ENABLED")
+                .contains("PDD_CLIENT_ID")
+                .contains("JD_APP_KEY");
 
         String token = registerAndToken();
         String content = mockMvc.perform(post("/api/search-tasks")

@@ -698,10 +698,19 @@ components:
               $ref: '#/components/schemas/User'
     EcommerceProviderStatus:
       type: object
-      required: [platform, configured]
+      required: [platform, enabled, configured, requiredConfig, missingConfig]
       properties:
         platform: { type: string, example: 拼多多 }
+        enabled: { type: boolean }
         configured: { type: boolean }
+        requiredConfig:
+          type: array
+          items: { type: string }
+          example: [ECOMMERCE_API_ENABLED, PDD_API_ENABLED, PDD_CLIENT_ID, PDD_CLIENT_SECRET]
+        missingConfig:
+          type: array
+          items: { type: string }
+          example: [PDD_CLIENT_ID, PDD_CLIENT_SECRET]
     EcommerceStatus:
       type: object
       required: [enabled, hasConfiguredClient, providers]

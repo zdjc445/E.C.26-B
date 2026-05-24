@@ -1261,11 +1261,23 @@ GET /api/ecommerce/status
     "enabled": true,
     "hasConfiguredClient": true,
     "providers": [
-      { "platform": "拼多多", "configured": true },
-      { "platform": "京东", "configured": false }
+      {
+        "platform": "拼多多",
+        "enabled": true,
+        "configured": true,
+        "requiredConfig": ["ECOMMERCE_API_ENABLED", "PDD_API_ENABLED", "PDD_CLIENT_ID", "PDD_CLIENT_SECRET"],
+        "missingConfig": []
+      },
+      {
+        "platform": "京东",
+        "enabled": false,
+        "configured": false,
+        "requiredConfig": ["ECOMMERCE_API_ENABLED", "JD_API_ENABLED", "JD_APP_KEY", "JD_APP_SECRET"],
+        "missingConfig": ["JD_API_ENABLED", "JD_APP_KEY", "JD_APP_SECRET"]
+      }
     ]
   }
 }
 ```
 
-该接口只返回配置状态，不返回密钥、Token 或签名参数。
+该接口只返回配置状态和缺失配置项名称，不返回密钥、Token 或签名参数。

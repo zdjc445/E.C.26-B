@@ -69,6 +69,8 @@ class OfficialApiFlowTests {
         assertThat(status.get("enabled").asBoolean()).isTrue();
         assertThat(status.get("hasConfiguredClient").asBoolean()).isTrue();
         assertThat(status.get("providers").toString()).contains("拼多多");
+        assertThat(provider(status, "拼多多").get("enabled").asBoolean()).isTrue();
+        assertThat(provider(status, "拼多多").get("missingConfig").isEmpty()).isTrue();
 
         JsonNode search = postJson(token, "/api/search-tasks", Map.of(
                 "query", "吹风机",
@@ -157,6 +159,15 @@ class OfficialApiFlowTests {
                     params.put(key, value);
                 });
         return params;
+    }
+
+    private JsonNode provider(JsonNode status, String platform) {
+        for (JsonNode provider : status.get("providers")) {
+            if (platform.equals(provider.get("platform").asText())) {
+                return provider;
+            }
+        }
+        throw new AssertionError("Provider not found: " + platform);
     }
 
     private String registerAndToken() throws Exception {

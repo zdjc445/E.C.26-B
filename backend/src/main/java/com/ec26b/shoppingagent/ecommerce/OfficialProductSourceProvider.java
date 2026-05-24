@@ -77,9 +77,49 @@ public class OfficialProductSourceProvider {
     public EcommerceStatusPayload status() {
         List<EcommerceProviderStatus> providers = clients.stream()
                 .sorted(Comparator.comparing(OfficialApiClient::platform))
-                .map(client -> new EcommerceProviderStatus(client.platform(), client.configured()))
+                .map(this::providerStatus)
                 .toList();
         return new EcommerceStatusPayload(properties.isEnabled(), hasConfiguredClient(), providers);
+    }
+
+    private EcommerceProviderStatus providerStatus(OfficialApiClient client) {
+        if ("拼多多".equals(client.platform())) {
+            List<String> required = List.of("ECOMMERCE_API_ENABLED", "PDD_API_ENABLED", "PDD_CLIENT_ID", "PDD_CLIENT_SECRET");
+            List<String> missing = new ArrayList<>();
+            EcommerceApiProperties.Pdd pdd = properties.getPdd();
+            if (!properties.isEnabled()) {
+                missing.add("ECOMMERCE_API_ENABLED");
+            }
+            if (!pdd.isEnabled()) {
+                missing.add("PDD_API_ENABLED");
+            }
+            if (isBlank(pdd.getClientId())) {
+                missing.add("PDD_CLIENT_ID");
+            }
+            if (isBlank(pdd.getClientSecret())) {
+                missing.add("PDD_CLIENT_SECRET");
+            }
+            return new EcommerceProviderStatus(client.platform(), properties.isEnabled() && pdd.isEnabled(), client.configured(), required, missing);
+        }
+        if ("京东".equals(client.platform())) {
+            List<String> required = List.of("ECOMMERCE_API_ENABLED", "JD_API_ENABLED", "JD_APP_KEY", "JD_APP_SECRET");
+            List<String> missing = new ArrayList<>();
+            EcommerceApiProperties.Jd jd = properties.getJd();
+            if (!properties.isEnabled()) {
+                missing.add("ECOMMERCE_API_ENABLED");
+            }
+            if (!jd.isEnabled()) {
+                missing.add("JD_API_ENABLED");
+            }
+            if (isBlank(jd.getAppKey())) {
+                missing.add("JD_APP_KEY");
+            }
+            if (isBlank(jd.getAppSecret())) {
+                missing.add("JD_APP_SECRET");
+            }
+            return new EcommerceProviderStatus(client.platform(), properties.isEnabled() && jd.isEnabled(), client.configured(), required, missing);
+        }
+        return new EcommerceProviderStatus(client.platform(), client.configured(), client.configured(), List.of(), List.of());
     }
 
     private void remember(OfficialProductResult result) {
@@ -93,5 +133,9 @@ public class OfficialProductSourceProvider {
                         List.of(new MockCatalog.PricePointData(OffsetDateTime.now(), result.platformProduct().price()))
                 )
         );
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }
