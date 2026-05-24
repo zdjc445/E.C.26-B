@@ -248,7 +248,7 @@ h2 {
 
 .top-bar {
   display: grid;
-  grid-template-columns: 1fr 150px 150px 96px 120px;
+  grid-template-columns: minmax(220px, 1fr) 130px 120px 150px 96px 120px;
   gap: 12px;
   align-items: end;
 }

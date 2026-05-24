@@ -10,8 +10,10 @@ import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,7 +36,7 @@ public class OfficialProductSourceProvider {
         List<String> failures = new ArrayList<>();
         List<OfficialProductResult> results = new ArrayList<>();
         int attempted = 0;
-        for (OfficialApiClient client : clients) {
+        for (OfficialApiClient client : clientsFor(query.platforms())) {
             if (!client.configured()) {
                 continue;
             }
@@ -44,6 +46,9 @@ public class OfficialProductSourceProvider {
             } catch (RuntimeException ex) {
                 failures.add(client.platform() + ": " + ex.getMessage());
             }
+        }
+        if (attempted == 0 && !normalizePlatforms(query.platforms()).isEmpty()) {
+            throw ApiException.badRequest("official_api not configured for selected platforms: " + String.join(", ", query.platforms()));
         }
         if (attempted > 0 && results.isEmpty() && !failures.isEmpty()) {
             throw ApiException.badRequest("official ecommerce api request failed: " + String.join("; ", failures));
@@ -84,7 +89,7 @@ public class OfficialProductSourceProvider {
         return new EcommerceStatusPayload(properties.isEnabled(), hasConfiguredClient(), providers);
     }
 
-    public EcommerceDiagnosticsPayload diagnostics(String keyword, int pageSize) {
+    public EcommerceDiagnosticsPayload diagnostics(String keyword, int pageSize, List<String> platforms) {
         String normalizedKeyword = isBlank(keyword) ? "吹风机" : keyword.trim();
         int safePageSize = Math.max(1, Math.min(5, pageSize));
         ProductSourceQuery query = new ProductSourceQuery(
@@ -93,10 +98,11 @@ public class OfficialProductSourceProvider {
                 "",
                 "",
                 Map.of(),
+                normalizePlatforms(platforms),
                 "comprehensive",
                 safePageSize
         );
-        List<EcommerceProviderDiagnostic> providers = clients.stream()
+        List<EcommerceProviderDiagnostic> providers = clientsFor(query.platforms()).stream()
                 .sorted(Comparator.comparing(OfficialApiClient::platform))
                 .map(client -> diagnose(client, query))
                 .toList();
@@ -215,5 +221,36 @@ public class OfficialProductSourceProvider {
             return "official ecommerce api request failed";
         }
         return value.length() <= 240 ? value : value.substring(0, 240);
+    }
+
+    private List<OfficialApiClient> clientsFor(List<String> platforms) {
+        List<String> normalized = normalizePlatforms(platforms);
+        return clients.stream()
+                .filter(client -> normalized.isEmpty() || normalized.contains(normalizePlatform(client.platform())))
+                .toList();
+    }
+
+    private List<String> normalizePlatforms(List<String> platforms) {
+        if (platforms == null || platforms.isEmpty()) {
+            return List.of();
+        }
+        return platforms.stream()
+                .flatMap(value -> Arrays.stream(String.valueOf(value).split(",")))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .map(this::normalizePlatform)
+                .distinct()
+                .toList();
+    }
+
+    private String normalizePlatform(String value) {
+        String normalized = value == null ? "" : value.toLowerCase(Locale.ROOT).replace("平台", "").replace("商城", "").trim();
+        return switch (normalized) {
+            case "pdd", "拼多多", "多多进宝" -> "pdd";
+            case "jd", "jingdong", "京东", "京东自营" -> "jd";
+            case "taobao", "淘宝" -> "taobao";
+            case "tmall", "天猫" -> "tmall";
+            default -> normalized;
+        };
     }
 }

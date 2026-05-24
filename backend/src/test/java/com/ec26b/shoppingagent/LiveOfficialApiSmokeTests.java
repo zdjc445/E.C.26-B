@@ -12,6 +12,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -38,11 +41,15 @@ class LiveOfficialApiSmokeTests {
 
         String token = registerAndToken();
         String query = envOrDefault("ECOMMERCE_LIVE_QUERY", "吹风机");
-        JsonNode search = postJson(token, "/api/search-tasks", Map.of(
-                "query", query,
-                "sourceType", "official_api",
-                "sortBy", "price_asc"
-        )).get("data");
+        List<String> platforms = csvEnv("ECOMMERCE_LIVE_PLATFORMS");
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("query", query);
+        request.put("sourceType", "official_api");
+        request.put("sortBy", "price_asc");
+        if (!platforms.isEmpty()) {
+            request.put("platforms", platforms);
+        }
+        JsonNode search = postJson(token, "/api/search-tasks", request).get("data");
 
         JsonNode items = search.get("items");
         assertThat(items).isNotNull();
@@ -91,5 +98,16 @@ class LiveOfficialApiSmokeTests {
     private String envOrDefault(String name, String fallback) {
         String value = System.getenv(name);
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private List<String> csvEnv(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(value.split(","))
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .toList();
     }
 }

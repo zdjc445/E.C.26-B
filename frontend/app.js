@@ -1,6 +1,7 @@
 const els = {
   apiBase: document.querySelector("#apiBase"),
   sourceType: document.querySelector("#sourceType"),
+  platformFilter: document.querySelector("#platformFilter"),
   ecommerceStatus: document.querySelector("#ecommerceStatus"),
   ecommerceCheckBtn: document.querySelector("#ecommerceCheckBtn"),
   username: document.querySelector("#username"),
@@ -122,7 +123,9 @@ async function loadEcommerceStatus() {
 
 async function checkEcommerceApi() {
   const query = (els.refineText.value || "吹风机").trim();
-  const diagnostics = await api(`/ecommerce/diagnostics?query=${encodeURIComponent(query)}&pageSize=3`);
+  const platforms = selectedPlatforms();
+  const platformParam = platforms.length ? `&platforms=${encodeURIComponent(platforms.join(","))}` : "";
+  const diagnostics = await api(`/ecommerce/diagnostics?query=${encodeURIComponent(query)}&pageSize=3${platformParam}`);
   renderEcommerceDiagnostics(diagnostics);
   const successCount = (diagnostics.providers || []).filter((provider) => provider.success).length;
   toast(successCount ? `官方 API 诊断通过 ${successCount} 个平台` : "官方 API 诊断未通过");
@@ -220,6 +223,7 @@ async function analyze() {
       recognitionId: state.recognition.recognitionId,
       query: els.refineText.value,
       sourceType: state.sourceType,
+      platforms: selectedPlatforms(),
       sortBy: state.sortBy,
     },
   });
@@ -413,6 +417,10 @@ function ecommerceMissingConfig() {
     (provider.missingConfig || []).forEach((item) => missing.add(item));
   });
   return Array.from(missing);
+}
+
+function selectedPlatforms() {
+  return els.platformFilter.value ? [els.platformFilter.value] : [];
 }
 
 function renderProducts(items) {
@@ -612,6 +620,13 @@ els.sourceType.addEventListener("change", () => {
     const missing = ecommerceMissingConfig();
     toast(missing.length ? `官方 API 尚未配置：${missing.slice(0, 4).join("、")}` : "官方 API 尚未配置");
   }
+  state.searchTask = null;
+  state.items = [];
+  state.selectedIds.clear();
+  renderProducts([]);
+  renderStats([]);
+});
+els.platformFilter.addEventListener("change", () => {
   state.searchTask = null;
   state.items = [];
   state.selectedIds.clear();

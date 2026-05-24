@@ -140,6 +140,16 @@ paths:
             default: 3
             minimum: 1
             maximum: 5
+        - name: platforms
+          in: query
+          description: 可选平台过滤，支持 pdd、jd，可重复传参或使用逗号分隔。
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [pdd, jd]
+          style: form
+          explode: false
       responses:
         '200':
           description: 当前电商 API 调用诊断

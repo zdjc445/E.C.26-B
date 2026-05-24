@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -31,8 +32,9 @@ public class HealthController {
     @GetMapping("/api/ecommerce/diagnostics")
     public ApiResponse<EcommerceDiagnosticsPayload> ecommerceDiagnostics(
             @RequestParam(defaultValue = "吹风机") String query,
-            @RequestParam(defaultValue = "3") int pageSize
+            @RequestParam(defaultValue = "3") int pageSize,
+            @RequestParam(required = false) List<String> platforms
     ) {
-        return ApiResponse.success(officialProductSource.diagnostics(query, pageSize));
+        return ApiResponse.success(officialProductSource.diagnostics(query, pageSize, platforms));
     }
 }

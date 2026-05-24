@@ -1285,7 +1285,7 @@ GET /api/ecommerce/status
 ### 电商 API 调用诊断
 
 ```http
-GET /api/ecommerce/diagnostics?query=吹风机&pageSize=3
+GET /api/ecommerce/diagnostics?query=吹风机&pageSize=3&platforms=pdd
 Authorization: Bearer <accessToken>
 ```
 
@@ -1326,4 +1326,4 @@ Authorization: Bearer <accessToken>
 }
 ```
 
-该接口会真实请求已配置的平台 API，建议只在联调或运维检查时使用；响应不包含密钥、Token、签名参数或原始请求体。
+`platforms` 可选，支持 `pdd`、`jd`，可重复传参或用逗号分隔。该接口会真实请求已配置的平台 API，建议只在联调或运维检查时使用；响应不包含密钥、Token、签名参数或原始请求体。

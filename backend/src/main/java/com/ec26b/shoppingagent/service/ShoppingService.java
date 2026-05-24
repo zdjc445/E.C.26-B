@@ -562,6 +562,7 @@ public class ShoppingService {
                     recognition == null ? stringFilter(filters, "brand") : firstNonBlank(recognition.brand, stringFilter(filters, "brand")),
                     recognition == null ? null : recognition.model,
                     filters == null ? Map.of() : filters,
+                    platformFilters(filters),
                     filters == null ? "comprehensive" : String.valueOf(filters.getOrDefault("sortBy", "comprehensive")),
                     30
             );
@@ -606,6 +607,24 @@ public class ShoppingService {
         }
         String value = String.valueOf(filters.get(key)).trim();
         return value.isBlank() ? null : value;
+    }
+
+    private List<String> platformFilters(Map<String, Object> filters) {
+        if (filters == null || !filters.containsKey("platforms") || filters.get("platforms") == null) {
+            return List.of();
+        }
+        Object value = filters.get("platforms");
+        if (value instanceof List<?> list) {
+            return list.stream()
+                    .flatMap(item -> java.util.Arrays.stream(String.valueOf(item).split(",")))
+                    .map(String::trim)
+                    .filter(item -> !item.isBlank())
+                    .toList();
+        }
+        return java.util.Arrays.stream(String.valueOf(value).split(","))
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .toList();
     }
 
     private double matchScore(MockCatalog.PlatformProductData item, String query, RecognitionRecord recognition) {

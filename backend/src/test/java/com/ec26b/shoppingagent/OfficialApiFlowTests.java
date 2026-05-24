@@ -97,6 +97,18 @@ class OfficialApiFlowTests {
         JsonNode review = getJson(token, "/api/platform-products/" + platformProductId + "/review-summary").get("data");
         assertThat(review.get("summary").asText()).contains("拼多多官方 API");
 
+        String jdFailure = mockMvc.perform(post("/api/search-tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "query", "吹风机",
+                                "sourceType", "official_api",
+                                "platforms", java.util.List.of("jd")
+                        )))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(jdFailure).contains("京东");
+
         JsonNode diagnostics = getJson(token, "/api/ecommerce/diagnostics?query=吹风机&pageSize=2").get("data");
         assertThat(diagnostics.get("query").asText()).isEqualTo("吹风机");
         assertThat(diagnostic(diagnostics, "拼多多").get("success").asBoolean()).isTrue();
@@ -104,6 +116,10 @@ class OfficialApiFlowTests {
         assertThat(diagnostic(diagnostics, "拼多多").get("sampleTitles").get(0).asText()).contains("吹风机");
         assertThat(diagnostic(diagnostics, "京东").get("success").asBoolean()).isFalse();
         assertThat(diagnostic(diagnostics, "京东").get("status").asText()).isEqualTo("failed");
+
+        JsonNode pddDiagnostics = getJson(token, "/api/ecommerce/diagnostics?query=吹风机&pageSize=2&platforms=pdd").get("data");
+        assertThat(pddDiagnostics.get("providers").size()).isEqualTo(1);
+        assertThat(diagnostic(pddDiagnostics, "拼多多").get("success").asBoolean()).isTrue();
     }
 
     private static synchronized void ensureServer() {
