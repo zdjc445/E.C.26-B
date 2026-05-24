@@ -113,7 +113,7 @@ mvn -Dtest=LiveOfficialApiSmokeTests test
 .\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd"
 ```
 
-该测试默认不会运行；只有显式设置 `ECOMMERCE_LIVE_TEST=true` 时才会调用真实平台 API。
+该测试默认不会运行；脚本会在本地检测密钥后显式设置 `ECOMMERCE_LIVE_TEST=true`。运行时会先请求 `GET /api/ecommerce/diagnostics` 验证平台诊断，再通过 `POST /api/search-tasks` 验证 `official_api` 搜索结果。
 
 完整联调步骤见 [真实电商 API 联调清单](docs/13-真实电商API联调清单.md)。仓库根目录提供 `.env.example` 作为变量模板；真实 `.env` 已被 `.gitignore` 忽略。
 

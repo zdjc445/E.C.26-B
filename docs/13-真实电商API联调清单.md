@@ -78,6 +78,7 @@ Authorization: Bearer <accessToken>
 验收点：
 
 - `LiveOfficialApiSmokeTests` 未跳过
+- 诊断接口至少一个目标平台 `success=true`
 - 返回至少 1 个 `sourceType=official_api` 商品
 - 商品包含平台、标题、URL 和大于 0 的价格
 

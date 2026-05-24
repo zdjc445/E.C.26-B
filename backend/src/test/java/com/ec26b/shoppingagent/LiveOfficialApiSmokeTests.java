@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -42,6 +43,19 @@ class LiveOfficialApiSmokeTests {
         String token = registerAndToken();
         String query = envOrDefault("ECOMMERCE_LIVE_QUERY", "吹风机");
         List<String> platforms = csvEnv("ECOMMERCE_LIVE_PLATFORMS");
+
+        JsonNode diagnostics = getJson(token, diagnosticsPath(query, platforms)).get("data");
+        JsonNode providerDiagnostics = diagnostics.get("providers");
+        assertThat(providerDiagnostics).isNotNull();
+        assertThat(providerDiagnostics.size()).isGreaterThan(0);
+        JsonNode successfulProvider = firstSuccessfulProvider(providerDiagnostics);
+        assertThat(successfulProvider.get("configured").asBoolean()).isTrue();
+        assertThat(successfulProvider.get("status").asText()).isEqualTo("ok");
+        assertThat(successfulProvider.get("itemCount").asInt()).isGreaterThan(0);
+        assertThat(successfulProvider.get("durationMs").asLong()).isGreaterThan(0);
+        assertThat(successfulProvider.get("sampleTitles").size()).isGreaterThan(0);
+        assertThat(textOrBlank(successfulProvider.get("errorCode"))).isBlank();
+
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("query", query);
         request.put("sourceType", "official_api");
@@ -69,6 +83,31 @@ class LiveOfficialApiSmokeTests {
                 "nickname", "LiveTester"
         ));
         return response.get("data").get("accessToken").asText();
+    }
+
+    private String diagnosticsPath(String query, List<String> platforms) {
+        String path = "/api/ecommerce/diagnostics?query=" + encode(query) + "&pageSize=3";
+        if (!platforms.isEmpty()) {
+            path += "&platforms=" + encode(String.join(",", platforms));
+        }
+        return path;
+    }
+
+    private String encode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private JsonNode firstSuccessfulProvider(JsonNode providers) {
+        for (JsonNode provider : providers) {
+            if (provider.get("success").asBoolean()) {
+                return provider;
+            }
+        }
+        throw new AssertionError("No official ecommerce provider passed live diagnostics: " + providers);
+    }
+
+    private String textOrBlank(JsonNode node) {
+        return node == null || node.isNull() ? "" : node.asText();
     }
 
     private JsonNode postJson(String token, String path, Object body) throws Exception {
