@@ -120,6 +120,7 @@ public class OfficialProductSourceProvider {
                     0,
                     0,
                     List.of(),
+                    "",
                     "missing config: " + String.join(", ", status.missingConfig()),
                     status.missingConfig()
             );
@@ -141,6 +142,7 @@ public class OfficialProductSourceProvider {
                             .limit(3)
                             .toList(),
                     "",
+                    "",
                     List.of()
             );
         } catch (RuntimeException ex) {
@@ -153,6 +155,7 @@ public class OfficialProductSourceProvider {
                     0,
                     durationMs,
                     List.of(),
+                    ex instanceof OfficialApiException official ? official.errorCode() : "",
                     truncate(ex.getMessage()),
                     List.of()
             );

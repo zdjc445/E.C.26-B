@@ -116,6 +116,7 @@ class OfficialApiFlowTests {
         assertThat(diagnostic(diagnostics, "拼多多").get("sampleTitles").get(0).asText()).contains("吹风机");
         assertThat(diagnostic(diagnostics, "京东").get("success").asBoolean()).isFalse();
         assertThat(diagnostic(diagnostics, "京东").get("status").asText()).isEqualTo("failed");
+        assertThat(diagnostic(diagnostics, "京东").get("errorCode").asText()).isEqualTo("40");
         assertThat(diagnostic(diagnostics, "京东").get("errorMessage").asText()).contains("invalid app key");
 
         JsonNode pddDiagnostics = getJson(token, "/api/ecommerce/diagnostics?query=吹风机&pageSize=2&platforms=pdd").get("data");
@@ -124,6 +125,7 @@ class OfficialApiFlowTests {
 
         JsonNode pddBusinessError = getJson(token, "/api/ecommerce/diagnostics?query=业务错误&pageSize=2&platforms=pdd").get("data");
         assertThat(diagnostic(pddBusinessError, "拼多多").get("success").asBoolean()).isFalse();
+        assertThat(diagnostic(pddBusinessError, "拼多多").get("errorCode").asText()).isEqualTo("10019");
         assertThat(diagnostic(pddBusinessError, "拼多多").get("errorMessage").asText()).contains("invalid client id");
     }
 

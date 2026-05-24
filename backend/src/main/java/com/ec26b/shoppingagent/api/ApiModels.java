@@ -237,6 +237,7 @@ public final class ApiModels {
             int itemCount,
             long durationMs,
             List<String> sampleTitles,
+            String errorCode,
             String errorMessage,
             List<String> missingConfig
     ) {

@@ -193,14 +193,15 @@ public class JdUnionApiClient implements OfficialApiClient {
     private void detectTopLevelError(JsonNode root) {
         JsonNode error = firstObject(root.path("error_response"), root.path("errorResponse"), root.path("error"));
         if (error != null) {
-            throw new IllegalStateException("JD official API error: " + errorMessage(error));
+            String code = errorCode(error);
+            throw new OfficialApiException(code, "JD official API error: " + errorMessage(error));
         }
     }
 
     private void detectResponseError(JsonNode response) {
         String code = text(response, "code");
         if (!isBlank(code) && !"0".equals(code)) {
-            throw new IllegalStateException("JD official API error: " + responseMessage(response, code));
+            throw new OfficialApiException(code, "JD official API error: " + responseMessage(response, code));
         }
     }
 
@@ -209,7 +210,7 @@ public class JdUnionApiClient implements OfficialApiClient {
         if (isBlank(code) || "0".equals(code) || "200".equals(code)) {
             return;
         }
-        throw new IllegalStateException("JD official API error: " + responseMessage(result, code));
+        throw new OfficialApiException(code, "JD official API error: " + responseMessage(result, code));
     }
 
     private JsonNode firstObject(JsonNode... nodes) {
@@ -222,12 +223,16 @@ public class JdUnionApiClient implements OfficialApiClient {
     }
 
     private String errorMessage(JsonNode error) {
-        String code = text(error, "code", "sub_code", "subCode");
+        String code = errorCode(error);
         String message = firstNonBlank(text(error, "zh_desc", "en_desc", "message", "msg", "error_msg", "errorMsg"), code);
         if (!isBlank(code) && !message.contains(code)) {
             return code + " " + message;
         }
         return isBlank(message) ? "unknown error" : message;
+    }
+
+    private String errorCode(JsonNode error) {
+        return text(error, "code", "sub_code", "subCode");
     }
 
     private String responseMessage(JsonNode node, String code) {

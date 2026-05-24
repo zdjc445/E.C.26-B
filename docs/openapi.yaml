@@ -766,7 +766,7 @@ components:
               $ref: '#/components/schemas/EcommerceStatus'
     EcommerceProviderDiagnostic:
       type: object
-      required: [platform, configured, success, status, itemCount, durationMs, sampleTitles, errorMessage, missingConfig]
+      required: [platform, configured, success, status, itemCount, durationMs, sampleTitles, errorCode, errorMessage, missingConfig]
       properties:
         platform: { type: string, example: 拼多多 }
         configured: { type: boolean }
@@ -779,6 +779,9 @@ components:
         sampleTitles:
           type: array
           items: { type: string }
+        errorCode:
+          type: string
+          description: 调用失败时的平台业务错误码，例如 PDD/JD 返回的权限或签名错误码。
         errorMessage:
           type: string
           description: 调用失败时的安全错误摘要，不包含密钥。

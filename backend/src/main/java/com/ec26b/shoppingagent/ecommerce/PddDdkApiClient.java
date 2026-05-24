@@ -160,12 +160,13 @@ public class PddDdkApiClient implements OfficialApiClient {
     private void detectError(JsonNode root) {
         JsonNode error = firstObject(root.path("error_response"), root.path("errorResponse"), root.path("error"));
         if (error != null) {
-            throw new IllegalStateException("PDD official API error: " + errorMessage(error));
+            String code = errorCode(error);
+            throw new OfficialApiException(code, "PDD official API error: " + errorMessage(error));
         }
         String code = text(root, "error_code", "errorCode", "code");
         String message = text(root, "error_msg", "errorMsg", "message", "msg");
         if (!isBlank(code) || !isBlank(message)) {
-            throw new IllegalStateException("PDD official API error: " + firstNonBlank(message, code));
+            throw new OfficialApiException(code, "PDD official API error: " + firstNonBlank(message, code));
         }
     }
 
@@ -179,12 +180,16 @@ public class PddDdkApiClient implements OfficialApiClient {
     }
 
     private String errorMessage(JsonNode error) {
-        String code = text(error, "error_code", "errorCode", "code", "sub_code", "subCode");
+        String code = errorCode(error);
         String message = firstNonBlank(text(error, "error_msg", "errorMsg", "sub_msg", "subMsg", "message", "msg"), code);
         if (!isBlank(code) && !message.contains(code)) {
             return code + " " + message;
         }
         return isBlank(message) ? "unknown error" : message;
+    }
+
+    private String errorCode(JsonNode error) {
+        return text(error, "error_code", "errorCode", "code", "sub_code", "subCode");
     }
 
     private Money centsMoney(String value) {

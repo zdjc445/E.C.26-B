@@ -551,7 +551,8 @@ function diagnosticMessage(provider) {
   if ((provider.missingConfig || []).length) {
     return `缺少配置：${provider.missingConfig.join("、")}`;
   }
-  return provider.errorMessage || "调用失败";
+  const message = provider.errorMessage || "调用失败";
+  return provider.errorCode ? `${provider.errorCode}：${message}` : message;
 }
 
 function setSortActive(sortBy) {

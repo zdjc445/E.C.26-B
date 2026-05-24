@@ -1307,6 +1307,7 @@ Authorization: Bearer <accessToken>
         "itemCount": 3,
         "durationMs": 420,
         "sampleTitles": ["高速负离子吹风机"],
+        "errorCode": "",
         "errorMessage": "",
         "missingConfig": []
       },
@@ -1318,6 +1319,7 @@ Authorization: Bearer <accessToken>
         "itemCount": 0,
         "durationMs": 0,
         "sampleTitles": [],
+        "errorCode": "",
         "errorMessage": "missing config: JD_API_ENABLED, JD_APP_KEY, JD_APP_SECRET",
         "missingConfig": ["JD_API_ENABLED", "JD_APP_KEY", "JD_APP_SECRET"]
       }
@@ -1326,4 +1328,4 @@ Authorization: Bearer <accessToken>
 }
 ```
 
-`platforms` 可选，支持 `pdd`、`jd`，可重复传参或用逗号分隔。该接口会真实请求已配置的平台 API，建议只在联调或运维检查时使用；响应不包含密钥、Token、签名参数或原始请求体。如果平台用 HTTP 200 返回业务错误，例如权限、签名、应用配置错误，后端会将该平台诊断为 `failed` 并返回安全错误摘要。
+`platforms` 可选，支持 `pdd`、`jd`，可重复传参或用逗号分隔。该接口会真实请求已配置的平台 API，建议只在联调或运维检查时使用；响应不包含密钥、Token、签名参数或原始请求体。如果平台用 HTTP 200 返回业务错误，例如权限、签名、应用配置错误，后端会将该平台诊断为 `failed`，并返回平台 `errorCode` 与安全错误摘要。
