@@ -93,6 +93,16 @@ $env:JD_ACCESS_TOKEN="..."
 
 可先访问 `GET /api/ecommerce/status` 检查后端是否启用真实电商 API，以及拼多多/京东适配器是否已配置。该接口不会返回任何密钥。
 
+拿到真实平台密钥后，可以运行一次 live smoke test 验证线上链路：
+
+```powershell
+$env:ECOMMERCE_LIVE_TEST="true"
+$env:ECOMMERCE_LIVE_QUERY="吹风机"
+mvn -Dtest=LiveOfficialApiSmokeTests test
+```
+
+该测试默认不会运行；只有显式设置 `ECOMMERCE_LIVE_TEST=true` 时才会调用真实平台 API。
+
 ## 文档导航
 
 - [文档目录](docs/README.md)
