@@ -124,6 +124,11 @@ class ShoppingAgentFlowTests {
                 .contains("JD_APP_KEY");
 
         String token = registerAndToken();
+        JsonNode diagnostics = getJson(token, "/api/ecommerce/diagnostics?query=吹风机").get("data");
+        assertThat(diagnostics.get("providers").toString())
+                .contains("not_configured")
+                .contains("ECOMMERCE_API_ENABLED");
+
         String content = mockMvc.perform(post("/api/search-tasks")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

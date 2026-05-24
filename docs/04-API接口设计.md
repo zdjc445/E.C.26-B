@@ -1281,3 +1281,49 @@ GET /api/ecommerce/status
 ```
 
 该接口只返回配置状态和缺失配置项名称，不返回密钥、Token 或签名参数。
+
+### 电商 API 调用诊断
+
+```http
+GET /api/ecommerce/diagnostics?query=吹风机&pageSize=3
+Authorization: Bearer <accessToken>
+```
+
+响应示例：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "query": "吹风机",
+    "checkedAt": "2026-05-24T12:00:00+08:00",
+    "providers": [
+      {
+        "platform": "拼多多",
+        "configured": true,
+        "success": true,
+        "status": "ok",
+        "itemCount": 3,
+        "durationMs": 420,
+        "sampleTitles": ["高速负离子吹风机"],
+        "errorMessage": "",
+        "missingConfig": []
+      },
+      {
+        "platform": "京东",
+        "configured": false,
+        "success": false,
+        "status": "not_configured",
+        "itemCount": 0,
+        "durationMs": 0,
+        "sampleTitles": [],
+        "errorMessage": "missing config: JD_API_ENABLED, JD_APP_KEY, JD_APP_SECRET",
+        "missingConfig": ["JD_API_ENABLED", "JD_APP_KEY", "JD_APP_SECRET"]
+      }
+    ]
+  }
+}
+```
+
+该接口会真实请求已配置的平台 API，建议只在联调或运维检查时使用；响应不包含密钥、Token、签名参数或原始请求体。

@@ -248,7 +248,7 @@ h2 {
 
 .top-bar {
   display: grid;
-  grid-template-columns: 1fr 150px 150px 120px;
+  grid-template-columns: 1fr 150px 150px 96px 120px;
   gap: 12px;
   align-items: end;
 }
@@ -423,6 +423,26 @@ h2 {
 .recommendation-box ul {
   margin: 8px 0 0;
   padding-left: 18px;
+}
+
+.diagnostic-grid {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.diagnostic-row {
+  display: grid;
+  grid-template-columns: 72px 64px 86px 72px;
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  font-size: 13px;
+}
+
+.diagnostic-row p {
+  grid-column: 1 / -1;
 }
 
 .comparison-box {

@@ -91,7 +91,7 @@ $env:JD_ACCESS_TOKEN="..."
 
 启动后可在 Web 演示端右上角“数据源”选择“官方 API”，或在 `POST /api/search-tasks` 中传入 `"sourceType": "official_api"`。未配置平台密钥时，后端会返回明确的 `official_api not configured` 错误，不会执行网页抓取。
 
-可先访问 `GET /api/ecommerce/status` 检查后端是否启用真实电商 API，以及拼多多/京东适配器是否已配置。该接口会返回缺失的环境变量名，方便联调，但不会返回任何密钥。
+可先访问 `GET /api/ecommerce/status` 检查后端是否启用真实电商 API，以及拼多多/京东适配器是否已配置。该接口会返回缺失的环境变量名，方便联调，但不会返回任何密钥。登录后也可以在 Web 演示端点击“诊断”，或直接请求 `GET /api/ecommerce/diagnostics?query=吹风机&pageSize=3`，让后端对已配置的平台发起一次小页量真实查询并返回每个平台的成功状态、耗时、商品数量和示例标题。
 
 拿到真实平台密钥后，可以运行一次 live smoke test 验证线上链路：
 

@@ -1,6 +1,8 @@
 package com.ec26b.shoppingagent.ecommerce;
 
 import com.ec26b.shoppingagent.api.ApiException;
+import com.ec26b.shoppingagent.api.ApiModels.EcommerceDiagnosticsPayload;
+import com.ec26b.shoppingagent.api.ApiModels.EcommerceProviderDiagnostic;
 import com.ec26b.shoppingagent.api.ApiModels.EcommerceProviderStatus;
 import com.ec26b.shoppingagent.api.ApiModels.EcommerceStatusPayload;
 import com.ec26b.shoppingagent.service.MockCatalog;
@@ -82,6 +84,75 @@ public class OfficialProductSourceProvider {
         return new EcommerceStatusPayload(properties.isEnabled(), hasConfiguredClient(), providers);
     }
 
+    public EcommerceDiagnosticsPayload diagnostics(String keyword, int pageSize) {
+        String normalizedKeyword = isBlank(keyword) ? "吹风机" : keyword.trim();
+        int safePageSize = Math.max(1, Math.min(5, pageSize));
+        ProductSourceQuery query = new ProductSourceQuery(
+                normalizedKeyword,
+                "",
+                "",
+                "",
+                Map.of(),
+                "comprehensive",
+                safePageSize
+        );
+        List<EcommerceProviderDiagnostic> providers = clients.stream()
+                .sorted(Comparator.comparing(OfficialApiClient::platform))
+                .map(client -> diagnose(client, query))
+                .toList();
+        return new EcommerceDiagnosticsPayload(normalizedKeyword, OffsetDateTime.now(), providers);
+    }
+
+    private EcommerceProviderDiagnostic diagnose(OfficialApiClient client, ProductSourceQuery query) {
+        EcommerceProviderStatus status = providerStatus(client);
+        if (!client.configured()) {
+            return new EcommerceProviderDiagnostic(
+                    client.platform(),
+                    false,
+                    false,
+                    "not_configured",
+                    0,
+                    0,
+                    List.of(),
+                    "missing config: " + String.join(", ", status.missingConfig()),
+                    status.missingConfig()
+            );
+        }
+        long started = System.nanoTime();
+        try {
+            List<OfficialProductResult> results = client.search(query);
+            results.forEach(this::remember);
+            long durationMs = Math.max(1, (System.nanoTime() - started) / 1_000_000);
+            return new EcommerceProviderDiagnostic(
+                    client.platform(),
+                    true,
+                    true,
+                    "ok",
+                    results.size(),
+                    durationMs,
+                    results.stream()
+                            .map(result -> result.platformProduct().title())
+                            .limit(3)
+                            .toList(),
+                    "",
+                    List.of()
+            );
+        } catch (RuntimeException ex) {
+            long durationMs = Math.max(1, (System.nanoTime() - started) / 1_000_000);
+            return new EcommerceProviderDiagnostic(
+                    client.platform(),
+                    true,
+                    false,
+                    "failed",
+                    0,
+                    durationMs,
+                    List.of(),
+                    truncate(ex.getMessage()),
+                    List.of()
+            );
+        }
+    }
+
     private EcommerceProviderStatus providerStatus(OfficialApiClient client) {
         if ("拼多多".equals(client.platform())) {
             List<String> required = List.of("ECOMMERCE_API_ENABLED", "PDD_API_ENABLED", "PDD_CLIENT_ID", "PDD_CLIENT_SECRET");
@@ -137,5 +208,12 @@ public class OfficialProductSourceProvider {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private String truncate(String value) {
+        if (isBlank(value)) {
+            return "official ecommerce api request failed";
+        }
+        return value.length() <= 240 ? value : value.substring(0, 240);
     }
 }

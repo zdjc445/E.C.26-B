@@ -122,6 +122,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/EcommerceStatusResponse'
 
+  /ecommerce/diagnostics:
+    get:
+      tags: [Ecommerce]
+      summary: 真实电商 API 调用诊断
+      description: 使用已配置的平台密钥发起一次小页量商品查询，返回每个平台是否调用成功、耗时、结果数量和示例标题，不返回任何密钥。
+      parameters:
+        - name: query
+          in: query
+          schema:
+            type: string
+            default: 吹风机
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 3
+            minimum: 1
+            maximum: 5
+      responses:
+        '200':
+          description: 当前电商 API 调用诊断
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EcommerceDiagnosticsResponse'
+
   /images:
     post:
       tags: [Images]
@@ -728,6 +754,44 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/EcommerceStatus'
+    EcommerceProviderDiagnostic:
+      type: object
+      required: [platform, configured, success, status, itemCount, durationMs, sampleTitles, errorMessage, missingConfig]
+      properties:
+        platform: { type: string, example: 拼多多 }
+        configured: { type: boolean }
+        success: { type: boolean }
+        status:
+          type: string
+          enum: [ok, failed, not_configured]
+        itemCount: { type: integer }
+        durationMs: { type: integer, format: int64 }
+        sampleTitles:
+          type: array
+          items: { type: string }
+        errorMessage:
+          type: string
+          description: 调用失败时的安全错误摘要，不包含密钥。
+        missingConfig:
+          type: array
+          items: { type: string }
+    EcommerceDiagnostics:
+      type: object
+      required: [query, checkedAt, providers]
+      properties:
+        query: { type: string }
+        checkedAt: { type: string, format: date-time }
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/EcommerceProviderDiagnostic'
+    EcommerceDiagnosticsResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/EcommerceDiagnostics'
     Image:
       type: object
       required: [imageId, imageUrl, contentType, createdAt]

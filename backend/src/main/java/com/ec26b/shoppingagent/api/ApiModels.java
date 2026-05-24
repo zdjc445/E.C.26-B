@@ -229,6 +229,26 @@ public final class ApiModels {
     ) {
     }
 
+    public record EcommerceProviderDiagnostic(
+            String platform,
+            boolean configured,
+            boolean success,
+            String status,
+            int itemCount,
+            long durationMs,
+            List<String> sampleTitles,
+            String errorMessage,
+            List<String> missingConfig
+    ) {
+    }
+
+    public record EcommerceDiagnosticsPayload(
+            String query,
+            OffsetDateTime checkedAt,
+            List<EcommerceProviderDiagnostic> providers
+    ) {
+    }
+
     public record CreateComparisonRequest(long searchTaskId, List<Long> platformProductIds) {
     }
 

@@ -96,6 +96,14 @@ class OfficialApiFlowTests {
 
         JsonNode review = getJson(token, "/api/platform-products/" + platformProductId + "/review-summary").get("data");
         assertThat(review.get("summary").asText()).contains("拼多多官方 API");
+
+        JsonNode diagnostics = getJson(token, "/api/ecommerce/diagnostics?query=吹风机&pageSize=2").get("data");
+        assertThat(diagnostics.get("query").asText()).isEqualTo("吹风机");
+        assertThat(diagnostic(diagnostics, "拼多多").get("success").asBoolean()).isTrue();
+        assertThat(diagnostic(diagnostics, "拼多多").get("itemCount").asInt()).isEqualTo(1);
+        assertThat(diagnostic(diagnostics, "拼多多").get("sampleTitles").get(0).asText()).contains("吹风机");
+        assertThat(diagnostic(diagnostics, "京东").get("success").asBoolean()).isFalse();
+        assertThat(diagnostic(diagnostics, "京东").get("status").asText()).isEqualTo("failed");
     }
 
     private static synchronized void ensureServer() {
@@ -168,6 +176,15 @@ class OfficialApiFlowTests {
             }
         }
         throw new AssertionError("Provider not found: " + platform);
+    }
+
+    private JsonNode diagnostic(JsonNode diagnostics, String platform) {
+        for (JsonNode provider : diagnostics.get("providers")) {
+            if (platform.equals(provider.get("platform").asText())) {
+                return provider;
+            }
+        }
+        throw new AssertionError("Diagnostic not found: " + platform);
     }
 
     private String registerAndToken() throws Exception {

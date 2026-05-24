@@ -2,6 +2,7 @@ const els = {
   apiBase: document.querySelector("#apiBase"),
   sourceType: document.querySelector("#sourceType"),
   ecommerceStatus: document.querySelector("#ecommerceStatus"),
+  ecommerceCheckBtn: document.querySelector("#ecommerceCheckBtn"),
   username: document.querySelector("#username"),
   password: document.querySelector("#password"),
   nickname: document.querySelector("#nickname"),
@@ -117,6 +118,14 @@ async function loadEcommerceStatus() {
     state.ecommerceStatus = null;
     renderEcommerceStatus("检测失败");
   }
+}
+
+async function checkEcommerceApi() {
+  const query = (els.refineText.value || "吹风机").trim();
+  const diagnostics = await api(`/ecommerce/diagnostics?query=${encodeURIComponent(query)}&pageSize=3`);
+  renderEcommerceDiagnostics(diagnostics);
+  const successCount = (diagnostics.providers || []).filter((provider) => provider.success).length;
+  toast(successCount ? `官方 API 诊断通过 ${successCount} 个平台` : "官方 API 诊断未通过");
 }
 
 async function createDemoImage() {
@@ -503,6 +512,40 @@ function renderRecommendation(data) {
   `;
 }
 
+function renderEcommerceDiagnostics(data) {
+  els.recommendationBox.classList.remove("empty");
+  els.recommendationBox.innerHTML = `
+    <strong>官方 API 诊断 · ${escapeHtml(data.query || "-")}</strong>
+    <div class="diagnostic-grid">
+      ${(data.providers || []).map((provider) => `
+        <div class="diagnostic-row">
+          <span>${escapeHtml(provider.platform)}</span>
+          <span class="tag">${provider.success ? "通过" : statusLabel(provider.status)}</span>
+          <span>${provider.itemCount || 0} 个商品</span>
+          <span>${provider.durationMs || 0} ms</span>
+          <p class="muted">${escapeHtml(diagnosticMessage(provider))}</p>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function statusLabel(status) {
+  if (status === "not_configured") return "未配置";
+  if (status === "failed") return "失败";
+  return status || "未知";
+}
+
+function diagnosticMessage(provider) {
+  if (provider.success) {
+    return (provider.sampleTitles || []).join("；") || "调用成功";
+  }
+  if ((provider.missingConfig || []).length) {
+    return `缺少配置：${provider.missingConfig.join("、")}`;
+  }
+  return provider.errorMessage || "调用失败";
+}
+
 function setSortActive(sortBy) {
   document.querySelectorAll(".sort-tabs button").forEach((button) => {
     button.classList.toggle("active", button.dataset.sort === sortBy);
@@ -552,6 +595,7 @@ els.analyzeBtn.addEventListener("click", () => guard(analyze));
 els.refineBtn.addEventListener("click", () => guard(() => refine()));
 els.compareBtn.addEventListener("click", () => guard(compare));
 els.recommendBtn.addEventListener("click", () => guard(recommend));
+els.ecommerceCheckBtn.addEventListener("click", () => guard(checkEcommerceApi));
 els.imageInput.addEventListener("change", (event) => {
   const [file] = event.target.files || [];
   if (file) {
