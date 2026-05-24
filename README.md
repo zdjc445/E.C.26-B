@@ -101,6 +101,12 @@ $env:ECOMMERCE_LIVE_QUERY="吹风机"
 mvn -Dtest=LiveOfficialApiSmokeTests test
 ```
 
+也可以直接使用仓库脚本，它会先检查至少一个真实平台是否配置好：
+
+```powershell
+.\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机"
+```
+
 该测试默认不会运行；只有显式设置 `ECOMMERCE_LIVE_TEST=true` 时才会调用真实平台 API。
 
 ## 文档导航
