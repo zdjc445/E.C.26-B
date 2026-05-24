@@ -48,6 +48,10 @@ class OfficialApiFlowTests {
         registry.add("app.ecommerce.pdd.base-url", () -> "http://127.0.0.1:" + port + "/api/router");
         registry.add("app.ecommerce.pdd.client-id", () -> "test-client");
         registry.add("app.ecommerce.pdd.client-secret", () -> "test-secret");
+        registry.add("app.ecommerce.jd.enabled", () -> "true");
+        registry.add("app.ecommerce.jd.base-url", () -> "http://127.0.0.1:" + port + "/jd-fail");
+        registry.add("app.ecommerce.jd.app-key", () -> "test-jd-key");
+        registry.add("app.ecommerce.jd.app-secret", () -> "test-jd-secret");
         registry.add("app.ecommerce.request-timeout-seconds", () -> "3");
     }
 
@@ -69,6 +73,7 @@ class OfficialApiFlowTests {
         JsonNode search = postJson(token, "/api/search-tasks", Map.of(
                 "query", "吹风机",
                 "sourceType", "official_api",
+                "platforms", java.util.List.of("pdd"),
                 "sortBy", "price_asc"
         )).get("data");
 
@@ -123,6 +128,13 @@ class OfficialApiFlowTests {
                         """.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().add("Content-Type", "application/json;charset=UTF-8");
                 exchange.sendResponseHeaders(200, response.length);
+                exchange.getResponseBody().write(response);
+                exchange.close();
+            });
+            server.createContext("/jd-fail", exchange -> {
+                byte[] response = "{\"error\":\"temporary jd failure\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "application/json;charset=UTF-8");
+                exchange.sendResponseHeaders(500, response.length);
                 exchange.getResponseBody().write(response);
                 exchange.close();
             });

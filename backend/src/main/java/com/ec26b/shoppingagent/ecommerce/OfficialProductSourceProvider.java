@@ -1,11 +1,13 @@
 package com.ec26b.shoppingagent.ecommerce;
 
+import com.ec26b.shoppingagent.api.ApiException;
 import com.ec26b.shoppingagent.api.ApiModels.EcommerceProviderStatus;
 import com.ec26b.shoppingagent.api.ApiModels.EcommerceStatusPayload;
 import com.ec26b.shoppingagent.service.MockCatalog;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -27,9 +29,24 @@ public class OfficialProductSourceProvider {
     }
 
     public List<MockCatalog.PlatformProductData> search(ProductSourceQuery query) {
-        return clients.stream()
-                .filter(OfficialApiClient::configured)
-                .flatMap(client -> client.search(query).stream())
+        List<String> failures = new ArrayList<>();
+        List<OfficialProductResult> results = new ArrayList<>();
+        int attempted = 0;
+        for (OfficialApiClient client : clients) {
+            if (!client.configured()) {
+                continue;
+            }
+            attempted++;
+            try {
+                results.addAll(client.search(query));
+            } catch (RuntimeException ex) {
+                failures.add(client.platform() + ": " + ex.getMessage());
+            }
+        }
+        if (attempted > 0 && results.isEmpty() && !failures.isEmpty()) {
+            throw ApiException.badRequest("official ecommerce api request failed: " + String.join("; ", failures));
+        }
+        return results.stream()
                 .peek(this::remember)
                 .map(OfficialProductResult::platformProduct)
                 .sorted(Comparator.comparing(MockCatalog.PlatformProductData::platform)

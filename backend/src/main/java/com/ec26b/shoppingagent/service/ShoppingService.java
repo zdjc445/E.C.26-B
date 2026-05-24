@@ -649,7 +649,7 @@ public class ShoppingService {
         }
         if (filters.containsKey("platforms")) {
             Object platforms = filters.get("platforms");
-            if (platforms instanceof List<?> list && !list.isEmpty() && list.stream().noneMatch(value -> item.platform().equals(String.valueOf(value)))) {
+            if (platforms instanceof List<?> list && !list.isEmpty() && list.stream().noneMatch(value -> samePlatform(item.platform(), String.valueOf(value)))) {
                 return false;
             }
         }
@@ -1065,6 +1065,21 @@ public class ShoppingService {
 
     private boolean contains(String value, String keyword) {
         return !isBlank(keyword) && normalize(value).contains(normalize(keyword));
+    }
+
+    private boolean samePlatform(String left, String right) {
+        return normalizePlatform(left).equals(normalizePlatform(right));
+    }
+
+    private String normalizePlatform(String value) {
+        String normalized = normalize(value).replace("平台", "").replace("商城", "");
+        return switch (normalized) {
+            case "pdd", "拼多多", "多多进宝" -> "pdd";
+            case "jd", "jingdong", "京东", "京东自营" -> "jd";
+            case "taobao", "淘宝" -> "taobao";
+            case "tmall", "天猫" -> "tmall";
+            default -> normalized;
+        };
     }
 
     private <T> List<T> safeList(List<T> value) {
