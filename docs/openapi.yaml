@@ -192,6 +192,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/RecognitionResponse'
 
+  /recognitions/{recognitionId}/attributes:
+    patch:
+      tags: [Recognitions]
+      summary: 修正识别属性
+      parameters:
+        - $ref: '#/components/parameters/RecognitionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRecognitionAttributesRequest'
+      responses:
+        '200':
+          description: 修正后的识别结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecognitionResponse'
+
   /search-tasks:
     post:
       tags: [SearchTasks]
@@ -236,6 +256,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SearchTaskResponse'
+
+  /search-tasks/{searchTaskId}/refine:
+    post:
+      tags: [SearchTasks]
+      summary: 自然语言追加筛选并刷新结果
+      parameters:
+        - $ref: '#/components/parameters/SearchTaskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefineSearchTaskRequest'
+      responses:
+        '200':
+          description: 追加筛选结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefineSearchTaskResponse'
 
   /products/{productId}:
     get:
@@ -524,10 +564,13 @@ components:
   schemas:
     SourceType:
       type: string
-      enum: [mock, official_api, crawler]
+      enum: [mock, official_api, sample_dataset]
     Platform:
       type: string
       enum: [jd, taobao, pdd, tmall, other]
+    SortMode:
+      type: string
+      enum: [comprehensive, price_asc, sales_desc, rating_desc]
     Money:
       type: object
       required: [amount, currency]
@@ -538,6 +581,28 @@ components:
         currency:
           type: string
           example: CNY
+    SuggestionCard:
+      type: object
+      required: [cardId, type, title, payload, priority]
+      properties:
+        cardId: { type: string }
+        type: { type: string, enum: [filter, sort, price_history, similar, official] }
+        title: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+        priority: { type: integer }
+    PlatformStats:
+      type: object
+      required: [platform, lowestPrice, averagePrice, productCount]
+      properties:
+        platform:
+          $ref: '#/components/schemas/Platform'
+        lowestPrice:
+          $ref: '#/components/schemas/Money'
+        averagePrice:
+          $ref: '#/components/schemas/Money'
+        productCount: { type: integer }
     ApiMeta:
       type: object
       required: [code, message]
@@ -652,6 +717,15 @@ components:
       required: [imageId]
       properties:
         imageId: { type: integer, format: int64 }
+    UpdateRecognitionAttributesRequest:
+      type: object
+      properties:
+        category: { type: string, nullable: true }
+        brand: { type: string, nullable: true }
+        model: { type: string, nullable: true }
+        attributes:
+          type: object
+          additionalProperties: true
     Recognition:
       type: object
       required: [recognitionId, imageId, category, keywords, confidence, status, createdAt]
@@ -667,7 +741,23 @@ components:
         attributes:
           type: object
           additionalProperties: true
+        suggestionCards:
+          type: array
+          items:
+            $ref: '#/components/schemas/SuggestionCard'
         confidence: { type: number, format: double }
+        aiProvider:
+          type: string
+          example: mock
+        fallbackUsed:
+          type: boolean
+          description: Ark/VLM/LLM 不可用时是否已回退到 mock 或规则解析。
+        explanation:
+          type: string
+          nullable: true
+        notices:
+          type: array
+          items: { type: string }
         status: { type: string, enum: [pending, succeeded, failed] }
         createdAt: { type: string, format: date-time }
     RecognitionResponse:
@@ -691,9 +781,11 @@ components:
         filters:
           type: object
           additionalProperties: true
+        sortBy:
+          $ref: '#/components/schemas/SortMode'
     SearchTaskItem:
       type: object
-      required: [platformProductId, productId, platform, title, price, matchScore, sourceType]
+      required: [platformProductId, productId, platform, title, price, matchScore, matchReasons, sourceType, tags, salesVolume, rating, isOfficial, isSelfOperated]
       properties:
         platformProductId: { type: integer, format: int64 }
         productId: { type: integer, format: int64 }
@@ -706,7 +798,18 @@ components:
         originalPrice:
           $ref: '#/components/schemas/Money'
         url: { type: string, nullable: true }
+        shopName: { type: string, nullable: true }
+        tags:
+          type: array
+          items: { type: string }
+        salesVolume: { type: integer }
+        rating: { type: number, format: double }
+        isOfficial: { type: boolean }
+        isSelfOperated: { type: boolean }
         matchScore: { type: number, format: double }
+        matchReasons:
+          type: array
+          items: { type: string }
         sourceType:
           $ref: '#/components/schemas/SourceType'
         updatedAt: { type: string, format: date-time, nullable: true }
@@ -719,12 +822,23 @@ components:
         query: { type: string, nullable: true }
         sourceType:
           $ref: '#/components/schemas/SourceType'
+        filters:
+          type: object
+          additionalProperties: true
         recognition:
           $ref: '#/components/schemas/Recognition'
         items:
           type: array
           items:
             $ref: '#/components/schemas/SearchTaskItem'
+        suggestionCards:
+          type: array
+          items:
+            $ref: '#/components/schemas/SuggestionCard'
+        platformStats:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformStats'
         createdAt: { type: string, format: date-time }
     SearchTaskResponse:
       allOf:
@@ -733,6 +847,49 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/SearchTask'
+    RefineSearchTaskRequest:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string }
+        sortBy:
+          $ref: '#/components/schemas/SortMode'
+    RefineSearchTaskPayload:
+      type: object
+      required: [searchTaskId, text, filters, items, suggestionCards, platformStats, aiProvider, fallbackUsed, notices]
+      properties:
+        searchTaskId: { type: integer, format: int64 }
+        text: { type: string }
+        filters:
+          type: object
+          additionalProperties: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchTaskItem'
+        suggestionCards:
+          type: array
+          items:
+            $ref: '#/components/schemas/SuggestionCard'
+        platformStats:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformStats'
+        aiProvider:
+          type: string
+          example: rule
+        fallbackUsed:
+          type: boolean
+        notices:
+          type: array
+          items: { type: string }
+    RefineSearchTaskResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/RefineSearchTaskPayload'
     SearchTaskSummary:
       type: object
       required: [searchTaskId, status, sourceType, resultCount, createdAt]
@@ -796,6 +953,13 @@ components:
           $ref: '#/components/schemas/Money'
         url: { type: string, nullable: true }
         shopName: { type: string, nullable: true }
+        tags:
+          type: array
+          items: { type: string }
+        salesVolume: { type: integer }
+        rating: { type: number, format: double, nullable: true }
+        isOfficial: { type: boolean }
+        isSelfOperated: { type: boolean }
         sourceType:
           $ref: '#/components/schemas/SourceType'
         updatedAt: { type: string, format: date-time, nullable: true }
@@ -866,6 +1030,8 @@ components:
         searchTaskId: { type: integer, format: int64 }
         platformProductIds:
           type: array
+          minItems: 2
+          maxItems: 4
           items: { type: integer, format: int64 }
     Comparison:
       type: object
@@ -876,6 +1042,10 @@ components:
         lowestPlatformProductId: { type: integer, format: int64, nullable: true }
         lowestPrice:
           $ref: '#/components/schemas/Money'
+        platformStats:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformStats'
         items:
           type: array
           items:
@@ -1045,4 +1215,3 @@ components:
         page: { type: integer }
         pageSize: { type: integer }
         total: { type: integer }
-

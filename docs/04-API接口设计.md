@@ -7,7 +7,7 @@
 接口设计遵循以下原则：
 
 - 职责清晰：图片、识别、搜索、比价、推荐、收藏分别由独立接口负责
-- 可扩展：MVP 使用 mock 商品数据，接口保留后续接入官方 API 或合规采集适配器的字段
+- 可扩展：MVP 使用 mock 商品数据，接口保留后续接入官方 API 或授权样例数据适配器的字段
 - 可追溯：搜索、比价和 Agent 推荐都通过 `searchTaskId` 串联
 - 数据可信：前端不直接传完整商品价格数据，后端根据 ID 从可信数据源读取
 - 用户隔离：用户私有数据全部从登录态解析当前用户，不允许请求体传入 `userId`
@@ -89,7 +89,26 @@ Authorization: Bearer <accessToken>
 | 金额 | `{ "amount": "199.00", "currency": "CNY" }` |
 | 时间 | ISO 8601 字符串，例如 `2026-05-20T18:00:00+08:00` |
 | 平台编码 | `jd`、`taobao`、`pdd`、`tmall`、`other` |
-| 数据来源 | `mock`、`official_api`、`crawler` |
+| 数据来源 | `mock`、`official_api`、`sample_dataset` |
+| 排序方式 | `comprehensive`、`price_asc`、`sales_desc`、`rating_desc` |
+
+### 建议卡片结构
+
+识别结果和搜索任务可以返回 `suggestionCards`，用于驱动前端下一步操作：
+
+```json
+{
+  "cardId": "low-price",
+  "type": "filter",
+  "title": "查看同款低价",
+  "payload": {
+    "sortBy": "price_asc"
+  },
+  "priority": 10
+}
+```
+
+`type` 可取 `filter`、`sort`、`price_history`、`similar`、`official`。前端点击后按 `payload` 创建搜索或调用追加筛选接口。
 
 ## 错误码
 
@@ -413,6 +432,10 @@ POST /api/recognitions
       "shape": "手持式"
     },
     "confidence": 0.86,
+    "aiProvider": "mock",
+    "fallbackUsed": false,
+    "explanation": "使用 mock/sample_dataset 识别样例生成结构化识物结果。",
+    "notices": [],
     "status": "succeeded",
     "createdAt": "2026-05-20T18:01:00+08:00"
   }
@@ -435,6 +458,28 @@ GET /api/recognitions/{recognitionId}
 响应字段与创建识别任务一致。
 
 可能错误码：`40101`、`40102`、`40402`。
+
+### 修正识别属性
+
+```http
+PATCH /api/recognitions/{recognitionId}/attributes
+```
+
+请求：
+
+```json
+{
+  "brand": "MockCare",
+  "attributes": {
+    "color": "深蓝色",
+    "shape": "手持式"
+  }
+}
+```
+
+响应字段与查询识别结果一致。后端只允许修正当前用户自己的识别记录，修正后会重新生成建议卡片。
+
+可能错误码：`40101`、`40102`、`40402`、`40000`。
 
 ## 搜索任务接口
 
@@ -463,7 +508,7 @@ POST /api/search-tasks
     },
     "brandWhitelist": [],
     "brandBlacklist": ["杂牌"],
-    "sortBy": "matchScore"
+    "sortBy": "comprehensive"
   }
 }
 ```
@@ -495,6 +540,7 @@ POST /api/search-tasks
         },
         "url": "https://example.com/item/5001",
         "matchScore": 0.91,
+        "matchReasons": ["同类目：吹风机", "满足价格上限 ¥500.00", "官方旗舰店渠道"],
         "sourceType": "mock",
         "updatedAt": "2026-05-20T18:02:00+08:00"
       }
@@ -508,7 +554,7 @@ POST /api/search-tasks
 
 - `recognitionId` 和 `query` 至少提供一个
 - MVP 阶段 `sourceType` 默认使用 `mock`
-- 后续接入官方 API 或合规采集时，保持响应结构不变，只调整数据适配层
+- 后续接入官方 API 或授权样例数据时，保持响应结构不变，只调整数据适配层
 
 可能错误码：`40101`、`40102`、`40402`、`42203`、`50003`。
 
@@ -547,6 +593,7 @@ GET /api/search-tasks/{searchTaskId}
           "currency": "CNY"
         },
         "matchScore": 0.91,
+        "matchReasons": ["同类目：吹风机", "官方旗舰店渠道"],
         "sourceType": "mock"
       }
     ],
@@ -588,6 +635,55 @@ GET /api/search-tasks?page=1&pageSize=20
 ```
 
 可能错误码：`40101`、`40102`。
+
+### 自然语言追加筛选
+
+```http
+POST /api/search-tasks/{searchTaskId}/refine
+```
+
+请求：
+
+```json
+{
+  "text": "1000 元以内的黑色款，要评价 4.8 分以上，只看官方",
+  "sortBy": "rating_desc"
+}
+```
+
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "searchTaskId": 3001,
+    "text": "1000 元以内的黑色款，要评价 4.8 分以上，只看官方",
+    "filters": {
+      "maxPrice": "1000.00",
+      "color": "黑色",
+      "minRating": 4.8,
+      "officialOnly": true,
+      "sortBy": "rating_desc"
+    },
+    "items": [],
+    "suggestionCards": [],
+    "platformStats": [],
+    "aiProvider": "rule",
+    "fallbackUsed": false,
+    "notices": []
+  }
+}
+```
+
+说明：
+
+- 默认使用规则解析兜底；配置 Ark 后优先由 LLM 输出结构化 filters，并对字段做白名单校验。
+- 解析失败时保留原搜索条件并返回空 `filters`，不让主链路中断。
+- `items` 使用增强商品卡片字段，包括 `tags`、`salesVolume`、`rating`、`isOfficial`、`isSelfOperated`、`matchReasons`。
+
+可能错误码：`40101`、`40102`、`40403`、`40000`。
 
 ## 商品接口
 
@@ -768,6 +864,20 @@ POST /api/comparisons
       "amount": "199.00",
       "currency": "CNY"
     },
+    "platformStats": [
+      {
+        "platform": "jd",
+        "lowestPrice": {
+          "amount": "199.00",
+          "currency": "CNY"
+        },
+        "averagePrice": {
+          "amount": "249.00",
+          "currency": "CNY"
+        },
+        "productCount": 2
+      }
+    ],
     "items": [
       {
         "platformProductId": 5001,
@@ -778,6 +888,7 @@ POST /api/comparisons
           "currency": "CNY"
         },
         "matchScore": 0.91,
+        "matchReasons": ["同类目：吹风机", "官方旗舰店渠道"],
         "sourceType": "mock",
         "updatedAt": "2026-05-20T18:02:00+08:00"
       }
@@ -1126,7 +1237,7 @@ DELETE /api/price-alerts/{priceAlertId}
   -> Agent 基于后端可信候选数据生成推荐
 ```
 
-后续可以增加 `official_api` 或 `crawler` 适配器，但不改变前端 API 契约：
+后续可以增加 `official_api` 或 `sample_dataset` 适配器，但不改变前端 API 契约：
 
 - `sourceType` 标记数据来源
 - 平台商品统一归一化为 `platformProduct` 结构

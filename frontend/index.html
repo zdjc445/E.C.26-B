@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f766e" />
+    <title>智能识物比价助手</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="side-panel">
+        <div class="brand-block">
+          <div class="brand-mark">AI</div>
+          <div>
+            <h1>智能识物比价助手</h1>
+            <p>拍照识物 · 建议卡片 · 自然语言筛选</p>
+          </div>
+        </div>
+
+        <section class="panel auth-panel">
+          <div class="section-title">
+            <span>账号</span>
+            <span id="authStatus" class="status-pill">未登录</span>
+          </div>
+          <label>
+            用户名
+            <input id="username" value="alice" autocomplete="username" />
+          </label>
+          <label>
+            密码
+            <input id="password" value="password123" type="password" autocomplete="current-password" />
+          </label>
+          <label>
+            昵称
+            <input id="nickname" value="Alice" />
+          </label>
+          <div class="button-row">
+            <button id="registerBtn" class="primary">注册</button>
+            <button id="loginBtn">登录</button>
+          </div>
+        </section>
+
+        <section class="panel capture-panel">
+          <div class="section-title">
+            <span>图片</span>
+            <button id="demoImageBtn" class="ghost">示例图</button>
+          </div>
+          <label class="upload-target">
+            <input id="imageInput" type="file" accept="image/*" capture="environment" />
+            <span>选择或拍摄商品图</span>
+          </label>
+          <div class="camera-actions">
+            <button id="startCameraBtn" type="button">打开相机</button>
+            <button id="capturePhotoBtn" type="button">拍照</button>
+            <button id="stopCameraBtn" type="button">关闭</button>
+          </div>
+          <video id="cameraVideo" playsinline muted></video>
+          <img id="previewImage" alt="商品预览" />
+          <button id="analyzeBtn" class="primary wide">上传并识别</button>
+        </section>
+
+        <section class="panel">
+          <div class="section-title">
+            <span>追加筛选</span>
+          </div>
+          <textarea id="refineText">1000 元以内的黑色款，要评价 4.8 分以上，只看官方</textarea>
+          <div class="sort-tabs" role="tablist" aria-label="排序">
+            <button data-sort="comprehensive" class="active">综合</button>
+            <button data-sort="price_asc">低价</button>
+            <button data-sort="sales_desc">销量</button>
+            <button data-sort="rating_desc">好评</button>
+          </div>
+          <button id="refineBtn" class="primary wide">刷新推荐</button>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <div class="top-bar">
+          <label>
+            API
+            <input id="apiBase" value="http://localhost:8080/api" />
+          </label>
+          <button id="loadMeBtn">当前用户</button>
+        </div>
+
+        <section class="result-band">
+          <div>
+            <h2>识别结果</h2>
+            <div id="recognitionBox" class="recognition-box empty">等待识别</div>
+          </div>
+          <div>
+            <h2>建议卡片</h2>
+            <div id="suggestionCards" class="suggestion-grid"></div>
+          </div>
+        </section>
+
+        <section class="stats-band">
+          <div>
+            <h2>平台统计</h2>
+            <div id="platformStats" class="stats-grid"></div>
+          </div>
+          <div>
+            <h2>推荐理由</h2>
+            <div id="recommendationBox" class="recommendation-box empty">等待生成</div>
+          </div>
+        </section>
+
+        <section class="toolbar">
+          <div>
+            <strong id="resultCount">0</strong>
+            <span>个候选商品</span>
+          </div>
+          <div class="button-row">
+            <button id="compareBtn">生成比价</button>
+            <button id="recommendBtn" class="primary">生成推荐</button>
+          </div>
+        </section>
+
+        <section class="comparison-section">
+          <h2>商品对比</h2>
+          <div id="comparisonBox" class="comparison-box empty">勾选 2-4 个商品后生成对比</div>
+        </section>
+
+        <section id="productGrid" class="product-grid"></section>
+      </section>
+    </main>
+
+    <div id="toast" class="toast"></div>
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

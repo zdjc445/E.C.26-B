@@ -54,6 +54,45 @@
       { "recordedAt": "2026-04-01T00:00:00+08:00", "price": { "amount": "139.00", "currency": "CNY" } },
       { "recordedAt": "2026-05-20T00:00:00+08:00", "price": { "amount": "129.00", "currency": "CNY" } }
     ]
+  },
+  {
+    "platformProductId": 5008,
+    "points": [
+      { "recordedAt": "2026-03-01T00:00:00+08:00", "price": { "amount": "289.00", "currency": "CNY" } },
+      { "recordedAt": "2026-04-01T00:00:00+08:00", "price": { "amount": "259.00", "currency": "CNY" } },
+      { "recordedAt": "2026-05-20T00:00:00+08:00", "price": { "amount": "239.00", "currency": "CNY" } }
+    ]
+  },
+  {
+    "platformProductId": 5009,
+    "points": [
+      { "recordedAt": "2026-03-01T00:00:00+08:00", "price": { "amount": "209.00", "currency": "CNY" } },
+      { "recordedAt": "2026-04-01T00:00:00+08:00", "price": { "amount": "189.00", "currency": "CNY" } },
+      { "recordedAt": "2026-05-20T00:00:00+08:00", "price": { "amount": "169.00", "currency": "CNY" } }
+    ]
+  },
+  {
+    "platformProductId": 5010,
+    "points": [
+      { "recordedAt": "2026-03-01T00:00:00+08:00", "price": { "amount": "369.00", "currency": "CNY" } },
+      { "recordedAt": "2026-04-01T00:00:00+08:00", "price": { "amount": "349.00", "currency": "CNY" } },
+      { "recordedAt": "2026-05-20T00:00:00+08:00", "price": { "amount": "329.00", "currency": "CNY" } }
+    ]
+  },
+  {
+    "platformProductId": 5013,
+    "points": [
+      { "recordedAt": "2026-03-01T00:00:00+08:00", "price": { "amount": "109.00", "currency": "CNY" } },
+      { "recordedAt": "2026-04-01T00:00:00+08:00", "price": { "amount": "99.00", "currency": "CNY" } },
+      { "recordedAt": "2026-05-20T00:00:00+08:00", "price": { "amount": "89.00", "currency": "CNY" } }
+    ]
+  },
+  {
+    "platformProductId": 5015,
+    "points": [
+      { "recordedAt": "2026-03-01T00:00:00+08:00", "price": { "amount": "159.00", "currency": "CNY" } },
+      { "recordedAt": "2026-04-01T00:00:00+08:00", "price": { "amount": "149.00", "currency": "CNY" } },
+      { "recordedAt": "2026-05-20T00:00:00+08:00", "price": { "amount": "139.00", "currency": "CNY" } }
+    ]
   }
 ]
-

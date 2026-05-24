@@ -61,6 +61,50 @@
     "riskTags": ["油皮夏天略厚"],
     "riskScore": 0.19,
     "summary": "敏感肌反馈较好，油皮用户建议少量使用。"
+  },
+  {
+    "platformProductId": 5008,
+    "rating": 4.8,
+    "reviewCount": 860,
+    "positiveTags": ["低噪音", "颜色耐看", "吹干快"],
+    "riskTags": ["赠品随机"],
+    "riskScore": 0.15,
+    "summary": "黑色款评价稳定，适合对噪音和外观有要求的宿舍场景。"
+  },
+  {
+    "platformProductId": 5009,
+    "rating": 4.5,
+    "reviewCount": 1960,
+    "positiveTags": ["价格低", "风力够用"],
+    "riskTags": ["包装简单", "售后响应一般"],
+    "riskScore": 0.31,
+    "summary": "低价优势明显，但售后与包装体验弱于官方渠道。"
+  },
+  {
+    "platformProductId": 5010,
+    "rating": 4.8,
+    "reviewCount": 1210,
+    "positiveTags": ["自营发货快", "降噪强", "续航长"],
+    "riskTags": ["价格略高"],
+    "riskScore": 0.14,
+    "summary": "自营渠道履约更稳，适合对售后和发货速度敏感的用户。"
+  },
+  {
+    "platformProductId": 5013,
+    "rating": 4.8,
+    "reviewCount": 910,
+    "positiveTags": ["保温稳定", "材质放心"],
+    "riskTags": ["杯身偏重"],
+    "riskScore": 0.17,
+    "summary": "自营款材质和售后确定性更高，便携性略受重量影响。"
+  },
+  {
+    "platformProductId": 5015,
+    "rating": 4.9,
+    "reviewCount": 720,
+    "positiveTags": ["温和", "吸收快", "敏感肌友好"],
+    "riskTags": ["干皮冬季需叠加面霜"],
+    "riskScore": 0.12,
+    "summary": "高评分自营护肤乳，敏感肌反馈稳定。"
   }
 ]
-
