@@ -126,7 +126,7 @@ paths:
     get:
       tags: [Ecommerce]
       summary: 真实电商 API 调用诊断
-      description: 使用已配置的平台密钥发起一次小页量商品查询，返回每个平台是否调用成功、耗时、结果数量和示例标题，不返回任何密钥。
+      description: 使用已配置的平台密钥发起一次小页量商品查询，返回每个平台是否调用成功、耗时、结果数量和示例标题；平台 HTTP 200 业务错误会被识别为 failed，不返回任何密钥。
       parameters:
         - name: query
           in: query

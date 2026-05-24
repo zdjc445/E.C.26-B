@@ -116,10 +116,15 @@ class OfficialApiFlowTests {
         assertThat(diagnostic(diagnostics, "拼多多").get("sampleTitles").get(0).asText()).contains("吹风机");
         assertThat(diagnostic(diagnostics, "京东").get("success").asBoolean()).isFalse();
         assertThat(diagnostic(diagnostics, "京东").get("status").asText()).isEqualTo("failed");
+        assertThat(diagnostic(diagnostics, "京东").get("errorMessage").asText()).contains("invalid app key");
 
         JsonNode pddDiagnostics = getJson(token, "/api/ecommerce/diagnostics?query=吹风机&pageSize=2&platforms=pdd").get("data");
         assertThat(pddDiagnostics.get("providers").size()).isEqualTo(1);
         assertThat(diagnostic(pddDiagnostics, "拼多多").get("success").asBoolean()).isTrue();
+
+        JsonNode pddBusinessError = getJson(token, "/api/ecommerce/diagnostics?query=业务错误&pageSize=2&platforms=pdd").get("data");
+        assertThat(diagnostic(pddBusinessError, "拼多多").get("success").asBoolean()).isFalse();
+        assertThat(diagnostic(pddBusinessError, "拼多多").get("errorMessage").asText()).contains("invalid client id");
     }
 
     private static synchronized void ensureServer() {
@@ -133,6 +138,21 @@ class OfficialApiFlowTests {
                 byte[] requestBytes = exchange.getRequestBody().readAllBytes();
                 lastRequest.clear();
                 lastRequest.putAll(parseForm(new String(requestBytes, StandardCharsets.UTF_8)));
+                if (lastRequest.getOrDefault("keyword", "").contains("业务错误")) {
+                    byte[] response = """
+                            {
+                              "error_response": {
+                                "error_code": 10019,
+                                "error_msg": "invalid client id or permission"
+                              }
+                            }
+                            """.getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().add("Content-Type", "application/json;charset=UTF-8");
+                    exchange.sendResponseHeaders(200, response.length);
+                    exchange.getResponseBody().write(response);
+                    exchange.close();
+                    return;
+                }
                 byte[] response = """
                         {
                           "goods_search_response": {
@@ -158,9 +178,16 @@ class OfficialApiFlowTests {
                 exchange.close();
             });
             server.createContext("/jd-fail", exchange -> {
-                byte[] response = "{\"error\":\"temporary jd failure\"}".getBytes(StandardCharsets.UTF_8);
+                byte[] response = """
+                        {
+                          "error_response": {
+                            "code": "40",
+                            "zh_desc": "invalid app key or permission"
+                          }
+                        }
+                        """.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().add("Content-Type", "application/json;charset=UTF-8");
-                exchange.sendResponseHeaders(500, response.length);
+                exchange.sendResponseHeaders(200, response.length);
                 exchange.getResponseBody().write(response);
                 exchange.close();
             });

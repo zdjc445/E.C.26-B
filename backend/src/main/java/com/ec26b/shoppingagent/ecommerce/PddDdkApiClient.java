@@ -66,6 +66,8 @@ public class PddDdkApiClient implements OfficialApiClient {
         String body = EcommerceHttp.postForm(httpClient, pdd.getBaseUrl(), params, Duration.ofSeconds(Math.max(1, properties.getRequestTimeoutSeconds())));
         try {
             return parseResponse(body, query);
+        } catch (RuntimeException ex) {
+            throw ex;
         } catch (Exception ex) {
             throw new IllegalStateException("PDD official API parse failed", ex);
         }
@@ -82,6 +84,7 @@ public class PddDdkApiClient implements OfficialApiClient {
 
     private List<OfficialProductResult> parseResponse(String body, ProductSourceQuery query) throws Exception {
         JsonNode root = objectMapper.readTree(body);
+        detectError(root);
         JsonNode list = root.path("goods_search_response").path("goods_list");
         if (!list.isArray()) {
             list = root.path("goods_list");
@@ -152,6 +155,36 @@ public class PddDdkApiClient implements OfficialApiClient {
             items.add(new OfficialProductResult(product, platformProduct, Optional.of(review)));
         }
         return items;
+    }
+
+    private void detectError(JsonNode root) {
+        JsonNode error = firstObject(root.path("error_response"), root.path("errorResponse"), root.path("error"));
+        if (error != null) {
+            throw new IllegalStateException("PDD official API error: " + errorMessage(error));
+        }
+        String code = text(root, "error_code", "errorCode", "code");
+        String message = text(root, "error_msg", "errorMsg", "message", "msg");
+        if (!isBlank(code) || !isBlank(message)) {
+            throw new IllegalStateException("PDD official API error: " + firstNonBlank(message, code));
+        }
+    }
+
+    private JsonNode firstObject(JsonNode... nodes) {
+        for (JsonNode node : nodes) {
+            if (node != null && node.isObject() && !node.isEmpty()) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    private String errorMessage(JsonNode error) {
+        String code = text(error, "error_code", "errorCode", "code", "sub_code", "subCode");
+        String message = firstNonBlank(text(error, "error_msg", "errorMsg", "sub_msg", "subMsg", "message", "msg"), code);
+        if (!isBlank(code) && !message.contains(code)) {
+            return code + " " + message;
+        }
+        return isBlank(message) ? "unknown error" : message;
     }
 
     private Money centsMoney(String value) {

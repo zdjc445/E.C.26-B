@@ -101,11 +101,14 @@ public class JdUnionApiClient implements OfficialApiClient {
 
     private List<OfficialProductResult> parseResponse(String body, ProductSourceQuery query) throws Exception {
         JsonNode root = objectMapper.readTree(body);
+        detectTopLevelError(root);
         JsonNode response = root.path("jd_union_open_goods_query_response");
+        detectResponseError(response);
         JsonNode result = response.path("result");
         if (result.isTextual()) {
             result = objectMapper.readTree(result.asText());
         }
+        detectResultError(result);
         JsonNode data = result.path("data");
         if (!data.isArray()) {
             data = response.path("data");
@@ -185,6 +188,54 @@ public class JdUnionApiClient implements OfficialApiClient {
             items.add(new OfficialProductResult(product, platformProduct, Optional.of(review)));
         }
         return items;
+    }
+
+    private void detectTopLevelError(JsonNode root) {
+        JsonNode error = firstObject(root.path("error_response"), root.path("errorResponse"), root.path("error"));
+        if (error != null) {
+            throw new IllegalStateException("JD official API error: " + errorMessage(error));
+        }
+    }
+
+    private void detectResponseError(JsonNode response) {
+        String code = text(response, "code");
+        if (!isBlank(code) && !"0".equals(code)) {
+            throw new IllegalStateException("JD official API error: " + responseMessage(response, code));
+        }
+    }
+
+    private void detectResultError(JsonNode result) {
+        String code = text(result, "code");
+        if (isBlank(code) || "0".equals(code) || "200".equals(code)) {
+            return;
+        }
+        throw new IllegalStateException("JD official API error: " + responseMessage(result, code));
+    }
+
+    private JsonNode firstObject(JsonNode... nodes) {
+        for (JsonNode node : nodes) {
+            if (node != null && node.isObject() && !node.isEmpty()) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    private String errorMessage(JsonNode error) {
+        String code = text(error, "code", "sub_code", "subCode");
+        String message = firstNonBlank(text(error, "zh_desc", "en_desc", "message", "msg", "error_msg", "errorMsg"), code);
+        if (!isBlank(code) && !message.contains(code)) {
+            return code + " " + message;
+        }
+        return isBlank(message) ? "unknown error" : message;
+    }
+
+    private String responseMessage(JsonNode node, String code) {
+        String message = firstNonBlank(text(node, "message", "msg", "zh_desc", "en_desc", "error_msg", "errorMsg"), code);
+        if (!isBlank(code) && !message.contains(code)) {
+            return code + " " + message;
+        }
+        return isBlank(message) ? "unknown error" : message;
     }
 
     private String imageUrl(JsonNode imageList) {
