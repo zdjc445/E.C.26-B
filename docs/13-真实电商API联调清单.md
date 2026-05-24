@@ -65,6 +65,8 @@ Authorization: Bearer <accessToken>
 
 ## 5. 跑 live smoke test
 
+脚本会严格校验平台启用开关，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`。`-Platforms` 仅支持 `pdd`、`jd`。
+
 ```powershell
 .\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd"
 ```
