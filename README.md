@@ -115,6 +115,8 @@ mvn -Dtest=LiveOfficialApiSmokeTests test
 
 该测试默认不会运行；只有显式设置 `ECOMMERCE_LIVE_TEST=true` 时才会调用真实平台 API。
 
+完整联调步骤见 [真实电商 API 联调清单](docs/13-真实电商API联调清单.md)。仓库根目录提供 `.env.example` 作为变量模板；真实 `.env` 已被 `.gitignore` 忽略。
+
 ## 文档导航
 
 - [文档目录](docs/README.md)
@@ -132,6 +134,7 @@ mvn -Dtest=LiveOfficialApiSmokeTests test
 - [项目分工说明](docs/10-项目分工说明.md)
 - [AI 使用总结](docs/11-AI使用总结.md)
 - [最终交付清单](docs/12-最终交付清单.md)
+- [真实电商 API 联调清单](docs/13-真实电商API联调清单.md)
 
 ## 工程结构
 
