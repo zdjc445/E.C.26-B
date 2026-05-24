@@ -1,6 +1,7 @@
 const els = {
   apiBase: document.querySelector("#apiBase"),
   sourceType: document.querySelector("#sourceType"),
+  ecommerceStatus: document.querySelector("#ecommerceStatus"),
   username: document.querySelector("#username"),
   password: document.querySelector("#password"),
   nickname: document.querySelector("#nickname"),
@@ -42,6 +43,7 @@ const state = {
   items: [],
   selectedIds: new Set(),
   cameraStream: null,
+  ecommerceStatus: null,
 };
 
 function apiBase() {
@@ -105,6 +107,16 @@ async function loadMe() {
   els.authStatus.textContent = user.nickname || user.username;
   els.authStatus.classList.add("ok");
   toast("当前登录：" + user.username);
+}
+
+async function loadEcommerceStatus() {
+  try {
+    state.ecommerceStatus = await api("/ecommerce/status");
+    renderEcommerceStatus();
+  } catch (error) {
+    state.ecommerceStatus = null;
+    renderEcommerceStatus("检测失败");
+  }
 }
 
 async function createDemoImage() {
@@ -359,6 +371,28 @@ function renderStats(stats) {
   });
 }
 
+function renderEcommerceStatus(fallbackText) {
+  els.ecommerceStatus.classList.remove("ok");
+  if (fallbackText) {
+    els.ecommerceStatus.textContent = fallbackText;
+    return;
+  }
+  if (!state.ecommerceStatus?.enabled) {
+    els.ecommerceStatus.textContent = "未启用";
+    return;
+  }
+  if (state.ecommerceStatus.hasConfiguredClient) {
+    const enabled = (state.ecommerceStatus.providers || [])
+      .filter((provider) => provider.configured)
+      .map((provider) => provider.platform)
+      .join(" / ");
+    els.ecommerceStatus.textContent = enabled || "已配置";
+    els.ecommerceStatus.classList.add("ok");
+    return;
+  }
+  els.ecommerceStatus.textContent = "未配置";
+}
+
 function renderProducts(items) {
   els.resultCount.textContent = String(items.length);
   els.productGrid.innerHTML = "";
@@ -517,12 +551,17 @@ els.sourceType.value = state.sourceType;
 els.sourceType.addEventListener("change", () => {
   state.sourceType = els.sourceType.value;
   localStorage.setItem("sourceType", state.sourceType);
+  if (state.sourceType === "official_api" && !state.ecommerceStatus?.hasConfiguredClient) {
+    toast("官方 API 尚未配置");
+  }
   state.searchTask = null;
   state.items = [];
   state.selectedIds.clear();
   renderProducts([]);
   renderStats([]);
 });
+
+els.apiBase.addEventListener("change", () => guard(loadEcommerceStatus));
 
 document.querySelectorAll(".sort-tabs button").forEach((button) => {
   button.addEventListener("click", () => {
@@ -538,3 +577,5 @@ if (state.accessToken) {
   els.authStatus.textContent = "已保存登录态";
   els.authStatus.classList.add("ok");
 }
+
+guard(loadEcommerceStatus);
