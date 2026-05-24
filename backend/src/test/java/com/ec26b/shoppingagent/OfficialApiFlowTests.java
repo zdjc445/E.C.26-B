@@ -33,6 +33,7 @@ class OfficialApiFlowTests {
     private static HttpServer server;
     private static int port;
     private static final Map<String, String> lastRequest = new ConcurrentHashMap<>();
+    private static final Map<String, String> lastJdRequest = new ConcurrentHashMap<>();
 
     @Autowired
     MockMvc mockMvc;
@@ -49,7 +50,7 @@ class OfficialApiFlowTests {
         registry.add("app.ecommerce.pdd.client-id", () -> "test-client");
         registry.add("app.ecommerce.pdd.client-secret", () -> "test-secret");
         registry.add("app.ecommerce.jd.enabled", () -> "true");
-        registry.add("app.ecommerce.jd.base-url", () -> "http://127.0.0.1:" + port + "/jd-fail");
+        registry.add("app.ecommerce.jd.base-url", () -> "http://127.0.0.1:" + port + "/jd/router");
         registry.add("app.ecommerce.jd.app-key", () -> "test-jd-key");
         registry.add("app.ecommerce.jd.app-secret", () -> "test-jd-secret");
         registry.add("app.ecommerce.request-timeout-seconds", () -> "3");
@@ -129,6 +130,44 @@ class OfficialApiFlowTests {
         assertThat(diagnostic(pddBusinessError, "拼多多").get("errorMessage").asText()).contains("invalid client id");
     }
 
+    @Test
+    void officialApiSearchMapsJdUnionResults() throws Exception {
+        String token = registerAndToken();
+
+        JsonNode search = postJson(token, "/api/search-tasks", Map.of(
+                "query", "京东成功耳机",
+                "sourceType", "official_api",
+                "platforms", java.util.List.of("jd"),
+                "sortBy", "rating_desc"
+        )).get("data");
+
+        JsonNode first = search.get("items").get(0);
+        assertThat(first.get("platform").asText()).isEqualTo("京东");
+        assertThat(first.get("sourceType").asText()).isEqualTo("official_api");
+        assertThat(first.get("title").asText()).contains("降噪耳机");
+        assertThat(first.get("price").get("amount").asText()).isEqualTo("299.00");
+        assertThat(first.get("originalPrice").get("amount").asText()).isEqualTo("399.00");
+        assertThat(first.get("url").asText()).isEqualTo("https://item.jd.com/987654321.html");
+        assertThat(first.get("imageUrl").asText()).isEqualTo("https://img.example.test/jd-headphone.jpg");
+        assertThat(first.get("shopName").asText()).contains("京东自营");
+        assertThat(first.get("isSelfOperated").asBoolean()).isTrue();
+        assertThat(first.get("rating").asDouble()).isEqualTo(4.9);
+
+        assertThat(lastJdRequest).containsEntry("method", "jd.union.open.goods.query");
+        assertThat(lastJdRequest).containsEntry("app_key", "test-jd-key");
+        assertThat(lastJdRequest.get("sign")).isNotBlank();
+        JsonNode paramJson = objectMapper.readTree(lastJdRequest.get("param_json"));
+        assertThat(paramJson.path("goodsReqDTO").path("keyword").asText()).isEqualTo("京东成功耳机");
+        assertThat(paramJson.path("goodsReqDTO").path("sortName").asText()).isEqualTo("goodCommentsShare");
+        assertThat(paramJson.path("goodsReqDTO").path("sort").asText()).isEqualTo("desc");
+
+        JsonNode diagnostics = getJson(token, "/api/ecommerce/diagnostics?query=京东成功耳机&pageSize=2&platforms=jd").get("data");
+        assertThat(diagnostics.get("providers").size()).isEqualTo(1);
+        assertThat(diagnostic(diagnostics, "京东").get("success").asBoolean()).isTrue();
+        assertThat(diagnostic(diagnostics, "京东").get("itemCount").asInt()).isEqualTo(1);
+        assertThat(diagnostic(diagnostics, "京东").get("sampleTitles").get(0).asText()).contains("降噪耳机");
+    }
+
     private static synchronized void ensureServer() {
         if (server != null) {
             return;
@@ -179,15 +218,31 @@ class OfficialApiFlowTests {
                 exchange.getResponseBody().write(response);
                 exchange.close();
             });
-            server.createContext("/jd-fail", exchange -> {
-                byte[] response = """
-                        {
-                          "error_response": {
-                            "code": "40",
-                            "zh_desc": "invalid app key or permission"
-                          }
-                        }
-                        """.getBytes(StandardCharsets.UTF_8);
+            server.createContext("/jd/router", exchange -> {
+                byte[] requestBytes = exchange.getRequestBody().readAllBytes();
+                lastJdRequest.clear();
+                lastJdRequest.putAll(parseForm(new String(requestBytes, StandardCharsets.UTF_8)));
+                String paramJson = lastJdRequest.getOrDefault("param_json", "");
+                byte[] response;
+                if (paramJson.contains("京东成功")) {
+                    response = """
+                            {
+                              "jd_union_open_goods_query_response": {
+                                "code": "0",
+                                "result": "{\\"code\\":200,\\"data\\":[{\\"skuId\\":987654321,\\"skuName\\":\\"京东官方降噪耳机 Pro\\",\\"imageInfo\\":{\\"imageList\\":[{\\"url\\":\\"//img.example.test/jd-headphone.jpg\\"}]},\\"priceInfo\\":{\\"price\\":\\"299.00\\",\\"originPrice\\":\\"399.00\\"},\\"shopInfo\\":{\\"shopName\\":\\"京东自营旗舰店\\"},\\"inOrderCount30Days\\":1234,\\"goodCommentsShare\\":\\"98\\",\\"isJdSale\\":1,\\"materialUrl\\":\\"https://item.jd.com/987654321.html\\"}]}"
+                              }
+                            }
+                            """.getBytes(StandardCharsets.UTF_8);
+                } else {
+                    response = """
+                            {
+                              "error_response": {
+                                "code": "40",
+                                "zh_desc": "invalid app key or permission"
+                              }
+                            }
+                            """.getBytes(StandardCharsets.UTF_8);
+                }
                 exchange.getResponseHeaders().add("Content-Type", "application/json;charset=UTF-8");
                 exchange.sendResponseHeaders(200, response.length);
                 exchange.getResponseBody().write(response);
