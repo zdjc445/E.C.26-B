@@ -1,5 +1,6 @@
 const els = {
   apiBase: document.querySelector("#apiBase"),
+  sourceType: document.querySelector("#sourceType"),
   username: document.querySelector("#username"),
   password: document.querySelector("#password"),
   nickname: document.querySelector("#nickname"),
@@ -32,6 +33,7 @@ const els = {
 const state = {
   accessToken: localStorage.getItem("accessToken") || "",
   refreshToken: localStorage.getItem("refreshToken") || "",
+  sourceType: localStorage.getItem("sourceType") || "mock",
   file: null,
   image: null,
   recognition: null,
@@ -196,7 +198,7 @@ async function analyze() {
     body: {
       recognitionId: state.recognition.recognitionId,
       query: els.refineText.value,
-      sourceType: "mock",
+      sourceType: state.sourceType,
       sortBy: state.sortBy,
     },
   });
@@ -509,6 +511,17 @@ els.imageInput.addEventListener("change", (event) => {
     state.file = file;
     showPreview(file);
   }
+});
+
+els.sourceType.value = state.sourceType;
+els.sourceType.addEventListener("change", () => {
+  state.sourceType = els.sourceType.value;
+  localStorage.setItem("sourceType", state.sourceType);
+  state.searchTask = null;
+  state.items = [];
+  state.selectedIds.clear();
+  renderProducts([]);
+  renderStats([]);
 });
 
 document.querySelectorAll(".sort-tabs button").forEach((button) => {

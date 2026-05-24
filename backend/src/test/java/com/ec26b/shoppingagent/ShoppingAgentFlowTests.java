@@ -113,6 +113,26 @@ class ShoppingAgentFlowTests {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void officialApiFailsClearlyWhenNoProviderIsConfigured() throws Exception {
+        JsonNode statusPayload = getJson(null, "/api/ecommerce/status").get("data");
+        assertThat(statusPayload.get("enabled").asBoolean()).isFalse();
+        assertThat(statusPayload.get("hasConfiguredClient").asBoolean()).isFalse();
+
+        String token = registerAndToken();
+        String content = mockMvc.perform(post("/api/search-tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "query", "吹风机",
+                                "sourceType", "official_api"
+                        )))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString();
+        JsonNode response = objectMapper.readTree(content);
+        assertThat(response.get("message").asText()).contains("official_api not configured");
+    }
+
     private String registerAndToken() throws Exception {
         JsonNode response = postJson(null, "/api/auth/register", Map.of(
                 "username", "u" + UUID.randomUUID().toString().replace("-", "").substring(0, 12),
@@ -135,6 +155,17 @@ class ShoppingAgentFlowTests {
         var request = post(path)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(body));
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        String content = mockMvc.perform(request)
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(content);
+    }
+
+    private JsonNode getJson(String token, String path) throws Exception {
+        var request = get(path);
         if (token != null) {
             request.header("Authorization", "Bearer " + token);
         }

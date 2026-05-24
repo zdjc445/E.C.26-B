@@ -4,10 +4,10 @@
 
 ## 当前可运行能力
 
-- Web/PWA 演示端：登录、示例图/拍照上传、识别结果、建议卡片、推荐列表、追加筛选、比价、推荐理由
-- Spring Boot 后端：JWT 鉴权、统一响应、全局异常处理、Ark 可选 AI Provider、mock 商品源、LLM refine + 规则兜底
+- Web/PWA 演示端：登录、示例图/拍照上传、识别结果、数据源切换、建议卡片、推荐列表、追加筛选、比价、推荐理由
+- Spring Boot 后端：JWT 鉴权、统一响应、全局异常处理、Ark 可选 AI Provider、mock 商品源、拼多多/京东官方 API 适配器、LLM refine + 规则兜底
 - 契约资产：OpenAPI、Flyway schema、mock 商品/价格/评价数据
-- 合规边界：不实现非授权数据抓取；MVP 使用 `mock` / `sample_dataset`，真实平台仅保留 `official_api` 扩展口
+- 合规边界：不实现非授权数据抓取；默认使用 `mock` / `sample_dataset`，真实平台通过 `official_api` 调用授权开放平台 API
 
 ## 本地启动
 
@@ -69,6 +69,29 @@ $env:ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
 ```
 
 Ark 未配置、返回非 JSON 或调用失败时，图片识别会回退到 mock，追加筛选会回退到规则解析，接口响应会带上 provider/fallback 状态。
+
+## 真实电商 API 配置
+
+默认仍使用 mock 数据源。启用真实平台数据时，后端通过 `official_api` 数据源调用已授权的开放平台 API，当前已实现拼多多多多进宝商品搜索和京东联盟商品查询适配器。密钥只通过环境变量配置：
+
+```powershell
+$env:ECOMMERCE_API_ENABLED="true"
+
+# 拼多多开放平台 / 多多进宝
+$env:PDD_API_ENABLED="true"
+$env:PDD_CLIENT_ID="..."
+$env:PDD_CLIENT_SECRET="..."
+
+# 京东宙斯 / 京东联盟
+$env:JD_API_ENABLED="true"
+$env:JD_APP_KEY="..."
+$env:JD_APP_SECRET="..."
+$env:JD_ACCESS_TOKEN="..."
+```
+
+启动后可在 Web 演示端右上角“数据源”选择“官方 API”，或在 `POST /api/search-tasks` 中传入 `"sourceType": "official_api"`。未配置平台密钥时，后端会返回明确的 `official_api not configured` 错误，不会执行网页抓取。
+
+可先访问 `GET /api/ecommerce/status` 检查后端是否启用真实电商 API，以及拼多多/京东适配器是否已配置。该接口不会返回任何密钥。
 
 ## 文档导航
 

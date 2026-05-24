@@ -17,6 +17,7 @@ tags:
   - name: AgentRecommendations
   - name: Favorites
   - name: PriceAlerts
+  - name: Ecommerce
 
 paths:
   /auth/register:
@@ -106,6 +107,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
+
+  /ecommerce/status:
+    get:
+      tags: [Ecommerce]
+      security: []
+      summary: 真实电商 API 配置状态
+      description: 返回服务端是否启用 official_api 以及各平台适配器是否已配置，不返回任何密钥。
+      responses:
+        '200':
+          description: 当前电商 API 配置状态
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EcommerceStatusResponse'
 
   /images:
     post:
@@ -564,6 +579,7 @@ components:
   schemas:
     SourceType:
       type: string
+      description: mock 为离线演示数据，official_api 为服务端调用授权电商开放平台 API 后归一化的数据。
       enum: [mock, official_api, sample_dataset]
     Platform:
       type: string
@@ -680,6 +696,29 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/User'
+    EcommerceProviderStatus:
+      type: object
+      required: [platform, configured]
+      properties:
+        platform: { type: string, example: 拼多多 }
+        configured: { type: boolean }
+    EcommerceStatus:
+      type: object
+      required: [enabled, hasConfiguredClient, providers]
+      properties:
+        enabled: { type: boolean }
+        hasConfiguredClient: { type: boolean }
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/EcommerceProviderStatus'
+    EcommerceStatusResponse:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/EcommerceStatus'
     Image:
       type: object
       required: [imageId, imageUrl, contentType, createdAt]

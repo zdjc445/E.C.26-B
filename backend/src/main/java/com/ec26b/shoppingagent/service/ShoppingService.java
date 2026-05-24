@@ -7,6 +7,8 @@ import com.ec26b.shoppingagent.ai.AiRefineProvider;
 import com.ec26b.shoppingagent.ai.ImagePayload;
 import com.ec26b.shoppingagent.ai.RecognitionResult;
 import com.ec26b.shoppingagent.ai.RefineParseResult;
+import com.ec26b.shoppingagent.ecommerce.OfficialProductSourceProvider;
+import com.ec26b.shoppingagent.ecommerce.ProductSourceQuery;
 import com.ec26b.shoppingagent.persistence.ShoppingStateRepository;
 import com.ec26b.shoppingagent.security.JwtService;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +32,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -42,6 +45,7 @@ public class ShoppingService {
     private static final Set<String> SORT_MODES = Set.of("comprehensive", "price_asc", "sales_desc", "rating_desc");
 
     private final MockCatalog catalog;
+    private final OfficialProductSourceProvider officialProductSource;
     private final AiRecognitionProvider recognitionProvider;
     private final AiRefineProvider refineProvider;
     private final ShoppingStateRepository stateRepository;
@@ -72,6 +76,7 @@ public class ShoppingService {
 
     public ShoppingService(
             MockCatalog catalog,
+            OfficialProductSourceProvider officialProductSource,
             AiRecognitionProvider recognitionProvider,
             AiRefineProvider refineProvider,
             ShoppingStateRepository stateRepository,
@@ -80,6 +85,7 @@ public class ShoppingService {
             @Value("${app.upload-dir}") String uploadDir
     ) {
         this.catalog = catalog;
+        this.officialProductSource = officialProductSource;
         this.recognitionProvider = recognitionProvider;
         this.refineProvider = refineProvider;
         this.stateRepository = stateRepository;
@@ -331,21 +337,23 @@ public class ShoppingService {
     }
 
     public ProductDto product(long productId) {
-        return catalog.toProductDto(catalog.product(productId));
+        return toProductDto(productData(productId));
     }
 
     public PlatformProductDto platformProduct(long platformProductId) {
-        return catalog.toPlatformProductDto(catalog.platformProduct(platformProductId));
+        return toPlatformProductDto(platformProductData(platformProductId));
     }
 
     public ReviewSummaryDto reviewSummary(long platformProductId) {
-        catalog.platformProduct(platformProductId);
-        return catalog.toReviewSummaryDto(platformProductId);
+        platformProductData(platformProductId);
+        return reviewSummaryData(platformProductId)
+                .map(this::toReviewSummaryDto)
+                .orElseGet(() -> new ReviewSummaryDto(platformProductId, null, 0, List.of(), List.of(), 0.5, "暂无评价摘要，已使用中性风险兜底。"));
     }
 
     public PriceHistoryDto priceHistory(long platformProductId, int days) {
-        MockCatalog.PlatformProductData product = catalog.platformProduct(platformProductId);
-        List<MockCatalog.PricePointData> points = catalog.priceHistory(platformProductId)
+        MockCatalog.PlatformProductData product = platformProductData(platformProductId);
+        List<MockCatalog.PricePointData> points = priceHistoryData(platformProductId)
                 .map(MockCatalog.PriceHistoryData::points)
                 .orElse(List.of()).stream()
                 .sorted(Comparator.comparing(MockCatalog.PricePointData::recordedAt))
@@ -357,13 +365,13 @@ public class ShoppingService {
                 .map(point -> new PricePointDto(point.recordedAt(), point.price()))
                 .toList();
         Money current = points.get(points.size() - 1).price();
-        Money lowest = points.stream().min(Comparator.comparing(point -> catalog.amount(point.price()))).orElseThrow().price();
-        Money highest = points.stream().max(Comparator.comparing(point -> catalog.amount(point.price()))).orElseThrow().price();
-        BigDecimal currentAmount = catalog.amount(current);
+        Money lowest = points.stream().min(Comparator.comparing(point -> amount(point.price()))).orElseThrow().price();
+        Money highest = points.stream().max(Comparator.comparing(point -> amount(point.price()))).orElseThrow().price();
+        BigDecimal currentAmount = amount(current);
         String trend = "normal";
-        if (currentAmount.compareTo(catalog.amount(lowest).multiply(new BigDecimal("1.05"))) <= 0) {
+        if (currentAmount.compareTo(amount(lowest).multiply(new BigDecimal("1.05"))) <= 0) {
             trend = "low";
-        } else if (currentAmount.compareTo(catalog.amount(highest).multiply(new BigDecimal("0.95"))) >= 0) {
+        } else if (currentAmount.compareTo(amount(highest).multiply(new BigDecimal("0.95"))) >= 0) {
             trend = "high";
         }
         return new PriceHistoryDto(platformProductId, days, current, lowest, highest, trend, pointDtos);
@@ -385,7 +393,7 @@ public class ShoppingService {
             throw ApiException.notFound(40405, "platform product not found in search task");
         }
         SearchTaskItemDto lowest = items.stream()
-                .min(Comparator.comparing(item -> catalog.amount(item.price())))
+                .min(Comparator.comparing(item -> amount(item.price())))
                 .orElseThrow();
         long id = comparisonIds.getAndIncrement();
         ComparisonDto dto = new ComparisonDto(id, task.id, lowest.platformProductId(), lowest.price(), platformStats(items), items, OffsetDateTime.now());
@@ -407,8 +415,8 @@ public class ShoppingService {
                 .orElseThrow();
         ReviewSummaryDto review = reviewSummary(best.platformProductId());
         PriceHistoryDto history = priceHistory(best.platformProductId(), 90);
-        BigDecimal current = catalog.amount(best.price());
-        BigDecimal historicalLow = catalog.amount(history.lowestPrice());
+        BigDecimal current = amount(best.price());
+        BigDecimal historicalLow = amount(history.lowestPrice());
         String suggestion = review.riskScore() > 0.35 ? "avoid" : current.compareTo(historicalLow.multiply(new BigDecimal("1.12"))) > 0 ? "wait" : "buy";
         List<String> reasons = new ArrayList<>();
         reasons.add("匹配分 " + formatDouble(best.matchScore()) + "，与当前识别或搜索意图接近。");
@@ -455,7 +463,7 @@ public class ShoppingService {
 
     public FavoriteDto createFavorite(long userId, CreateFavoriteRequest request) {
         requireUser(userId);
-        MockCatalog.PlatformProductData product = catalog.platformProduct(request.platformProductId());
+        MockCatalog.PlatformProductData product = platformProductData(request.platformProductId());
         boolean exists = favorites.values().stream()
                 .anyMatch(item -> item.userId == userId && item.platformProductId == product.platformProductId());
         if (exists) {
@@ -489,7 +497,7 @@ public class ShoppingService {
 
     public PriceAlertDto createPriceAlert(long userId, CreatePriceAlertRequest request) {
         requireUser(userId);
-        MockCatalog.PlatformProductData product = catalog.platformProduct(request.platformProductId());
+        MockCatalog.PlatformProductData product = platformProductData(request.platformProductId());
         boolean exists = priceAlerts.values().stream()
                 .anyMatch(item -> item.userId == userId && item.platformProductId == product.platformProductId());
         if (exists) {
@@ -543,9 +551,28 @@ public class ShoppingService {
         stateRepository.deletePriceAlert(userId, priceAlertId);
     }
 
+    private List<MockCatalog.PlatformProductData> sourceCandidates(String query, RecognitionRecord recognition, Map<String, Object> filters, String sourceType) {
+        if ("official_api".equals(sourceType)) {
+            if (!officialProductSource.hasConfiguredClient()) {
+                throw ApiException.badRequest("official_api not configured; enable PDD_API_ENABLED or JD_API_ENABLED and provide platform credentials");
+            }
+            ProductSourceQuery sourceQuery = new ProductSourceQuery(
+                    productSearchKeyword(query, recognition),
+                    recognition == null ? stringFilter(filters, "category") : firstNonBlank(recognition.category, stringFilter(filters, "category")),
+                    recognition == null ? stringFilter(filters, "brand") : firstNonBlank(recognition.brand, stringFilter(filters, "brand")),
+                    recognition == null ? null : recognition.model,
+                    filters == null ? Map.of() : filters,
+                    filters == null ? "comprehensive" : String.valueOf(filters.getOrDefault("sortBy", "comprehensive")),
+                    30
+            );
+            return officialProductSource.search(sourceQuery);
+        }
+        return catalog.platformProducts();
+    }
+
     private List<SearchTaskItemDto> buildItems(String query, RecognitionRecord recognition, Map<String, Object> filters, String sourceType) {
-        List<ScoredProduct> scored = catalog.platformProducts().stream()
-                .filter(item -> sourceType.equals(catalog.normalizeSourceType(item.sourceType())))
+        List<ScoredProduct> scored = sourceCandidates(query, recognition, filters, sourceType).stream()
+                .filter(item -> sourceType.equals(normalizeSourceType(item.sourceType())))
                 .filter(item -> matchesFilters(item, filters))
                 .map(item -> new ScoredProduct(item, matchScore(item, query, recognition)))
                 .filter(item -> recognition == null || item.score >= 0.55 || contains(item.product().title(), recognition.category))
@@ -556,8 +583,33 @@ public class ShoppingService {
                 .toList();
     }
 
+    private String productSearchKeyword(String query, RecognitionRecord recognition) {
+        List<String> parts = new ArrayList<>();
+        if (recognition != null) {
+            parts.add(recognition.category);
+            parts.add(recognition.brand);
+            parts.add(recognition.model);
+            parts.addAll(recognition.keywords.stream().limit(3).toList());
+        }
+        parts.add(query);
+        String keyword = parts.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .collect(Collectors.joining(" "))
+                .trim();
+        return keyword.isBlank() ? "商品" : keyword;
+    }
+
+    private String stringFilter(Map<String, Object> filters, String key) {
+        if (filters == null || !filters.containsKey(key) || filters.get(key) == null) {
+            return null;
+        }
+        String value = String.valueOf(filters.get(key)).trim();
+        return value.isBlank() ? null : value;
+    }
+
     private double matchScore(MockCatalog.PlatformProductData item, String query, RecognitionRecord recognition) {
-        MockCatalog.ProductData product = catalog.product(item.productId());
+        MockCatalog.ProductData product = productData(item.productId());
         String text = normalize((query == null ? "" : query) + " " + item.title() + " " + product.name() + " " + item.tags());
         double score = 0.35;
         if (recognition != null) {
@@ -603,13 +655,13 @@ public class ShoppingService {
         }
         if (filters.containsKey("maxPrice")) {
             BigDecimal maxPrice = number(filters.get("maxPrice"));
-            if (maxPrice != null && catalog.amount(item.price()).compareTo(maxPrice) > 0) {
+            if (maxPrice != null && amount(item.price()).compareTo(maxPrice) > 0) {
                 return false;
             }
         }
         if (filters.containsKey("minPrice")) {
             BigDecimal minPrice = number(filters.get("minPrice"));
-            if (minPrice != null && catalog.amount(item.price()).compareTo(minPrice) < 0) {
+            if (minPrice != null && amount(item.price()).compareTo(minPrice) < 0) {
                 return false;
             }
         }
@@ -627,12 +679,12 @@ public class ShoppingService {
         }
         if (filters.containsKey("color")) {
             String color = String.valueOf(filters.get("color"));
-            String haystack = normalize(item.title() + " " + item.tags() + " " + catalog.product(item.productId()).attributes());
+            String haystack = normalize(item.title() + " " + item.tags() + " " + productData(item.productId()).attributes());
             if (!contains(haystack, color)) {
                 return false;
             }
         }
-        MockCatalog.ProductData product = catalog.product(item.productId());
+        MockCatalog.ProductData product = productData(item.productId());
         if (filters.containsKey("brand") && !contains(product.brand() + " " + item.title(), String.valueOf(filters.get("brand")))) {
             return false;
         }
@@ -648,9 +700,9 @@ public class ShoppingService {
                 .comparingDouble(ScoredProduct::score).reversed()
                 .thenComparing(Comparator.comparing((ScoredProduct item) -> item.product().isOfficial()).reversed())
                 .thenComparing(Comparator.comparingDouble((ScoredProduct item) -> item.product().rating()).reversed())
-                .thenComparing(item -> catalog.amount(item.product().price()));
+                .thenComparing(item -> amount(item.product().price()));
         return switch (normalized) {
-            case "price_asc" -> Comparator.comparing(item -> catalog.amount(item.product().price()));
+            case "price_asc" -> Comparator.comparing(item -> amount(item.product().price()));
             case "sales_desc" -> Comparator.comparingInt((ScoredProduct item) -> item.product().salesVolume()).reversed()
                     .thenComparing(comprehensive);
             case "rating_desc" -> Comparator.comparingDouble((ScoredProduct item) -> item.product().rating()).reversed()
@@ -665,8 +717,8 @@ public class ShoppingService {
                 .entrySet().stream()
                 .map(entry -> {
                     List<SearchTaskItemDto> group = entry.getValue();
-                    BigDecimal min = group.stream().map(item -> catalog.amount(item.price())).min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
-                    BigDecimal sum = group.stream().map(item -> catalog.amount(item.price())).reduce(BigDecimal.ZERO, BigDecimal::add);
+                    BigDecimal min = group.stream().map(item -> amount(item.price())).min(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
+                    BigDecimal sum = group.stream().map(item -> amount(item.price())).reduce(BigDecimal.ZERO, BigDecimal::add);
                     BigDecimal avg = group.isEmpty() ? BigDecimal.ZERO : sum.divide(BigDecimal.valueOf(group.size()), 2, RoundingMode.HALF_UP);
                     return new PlatformStats(entry.getKey(), money(min), money(avg), group.size());
                 })
@@ -715,8 +767,73 @@ public class ShoppingService {
                 product.isSelfOperated(),
                 round(matchScore),
                 matchReasons(product, recognition, filters),
-                catalog.normalizeSourceType(product.sourceType()),
+                normalizeSourceType(product.sourceType()),
                 OffsetDateTime.now()
+        );
+    }
+
+    private MockCatalog.ProductData productData(long productId) {
+        return officialProductSource.product(productId)
+                .orElseGet(() -> catalog.product(productId));
+    }
+
+    private MockCatalog.PlatformProductData platformProductData(long platformProductId) {
+        return officialProductSource.platformProduct(platformProductId)
+                .orElseGet(() -> catalog.platformProduct(platformProductId));
+    }
+
+    private Optional<MockCatalog.PriceHistoryData> priceHistoryData(long platformProductId) {
+        Optional<MockCatalog.PriceHistoryData> official = officialProductSource.priceHistory(platformProductId);
+        return official.isPresent() ? official : catalog.priceHistory(platformProductId);
+    }
+
+    private Optional<MockCatalog.ReviewSummaryData> reviewSummaryData(long platformProductId) {
+        Optional<MockCatalog.ReviewSummaryData> official = officialProductSource.reviewSummary(platformProductId);
+        return official.isPresent() ? official : catalog.reviewSummary(platformProductId);
+    }
+
+    private ProductDto toProductDto(MockCatalog.ProductData product) {
+        return new ProductDto(
+                product.productId(),
+                product.name(),
+                product.category(),
+                product.brand(),
+                product.model(),
+                product.attributes(),
+                OffsetDateTime.now()
+        );
+    }
+
+    private PlatformProductDto toPlatformProductDto(MockCatalog.PlatformProductData product) {
+        return new PlatformProductDto(
+                product.platformProductId(),
+                product.productId(),
+                product.platform(),
+                product.title(),
+                product.imageUrl(),
+                product.price(),
+                product.originalPrice(),
+                product.url(),
+                product.shopName(),
+                product.tags() == null ? List.of() : product.tags(),
+                product.salesVolume(),
+                product.rating(),
+                product.isOfficial(),
+                product.isSelfOperated(),
+                normalizeSourceType(product.sourceType()),
+                OffsetDateTime.now()
+        );
+    }
+
+    private ReviewSummaryDto toReviewSummaryDto(MockCatalog.ReviewSummaryData summary) {
+        return new ReviewSummaryDto(
+                summary.platformProductId(),
+                summary.rating(),
+                summary.reviewCount(),
+                summary.positiveTags() == null ? List.of() : summary.positiveTags(),
+                summary.riskTags() == null ? List.of() : summary.riskTags(),
+                summary.riskScore(),
+                summary.summary()
         );
     }
 
@@ -730,17 +847,17 @@ public class ShoppingService {
     }
 
     private FavoriteDto toFavoriteDto(FavoriteRecord record) {
-        MockCatalog.PlatformProductData product = catalog.platformProduct(record.platformProductId);
+        MockCatalog.PlatformProductData product = platformProductData(record.platformProductId);
         return new FavoriteDto(record.id, record.platformProductId, product.platform(), product.title(), product.price(), record.note, record.createdAt);
     }
 
     private PriceAlertDto toPriceAlertDto(PriceAlertRecord record) {
-        MockCatalog.PlatformProductData product = catalog.platformProduct(record.platformProductId);
+        MockCatalog.PlatformProductData product = platformProductData(record.platformProductId);
         return new PriceAlertDto(record.id, record.platformProductId, product.title(), product.price(), record.targetPrice, record.enabled, record.createdAt, record.updatedAt);
     }
 
     private List<String> matchReasons(MockCatalog.PlatformProductData platformProduct, RecognitionRecord recognition, Map<String, Object> filters) {
-        MockCatalog.ProductData product = catalog.product(platformProduct.productId());
+        MockCatalog.ProductData product = productData(platformProduct.productId());
         List<String> reasons = new ArrayList<>();
         if (recognition != null) {
             if (contains(product.category(), recognition.category) || contains(platformProduct.title(), recognition.category)) {
@@ -778,7 +895,7 @@ public class ShoppingService {
     }
 
     private double recommendationScore(SearchTaskItemDto item) {
-        double priceScore = 1.0 / Math.max(1.0, catalog.amount(item.price()).doubleValue());
+        double priceScore = 1.0 / Math.max(1.0, amount(item.price()).doubleValue());
         return item.matchScore() * 0.55 + item.rating() * 0.08 + Math.log1p(item.salesVolume()) * 0.02 + priceScore + (item.isOfficial() ? 0.05 : 0) + (item.isSelfOperated() ? 0.05 : 0);
     }
 
@@ -907,7 +1024,7 @@ public class ShoppingService {
     }
 
     private String normalizeSourceType(String sourceType) {
-        String normalized = catalog.normalizeSourceType(sourceType);
+        String normalized = sourceType == null || sourceType.isBlank() ? "mock" : sourceType.toLowerCase(Locale.ROOT);
         if (!SOURCE_TYPES.contains(normalized)) {
             throw ApiException.badRequest("sourceType invalid");
         }
@@ -935,6 +1052,15 @@ public class ShoppingService {
 
     private String normalize(String value) {
         return value == null ? "" : value.toLowerCase(Locale.ROOT);
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (!isBlank(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private boolean contains(String value, String keyword) {
@@ -972,6 +1098,10 @@ public class ShoppingService {
             return null;
         }
         return new BigDecimal(text);
+    }
+
+    private BigDecimal amount(Money money) {
+        return new BigDecimal(money.amount());
     }
 
     private Boolean bool(Object value) {

@@ -23,6 +23,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -60,6 +61,7 @@ button.wide {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -246,7 +248,7 @@ h2 {
 
 .top-bar {
   display: grid;
-  grid-template-columns: 1fr 120px;
+  grid-template-columns: 1fr 150px 120px;
   gap: 12px;
   align-items: end;
 }

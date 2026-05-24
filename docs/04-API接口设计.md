@@ -1224,9 +1224,9 @@ DELETE /api/price-alerts/{priceAlertId}
 
 可能错误码：`40101`、`40102`、`40407`。
 
-## MVP 数据源策略
+## 数据源策略
 
-第一版使用 `mock` 数据源实现完整闭环：
+默认使用 `mock` 数据源实现稳定闭环：
 
 ```text
 上传图片
@@ -1237,9 +1237,35 @@ DELETE /api/price-alerts/{priceAlertId}
   -> Agent 基于后端可信候选数据生成推荐
 ```
 
-后续可以增加 `official_api` 或 `sample_dataset` 适配器，但不改变前端 API 契约：
+已增加 `official_api` 适配器，支持通过服务端配置调用拼多多/京东官方开放平台 API；也可继续保留 `sample_dataset` 适配器。前端 API 契约保持不变：
 
 - `sourceType` 标记数据来源
 - 平台商品统一归一化为 `platformProduct` 结构
 - 价格历史统一写入 `price_records`
 - Agent 只读取后端已归一化的数据，不直接相信前端传入的价格
+- 真实平台密钥和签名逻辑只在服务端，前端不保存 `appKey`、`secret` 或 `accessToken`
+
+### 电商 API 状态
+
+```http
+GET /api/ecommerce/status
+```
+
+响应示例：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "enabled": true,
+    "hasConfiguredClient": true,
+    "providers": [
+      { "platform": "拼多多", "configured": true },
+      { "platform": "京东", "configured": false }
+    ]
+  }
+}
+```
+
+该接口只返回配置状态，不返回密钥、Token 或签名参数。

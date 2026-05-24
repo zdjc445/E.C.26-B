@@ -213,6 +213,16 @@ public final class ApiModels {
     ) {
     }
 
+    public record EcommerceProviderStatus(String platform, boolean configured) {
+    }
+
+    public record EcommerceStatusPayload(
+            boolean enabled,
+            boolean hasConfiguredClient,
+            List<EcommerceProviderStatus> providers
+    ) {
+    }
+
     public record CreateComparisonRequest(long searchTaskId, List<Long> platformProductIds) {
     }
 
