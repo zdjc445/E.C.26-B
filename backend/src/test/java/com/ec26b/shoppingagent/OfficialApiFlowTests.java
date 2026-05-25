@@ -214,6 +214,16 @@ class OfficialApiFlowTests {
         assertThat(diagnosticParamJson.path("goodsReqDTO").path("priceto").asText()).isEqualTo("500");
         assertThat(diagnosticParamJson.path("goodsReqDTO").path("isCoupon").asInt()).isEqualTo(1);
         assertThat(diagnosticParamJson.path("goodsReqDTO").path("owner").asText()).isEqualTo("g");
+
+        JsonNode compatSearch = postJson(token, "/api/search-tasks", Map.of(
+                "query", "京东兼容耳机",
+                "sourceType", "official_api",
+                "platforms", java.util.List.of("jd")
+        )).get("data");
+        JsonNode compatItem = compatSearch.get("items").get(0);
+        assertThat(compatItem.get("platform").asText()).isEqualTo("京东");
+        assertThat(compatItem.get("sourceType").asText()).isEqualTo("official_api");
+        assertThat(compatItem.get("title").asText()).contains("兼容");
     }
 
     private static synchronized void ensureServer() {
@@ -297,7 +307,16 @@ class OfficialApiFlowTests {
                 lastJdRequest.putAll(parseForm(new String(requestBytes, StandardCharsets.UTF_8)));
                 String paramJson = lastJdRequest.getOrDefault("360buy_param_json", "");
                 byte[] response;
-                if (paramJson.contains("京东成功")) {
+                if (paramJson.contains("京东兼容")) {
+                    response = """
+                            {
+                              "jd_union_open_goods_query_responce": {
+                                "code": "0",
+                                "result": "{\\"code\\":200,\\"data\\":[{\\"skuId\\":1122334455,\\"skuName\\":\\"京东兼容响应耳机\\",\\"imageInfo\\":{\\"imageList\\":[{\\"url\\":\\"//img.example.test/jd-compat-headphone.jpg\\"}]},\\"priceInfo\\":{\\"price\\":\\"199.00\\"},\\"shopInfo\\":{\\"shopName\\":\\"京东自营旗舰店\\"},\\"inOrderCount30Days\\":456,\\"goodCommentsShare\\":\\"96\\",\\"isJdSale\\":1,\\"materialUrl\\":\\"https://item.jd.com/1122334455.html\\"}]}"
+                              }
+                            }
+                            """.getBytes(StandardCharsets.UTF_8);
+                } else if (paramJson.contains("京东成功")) {
                     response = """
                             {
                               "jd_union_open_goods_query_response": {

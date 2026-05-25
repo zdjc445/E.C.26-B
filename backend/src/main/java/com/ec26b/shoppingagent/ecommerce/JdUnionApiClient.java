@@ -137,7 +137,7 @@ public class JdUnionApiClient implements OfficialApiClient {
     private List<OfficialProductResult> parseResponse(String body, ProductSourceQuery query) throws Exception {
         JsonNode root = objectMapper.readTree(body);
         detectTopLevelError(root);
-        JsonNode response = root.path("jd_union_open_goods_query_response");
+        JsonNode response = jdResponse(root);
         detectResponseError(response);
         JsonNode result = response.path("result");
         if (result.isTextual()) {
@@ -223,6 +223,30 @@ public class JdUnionApiClient implements OfficialApiClient {
             items.add(new OfficialProductResult(product, platformProduct, Optional.of(review)));
         }
         return items;
+    }
+
+    private JsonNode jdResponse(JsonNode root) {
+        JsonNode response = firstObject(
+                root.path("jd_union_open_goods_query_response"),
+                root.path("jd_union_open_goods_query_responce"),
+                root.path("jingdong_union_open_goods_query_response"),
+                root.path("jingdong_union_open_goods_query_responce")
+        );
+        if (response != null) {
+            return response;
+        }
+        var fields = root.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> field = fields.next();
+            String name = field.getKey().toLowerCase(Locale.ROOT);
+            if (field.getValue().isObject()
+                    && name.contains("goods")
+                    && name.contains("query")
+                    && (name.endsWith("_response") || name.endsWith("_responce"))) {
+                return field.getValue();
+            }
+        }
+        return root.path("jd_union_open_goods_query_response");
     }
 
     private void detectTopLevelError(JsonNode root) {
