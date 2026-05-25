@@ -133,6 +133,9 @@ Authorization: Bearer <accessToken>
 | --- | --- |
 | `not_configured` | 查看 `missingConfig`，补齐环境变量并重启后端 |
 | `errorCode` 有值 | 按平台开放平台文档排查应用权限、签名、IP 白名单、推广位或接口授权 |
+| `http_4xx` / `http_5xx` | 平台网关返回非 2xx；先看 `errorMessage` 里的 HTTP 状态和已脱敏平台响应摘要 |
+| `timeout` / `network_error` | 检查本机网络、代理、平台域名解析和 `ECOMMERCE_API_TIMEOUT_SECONDS` |
+| `invalid_url` | 检查 `PDD_API_BASE_URL` / `JD_API_BASE_URL` 是否是完整 `https://...` 地址 |
 | `itemCount=0` 且 `success=true` | 换一个更常见的 `query`，或检查平台账号是否有该接口的数据权限 |
 | 只想测一个平台 | 使用 `platforms=pdd` / `platforms=jd`，或 smoke 脚本的 `-Platforms` 参数 |
 | 前端提示缺配置 | 先看 `/api/ecommerce/status`，确认后端进程是否读取了最新环境变量 |

@@ -157,6 +157,14 @@ class OfficialApiFlowTests {
         assertThat(diagnostic(pddBusinessError, "拼多多").get("success").asBoolean()).isFalse();
         assertThat(diagnostic(pddBusinessError, "拼多多").get("errorCode").asText()).isEqualTo("10019");
         assertThat(diagnostic(pddBusinessError, "拼多多").get("errorMessage").asText()).contains("invalid client id");
+
+        JsonNode pddHttpError = getJson(token, "/api/ecommerce/diagnostics?query=HTTP错误&pageSize=2&platforms=pdd").get("data");
+        assertThat(diagnostic(pddHttpError, "拼多多").get("success").asBoolean()).isFalse();
+        assertThat(diagnostic(pddHttpError, "拼多多").get("errorCode").asText()).isEqualTo("http_503");
+        assertThat(diagnostic(pddHttpError, "拼多多").get("errorMessage").asText()).contains("http 503", "temporary upstream outage");
+        assertThat(diagnostic(pddHttpError, "拼多多").get("errorMessage").asText()).contains("[redacted]");
+        assertThat(diagnostic(pddHttpError, "拼多多").get("errorMessage").asText())
+                .doesNotContain("test-client", lastRequest.get("sign"));
     }
 
     @Test
@@ -248,6 +256,20 @@ class OfficialApiFlowTests {
                             """.getBytes(StandardCharsets.UTF_8);
                     exchange.getResponseHeaders().add("Content-Type", "application/json;charset=UTF-8");
                     exchange.sendResponseHeaders(200, response.length);
+                    exchange.getResponseBody().write(response);
+                    exchange.close();
+                    return;
+                }
+                if (lastRequest.getOrDefault("keyword", "").contains("HTTP错误")) {
+                    byte[] response = """
+                            {
+                              "error": "temporary upstream outage",
+                              "client_id": "%s",
+                              "sign": "%s"
+                            }
+                            """.formatted(lastRequest.get("client_id"), lastRequest.get("sign")).getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().add("Content-Type", "application/json;charset=UTF-8");
+                    exchange.sendResponseHeaders(503, response.length);
                     exchange.getResponseBody().write(response);
                     exchange.close();
                     return;
