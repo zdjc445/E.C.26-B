@@ -905,6 +905,7 @@ components:
           $ref: '#/components/schemas/SourceType'
         filters:
           type: object
+          description: official_api 会尽量下推 minPrice、maxPrice、withCoupon、officialOnly、selfOperatedOnly 等筛选到平台官方接口；价格可用字符串或 Money 对象。
           additionalProperties: true
         sortBy:
           $ref: '#/components/schemas/SortMode'

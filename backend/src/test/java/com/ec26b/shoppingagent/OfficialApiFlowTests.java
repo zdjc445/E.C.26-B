@@ -77,7 +77,13 @@ class OfficialApiFlowTests {
                 "query", "吹风机",
                 "sourceType", "official_api",
                 "platforms", java.util.List.of("pdd"),
-                "sortBy", "price_asc"
+                "sortBy", "price_asc",
+                "filters", Map.of(
+                        "minPrice", Map.of("amount", "100.00", "currency", "CNY"),
+                        "maxPrice", Map.of("amount", "200.00", "currency", "CNY"),
+                        "withCoupon", true,
+                        "officialOnly", true
+                )
         )).get("data");
 
         JsonNode first = search.get("items").get(0);
@@ -90,6 +96,9 @@ class OfficialApiFlowTests {
         assertThat(lastRequest).containsEntry("client_id", "test-client");
         assertThat(lastRequest.get("keyword")).contains("吹风机");
         assertThat(lastRequest.get("sign")).isNotBlank();
+        assertThat(lastRequest).containsEntry("with_coupon", "true");
+        assertThat(lastRequest).containsEntry("merchant_type", "3");
+        assertThat(lastRequest.get("range_list")).contains("\"range_id\":0", "\"range_from\":10000", "\"range_to\":20000");
 
         long platformProductId = first.get("platformProductId").asLong();
         JsonNode history = getJson(token, "/api/platform-products/" + platformProductId + "/price-history").get("data");
@@ -138,7 +147,13 @@ class OfficialApiFlowTests {
                 "query", "京东成功耳机",
                 "sourceType", "official_api",
                 "platforms", java.util.List.of("jd"),
-                "sortBy", "rating_desc"
+                "sortBy", "rating_desc",
+                "filters", Map.of(
+                        "minPrice", Map.of("amount", "100.00", "currency", "CNY"),
+                        "maxPrice", "500.00",
+                        "withCoupon", "true",
+                        "selfOperatedOnly", true
+                )
         )).get("data");
 
         JsonNode first = search.get("items").get(0);
@@ -160,6 +175,10 @@ class OfficialApiFlowTests {
         assertThat(paramJson.path("goodsReqDTO").path("keyword").asText()).isEqualTo("京东成功耳机");
         assertThat(paramJson.path("goodsReqDTO").path("sortName").asText()).isEqualTo("goodCommentsShare");
         assertThat(paramJson.path("goodsReqDTO").path("sort").asText()).isEqualTo("desc");
+        assertThat(paramJson.path("goodsReqDTO").path("pricefrom").asText()).isEqualTo("100");
+        assertThat(paramJson.path("goodsReqDTO").path("priceto").asText()).isEqualTo("500");
+        assertThat(paramJson.path("goodsReqDTO").path("isCoupon").asInt()).isEqualTo(1);
+        assertThat(paramJson.path("goodsReqDTO").path("owner").asText()).isEqualTo("g");
 
         JsonNode diagnostics = getJson(token, "/api/ecommerce/diagnostics?query=京东成功耳机&pageSize=2&platforms=jd").get("data");
         assertThat(diagnostics.get("providers").size()).isEqualTo(1);

@@ -65,6 +65,15 @@ Authorization: Bearer <accessToken>
 - `durationMs > 0`
 - 失败时查看 `errorCode` 和 `errorMessage`
 
+## 4.1 官方 API 筛选下推
+
+`POST /api/search-tasks` 使用 `sourceType=official_api` 时，会优先把部分业务筛选转换成平台官方参数，减少无效结果：
+
+- 拼多多：`minPrice` / `maxPrice`、`withCoupon`、`officialOnly`
+- 京东：`minPrice` / `maxPrice`、`withCoupon`、`selfOperatedOnly`
+
+价格筛选支持 `"500.00"` 这样的字符串，也支持 `{ "amount": "500.00", "currency": "CNY" }` 这样的金额对象。平台返回后，后端仍会按统一规则做一次最终过滤。
+
 ## 5. 跑 live smoke test
 
 脚本默认读取仓库根目录 `.env`，也可以用 `-EnvFile` 指定其他本地凭证文件。脚本会严格校验平台启用开关，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`。`-Platforms` 仅支持 `pdd`、`jd`。

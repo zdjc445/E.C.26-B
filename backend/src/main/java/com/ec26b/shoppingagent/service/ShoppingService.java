@@ -1127,6 +1127,9 @@ public class ShoppingService {
         if (value instanceof Money money) {
             return new BigDecimal(money.amount());
         }
+        if (value instanceof Map<?, ?> map && map.containsKey("amount")) {
+            return number(map.get("amount"));
+        }
         String text = String.valueOf(value).replace("CNY", "").replace("元", "").trim();
         if (text.isBlank()) {
             return null;

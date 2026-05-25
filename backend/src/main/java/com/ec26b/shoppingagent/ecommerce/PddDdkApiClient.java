@@ -61,6 +61,7 @@ public class PddDdkApiClient implements OfficialApiClient {
         params.put("page", "1");
         params.put("page_size", String.valueOf(Math.max(1, Math.min(30, query.pageSize()))));
         sortType(query.sortBy()).ifPresent(value -> params.put("sort_type", value));
+        applyFilters(params, query);
         params.put("sign", EcommerceSigning.md5SignWithSecretWrap(params, pdd.getClientSecret()));
 
         String body = EcommerceHttp.postForm(httpClient, pdd.getBaseUrl(), params, Duration.ofSeconds(Math.max(1, properties.getRequestTimeoutSeconds())));
@@ -80,6 +81,28 @@ public class PddDdkApiClient implements OfficialApiClient {
             case "sales_desc" -> Optional.of("6");
             default -> Optional.empty();
         };
+    }
+
+    private void applyFilters(Map<String, String> params, ProductSourceQuery query) {
+        BigDecimal minPrice = OfficialFilterParams.moneyFilter(query, "minPrice");
+        BigDecimal maxPrice = OfficialFilterParams.moneyFilter(query, "maxPrice");
+        if (minPrice != null || maxPrice != null) {
+            StringBuilder range = new StringBuilder("[{\"range_id\":0");
+            if (minPrice != null) {
+                range.append(",\"range_from\":").append(OfficialFilterParams.centsString(minPrice));
+            }
+            if (maxPrice != null) {
+                range.append(",\"range_to\":").append(OfficialFilterParams.centsString(maxPrice));
+            }
+            range.append("}]");
+            params.put("range_list", range.toString());
+        }
+        if (OfficialFilterParams.boolFilter(query, "withCoupon", "couponOnly", "hasCoupon")) {
+            params.put("with_coupon", "true");
+        }
+        if (OfficialFilterParams.boolFilter(query, "officialOnly")) {
+            params.put("merchant_type", "3");
+        }
     }
 
     private List<OfficialProductResult> parseResponse(String body, ProductSourceQuery query) throws Exception {

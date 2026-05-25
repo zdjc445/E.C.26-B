@@ -61,6 +61,7 @@ public class JdUnionApiClient implements OfficialApiClient {
             goodsReq.put("pageIndex", 1);
             goodsReq.put("pageSize", Math.max(1, Math.min(30, query.pageSize())));
             applySort(goodsReq, query.sortBy());
+            applyFilters(goodsReq, query);
             Map<String, Object> paramJson = Map.of("goodsReqDTO", goodsReq);
 
             Map<String, String> params = new LinkedHashMap<>();
@@ -96,6 +97,23 @@ public class JdUnionApiClient implements OfficialApiClient {
         } else if ("rating_desc".equals(normalized)) {
             goodsReq.put("sortName", "goodCommentsShare");
             goodsReq.put("sort", "desc");
+        }
+    }
+
+    private void applyFilters(Map<String, Object> goodsReq, ProductSourceQuery query) {
+        BigDecimal minPrice = OfficialFilterParams.moneyFilter(query, "minPrice");
+        BigDecimal maxPrice = OfficialFilterParams.moneyFilter(query, "maxPrice");
+        if (minPrice != null) {
+            goodsReq.put("pricefrom", OfficialFilterParams.decimalString(minPrice));
+        }
+        if (maxPrice != null) {
+            goodsReq.put("priceto", OfficialFilterParams.decimalString(maxPrice));
+        }
+        if (OfficialFilterParams.boolFilter(query, "withCoupon", "couponOnly", "hasCoupon")) {
+            goodsReq.put("isCoupon", 1);
+        }
+        if (OfficialFilterParams.boolFilter(query, "selfOperatedOnly")) {
+            goodsReq.put("owner", "g");
         }
     }
 

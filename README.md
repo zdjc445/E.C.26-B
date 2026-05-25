@@ -93,6 +93,8 @@ $env:JD_ACCESS_TOKEN="..."
 
 可先访问 `GET /api/ecommerce/status` 检查后端是否启用真实电商 API，以及拼多多/京东适配器是否已配置。该接口会返回缺失的环境变量名，方便联调，但不会返回任何密钥。登录后也可以在 Web 演示端点击“诊断”，或直接请求 `GET /api/ecommerce/diagnostics?query=吹风机&pageSize=3&platforms=pdd`，让后端对已配置的平台发起一次小页量真实查询并返回每个平台的成功状态、耗时、商品数量和示例标题。`platforms` 可选，支持 `pdd`、`jd`。如果平台用 HTTP 200 返回权限、签名或应用配置错误，后端也会识别为失败并给出平台 `errorCode` 与安全错误摘要。
 
+`official_api` 会把常用筛选尽量下推到平台接口：拼多多支持 `minPrice` / `maxPrice`、`withCoupon`、`officialOnly`，京东支持 `minPrice` / `maxPrice`、`withCoupon`、`selfOperatedOnly`；平台返回后仍会按统一过滤规则做最终校验。
+
 拿到真实平台密钥后，可以运行一次 live smoke test 验证线上链路：
 
 ```powershell
