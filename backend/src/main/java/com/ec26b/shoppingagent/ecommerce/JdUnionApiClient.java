@@ -45,8 +45,8 @@ public class JdUnionApiClient implements OfficialApiClient {
         EcommerceApiProperties.Jd jd = properties.getJd();
         return properties.isEnabled()
                 && jd.isEnabled()
-                && !isBlank(jd.getAppKey())
-                && !isBlank(jd.getAppSecret());
+                && OfficialCredentialValue.present(jd.getAppKey())
+                && OfficialCredentialValue.present(jd.getAppSecret());
     }
 
     @Override
@@ -74,7 +74,7 @@ public class JdUnionApiClient implements OfficialApiClient {
             params.put("v", "1.0");
             params.put("sign_method", "md5");
             params.put("param_json", objectMapper.writeValueAsString(paramJson));
-            if (!isBlank(jd.getAccessToken())) {
+            if (OfficialCredentialValue.present(jd.getAccessToken())) {
                 params.put("access_token", jd.getAccessToken());
             }
             params.put("sign", EcommerceSigning.md5SignWithSecretWrap(params, jd.getAppSecret()));
@@ -103,7 +103,7 @@ public class JdUnionApiClient implements OfficialApiClient {
     }
 
     private void putLongIfPresent(Map<String, Object> goodsReq, String key, String value) {
-        if (isBlank(value)) {
+        if (OfficialCredentialValue.missing(value)) {
             return;
         }
         try {

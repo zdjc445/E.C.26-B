@@ -177,10 +177,10 @@ public class OfficialProductSourceProvider {
             if (!pdd.isEnabled()) {
                 missing.add("PDD_API_ENABLED");
             }
-            if (isBlank(pdd.getClientId())) {
+            if (OfficialCredentialValue.missing(pdd.getClientId())) {
                 missing.add("PDD_CLIENT_ID");
             }
-            if (isBlank(pdd.getClientSecret())) {
+            if (OfficialCredentialValue.missing(pdd.getClientSecret())) {
                 missing.add("PDD_CLIENT_SECRET");
             }
             return new EcommerceProviderStatus(client.platform(), properties.isEnabled() && pdd.isEnabled(), client.configured(), required, missing);
@@ -195,10 +195,10 @@ public class OfficialProductSourceProvider {
             if (!jd.isEnabled()) {
                 missing.add("JD_API_ENABLED");
             }
-            if (isBlank(jd.getAppKey())) {
+            if (OfficialCredentialValue.missing(jd.getAppKey())) {
                 missing.add("JD_APP_KEY");
             }
-            if (isBlank(jd.getAppSecret())) {
+            if (OfficialCredentialValue.missing(jd.getAppSecret())) {
                 missing.add("JD_APP_SECRET");
             }
             return new EcommerceProviderStatus(client.platform(), properties.isEnabled() && jd.isEnabled(), client.configured(), required, missing);

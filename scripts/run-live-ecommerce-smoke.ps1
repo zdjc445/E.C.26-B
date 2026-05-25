@@ -52,7 +52,18 @@ Import-DotEnv $EnvFile
 
 function Test-EnvValue {
     param([string]$Name)
-    -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($Name))
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $false
+    }
+    $normalized = $value.Trim().ToLowerInvariant()
+    if ($normalized.StartsWith("<") -and $normalized.EndsWith(">")) {
+        return $false
+    }
+    if ($normalized.Contains("your-") -or $normalized.Contains("replace-")) {
+        return $false
+    }
+    -not @("...", "xxx", "todo", "tbd", "placeholder", "change-me", "changeme", "change_me").Contains($normalized)
 }
 
 function Test-EnvFlag {

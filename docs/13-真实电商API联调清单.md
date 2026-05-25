@@ -30,6 +30,7 @@ $env:JD_POSITION_ID="<optional position id>"
 ```
 
 也可以把 `.env.example` 复制为仓库根目录 `.env` 后填写真实凭证，live smoke 脚本会自动读取该文件；真实 `.env` 不要提交。
+复制模板后必须替换占位值；后端和 smoke 脚本会把 `...`、`<...>`、`your-*`、`replace-*` 等值视为未配置。
 `PDD_PID`、`PDD_CUSTOM_PARAMETERS`、`JD_SITE_ID`、`JD_POSITION_ID` 为可选推广位/归因参数，配置后会随官方搜索请求透传，未配置时不会影响普通搜索联调。
 
 ## 2. 启动服务
