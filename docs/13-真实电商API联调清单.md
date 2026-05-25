@@ -25,6 +25,8 @@ $env:JD_APP_SECRET="<jd app secret>"
 $env:JD_ACCESS_TOKEN="<jd access token if required>"
 ```
 
+也可以把 `.env.example` 复制为仓库根目录 `.env` 后填写真实凭证，live smoke 脚本会自动读取该文件；真实 `.env` 不要提交。
+
 ## 2. 启动服务
 
 ```powershell
@@ -65,7 +67,7 @@ Authorization: Bearer <accessToken>
 
 ## 5. 跑 live smoke test
 
-脚本会严格校验平台启用开关，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`。`-Platforms` 仅支持 `pdd`、`jd`。
+脚本默认读取仓库根目录 `.env`，也可以用 `-EnvFile` 指定其他本地凭证文件。脚本会严格校验平台启用开关，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`。`-Platforms` 仅支持 `pdd`、`jd`。
 
 ```powershell
 .\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd"

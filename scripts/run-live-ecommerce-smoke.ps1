@@ -1,9 +1,49 @@
 param(
     [string]$Query = "hair dryer",
-    [string]$Platforms = ""
+    [string]$Platforms = "",
+    [string]$EnvFile = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($EnvFile)) {
+    $EnvFile = Join-Path $repoRoot ".env"
+}
+
+function Import-DotEnv {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+    foreach ($rawLine in Get-Content -LiteralPath $Path) {
+        $line = $rawLine.Trim()
+        if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith("#")) {
+            continue
+        }
+        if ($line.StartsWith("export ")) {
+            $line = $line.Substring(7).Trim()
+        }
+        $separator = $line.IndexOf("=")
+        if ($separator -le 0) {
+            continue
+        }
+        $name = $line.Substring(0, $separator).Trim()
+        if ($name -notmatch "^[A-Za-z_][A-Za-z0-9_]*$") {
+            continue
+        }
+        if (-not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+            continue
+        }
+        $value = $line.Substring($separator + 1).Trim()
+        if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        [Environment]::SetEnvironmentVariable($name, $value, "Process")
+    }
+}
+
+Import-DotEnv $EnvFile
 
 function Test-EnvValue {
     param([string]$Name)
@@ -58,7 +98,6 @@ if ($requestedPlatforms.Count -gt 0) {
     $env:ECOMMERCE_LIVE_PLATFORMS = ""
 }
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
 $backendDir = Join-Path $repoRoot "backend"
 
 Push-Location $backendDir
