@@ -177,7 +177,7 @@ public class JdUnionApiClient implements OfficialApiClient {
             String shopName = firstNonBlank(text(node.path("shopInfo"), "shopName"), "京东");
             int sales = intValue(node, "inOrderCount30Days", "comments", "commentCount");
             double rating = rating(node);
-            boolean selfOperated = boolValue(node, "isJdSale") || contains(shopName, "京东自营");
+            boolean selfOperated = boolValue(node, "isJdSale") || ownerSelfOperated(node) || contains(shopName, "京东自营");
             boolean official = contains(shopName, "旗舰") || selfOperated;
             Map<String, Object> attributes = new LinkedHashMap<>();
             attributes.put("externalSkuId", skuId);
@@ -375,6 +375,21 @@ public class JdUnionApiClient implements OfficialApiClient {
             return value.asInt() == 1;
         }
         return "1".equals(value.asText()) || "true".equalsIgnoreCase(value.asText());
+    }
+
+    private boolean ownerSelfOperated(JsonNode node) {
+        String owner = text(node, "owner", "ownerCode", "owner_code");
+        if (isBlank(owner)) {
+            return false;
+        }
+        String normalized = owner.trim().toLowerCase(Locale.ROOT);
+        return "g".equals(normalized)
+                || "jd".equals(normalized)
+                || "self".equals(normalized)
+                || "self_operated".equals(normalized)
+                || "1".equals(normalized)
+                || "true".equals(normalized)
+                || normalized.contains("自营");
     }
 
     private String normalizeUrl(String value) {
