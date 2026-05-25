@@ -120,8 +120,14 @@ mvn -Dtest=LiveOfficialApiSmokeTests test
 .\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd"
 ```
 
+也可以在 smoke 中覆盖筛选参数，同时验证诊断接口和搜索接口的官方筛选下推：
+
+```powershell
+.\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd" -MaxPrice "500.00" -WithCoupon -OfficialOnly
+```
+
 该测试默认不会运行；脚本会自动加载仓库根目录的 `.env`，在本地检测密钥后显式设置 `ECOMMERCE_LIVE_TEST=true`。运行时会先请求 `GET /api/ecommerce/diagnostics` 验证平台诊断，再通过 `POST /api/search-tasks` 验证 `official_api` 搜索结果。
-脚本会把平台开关按布尔值校验，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`；`-Platforms` 仅支持 `pdd`、`jd`。
+脚本会把平台开关按布尔值校验，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`；`-Platforms` 仅支持 `pdd`、`jd`。筛选参数可通过命令行传入，也可写在 `.env` 的 `ECOMMERCE_LIVE_MIN_PRICE`、`ECOMMERCE_LIVE_MAX_PRICE`、`ECOMMERCE_LIVE_WITH_COUPON`、`ECOMMERCE_LIVE_OFFICIAL_ONLY`、`ECOMMERCE_LIVE_SELF_OPERATED_ONLY` 中。
 如果密钥放在其他本地文件，可以追加 `-EnvFile "D:\path\to\ecommerce.env"`。
 
 完整联调步骤见 [真实电商 API 联调清单](docs/13-真实电商API联调清单.md)。仓库根目录提供 `.env.example` 作为变量模板；真实 `.env` 已被 `.gitignore` 忽略。

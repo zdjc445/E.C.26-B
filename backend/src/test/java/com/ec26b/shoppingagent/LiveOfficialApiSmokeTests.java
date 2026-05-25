@@ -43,8 +43,9 @@ class LiveOfficialApiSmokeTests {
         String token = registerAndToken();
         String query = envOrDefault("ECOMMERCE_LIVE_QUERY", "吹风机");
         List<String> platforms = csvEnv("ECOMMERCE_LIVE_PLATFORMS");
+        Map<String, Object> filters = liveFilters();
 
-        JsonNode diagnostics = getJson(token, diagnosticsPath(query, platforms)).get("data");
+        JsonNode diagnostics = getJson(token, diagnosticsPath(query, platforms, filters)).get("data");
         JsonNode providerDiagnostics = diagnostics.get("providers");
         assertThat(providerDiagnostics).isNotNull();
         assertThat(providerDiagnostics.size()).isGreaterThan(0);
@@ -60,6 +61,9 @@ class LiveOfficialApiSmokeTests {
         request.put("query", query);
         request.put("sourceType", "official_api");
         request.put("sortBy", "price_asc");
+        if (!filters.isEmpty()) {
+            request.put("filters", filters);
+        }
         if (!platforms.isEmpty()) {
             request.put("platforms", platforms);
         }
@@ -85,10 +89,13 @@ class LiveOfficialApiSmokeTests {
         return response.get("data").get("accessToken").asText();
     }
 
-    private String diagnosticsPath(String query, List<String> platforms) {
+    private String diagnosticsPath(String query, List<String> platforms, Map<String, Object> filters) {
         String path = "/api/ecommerce/diagnostics?query=" + encode(query) + "&pageSize=3";
         if (!platforms.isEmpty()) {
             path += "&platforms=" + encode(String.join(",", platforms));
+        }
+        for (Map.Entry<String, Object> entry : filters.entrySet()) {
+            path += "&" + encode(entry.getKey()) + "=" + encode(String.valueOf(entry.getValue()));
         }
         return path;
     }
@@ -137,6 +144,30 @@ class LiveOfficialApiSmokeTests {
     private String envOrDefault(String name, String fallback) {
         String value = System.getenv(name);
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private Map<String, Object> liveFilters() {
+        Map<String, Object> filters = new LinkedHashMap<>();
+        putTextEnv(filters, "minPrice", "ECOMMERCE_LIVE_MIN_PRICE");
+        putTextEnv(filters, "maxPrice", "ECOMMERCE_LIVE_MAX_PRICE");
+        putBoolEnv(filters, "withCoupon", "ECOMMERCE_LIVE_WITH_COUPON");
+        putBoolEnv(filters, "officialOnly", "ECOMMERCE_LIVE_OFFICIAL_ONLY");
+        putBoolEnv(filters, "selfOperatedOnly", "ECOMMERCE_LIVE_SELF_OPERATED_ONLY");
+        return filters;
+    }
+
+    private void putTextEnv(Map<String, Object> filters, String key, String envName) {
+        String value = System.getenv(envName);
+        if (value != null && !value.isBlank()) {
+            filters.put(key, value.trim());
+        }
+    }
+
+    private void putBoolEnv(Map<String, Object> filters, String key, String envName) {
+        String value = System.getenv(envName);
+        if (value != null && !value.isBlank()) {
+            filters.put(key, "true".equalsIgnoreCase(value.trim()) || "1".equals(value.trim()) || "yes".equalsIgnoreCase(value.trim()) || "on".equalsIgnoreCase(value.trim()));
+        }
     }
 
     private List<String> csvEnv(String name) {

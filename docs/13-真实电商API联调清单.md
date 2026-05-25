@@ -88,10 +88,22 @@ Authorization: Bearer <accessToken>
 .\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd"
 ```
 
+带筛选下推的拼多多验收：
+
+```powershell
+.\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd" -MaxPrice "500.00" -WithCoupon -OfficialOnly
+```
+
 京东单平台：
 
 ```powershell
 .\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "jd"
+```
+
+带筛选下推的京东验收：
+
+```powershell
+.\scripts\run-live-ecommerce-smoke.ps1 -Query "耳机" -Platforms "jd" -MinPrice "100.00" -MaxPrice "500.00" -WithCoupon -SelfOperatedOnly
 ```
 
 验收点：
@@ -100,6 +112,7 @@ Authorization: Bearer <accessToken>
 - 诊断接口至少一个目标平台 `success=true`
 - 返回至少 1 个 `sourceType=official_api` 商品
 - 商品包含平台、标题、URL 和大于 0 的价格
+- 使用筛选参数时，live smoke 会同时把筛选传给诊断接口和搜索接口
 
 ## 6. 前端验证
 

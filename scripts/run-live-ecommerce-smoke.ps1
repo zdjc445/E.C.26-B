@@ -1,7 +1,12 @@
 param(
     [string]$Query = "hair dryer",
     [string]$Platforms = "",
-    [string]$EnvFile = ""
+    [string]$EnvFile = "",
+    [string]$MinPrice = "",
+    [string]$MaxPrice = "",
+    [switch]$WithCoupon,
+    [switch]$OfficialOnly,
+    [switch]$SelfOperatedOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -92,6 +97,21 @@ if (-not $pddConfigured -and -not $jdConfigured) {
 $env:ECOMMERCE_API_ENABLED = "true"
 $env:ECOMMERCE_LIVE_TEST = "true"
 $env:ECOMMERCE_LIVE_QUERY = $Query
+if (-not [string]::IsNullOrWhiteSpace($MinPrice)) {
+    $env:ECOMMERCE_LIVE_MIN_PRICE = $MinPrice
+}
+if (-not [string]::IsNullOrWhiteSpace($MaxPrice)) {
+    $env:ECOMMERCE_LIVE_MAX_PRICE = $MaxPrice
+}
+if ($WithCoupon.IsPresent -or (Test-EnvFlag "ECOMMERCE_LIVE_WITH_COUPON")) {
+    $env:ECOMMERCE_LIVE_WITH_COUPON = "true"
+}
+if ($OfficialOnly.IsPresent -or (Test-EnvFlag "ECOMMERCE_LIVE_OFFICIAL_ONLY")) {
+    $env:ECOMMERCE_LIVE_OFFICIAL_ONLY = "true"
+}
+if ($SelfOperatedOnly.IsPresent -or (Test-EnvFlag "ECOMMERCE_LIVE_SELF_OPERATED_ONLY")) {
+    $env:ECOMMERCE_LIVE_SELF_OPERATED_ONLY = "true"
+}
 if ($requestedPlatforms.Count -gt 0) {
     $env:ECOMMERCE_LIVE_PLATFORMS = ($requestedPlatforms -join ",")
 } else {
