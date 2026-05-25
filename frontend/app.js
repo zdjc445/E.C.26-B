@@ -41,6 +41,7 @@ const state = {
   image: null,
   recognition: null,
   searchTask: null,
+  lastFilterText: "",
   sortBy: "comprehensive",
   items: [],
   selectedIds: new Set(),
@@ -124,11 +125,46 @@ async function loadEcommerceStatus() {
 async function checkEcommerceApi() {
   const query = (els.refineText.value || "吹风机").trim();
   const platforms = selectedPlatforms();
-  const platformParam = platforms.length ? `&platforms=${encodeURIComponent(platforms.join(","))}` : "";
-  const diagnostics = await api(`/ecommerce/diagnostics?query=${encodeURIComponent(query)}&pageSize=3${platformParam}`);
+  const params = new URLSearchParams({ query, pageSize: "3" });
+  if (platforms.length) {
+    params.set("platforms", platforms.join(","));
+  }
+  Object.entries(currentDiagnosticFilters()).forEach(([key, value]) => {
+    appendFilterParam(params, key, value);
+  });
+  const diagnostics = await api(`/ecommerce/diagnostics?${params.toString()}`);
   renderEcommerceDiagnostics(diagnostics);
   const successCount = (diagnostics.providers || []).filter((provider) => provider.success).length;
   toast(successCount ? `官方 API 诊断通过 ${successCount} 个平台` : "官方 API 诊断未通过");
+}
+
+function currentDiagnosticFilters() {
+  if (normalizedText(state.lastFilterText) !== normalizedText(els.refineText.value)) {
+    return {};
+  }
+  const filters = state.searchTask?.filters || {};
+  const supported = ["minPrice", "maxPrice", "withCoupon", "officialOnly", "selfOperatedOnly"];
+  return supported.reduce((result, key) => {
+    if (Object.prototype.hasOwnProperty.call(filters, key)) {
+      result[key] = filters[key];
+    }
+    return result;
+  }, {});
+}
+
+function appendFilterParam(params, key, value) {
+  if (value === null || value === undefined || value === "") {
+    return;
+  }
+  if (typeof value === "object" && value.amount !== undefined) {
+    params.set(key, String(value.amount));
+    return;
+  }
+  params.set(key, String(value));
+}
+
+function normalizedText(value) {
+  return (value || "").trim();
 }
 
 async function createDemoImage() {
@@ -227,6 +263,7 @@ async function analyze() {
       sortBy: state.sortBy,
     },
   });
+  state.lastFilterText = els.refineText.value;
   state.selectedIds.clear();
   renderComparison(null);
   applySearchPayload(state.searchTask);
@@ -242,6 +279,7 @@ async function refine(text = els.refineText.value, sortBy = state.sortBy) {
     body: { text, sortBy },
   });
   state.searchTask = { ...state.searchTask, ...payload };
+  state.lastFilterText = text;
   state.selectedIds.clear();
   renderComparison(null);
   applySearchPayload(payload);
