@@ -106,6 +106,17 @@ class OfficialApiFlowTests {
         assertThat(lastRequest).containsEntry("merchant_type", "3");
         assertThat(lastRequest.get("range_list")).contains("\"range_id\":0", "\"range_from\":10000", "\"range_to\":20000");
 
+        JsonNode signOnlySearch = postJson(token, "/api/search-tasks", Map.of(
+                "query", "拼多多签名商品",
+                "sourceType", "official_api",
+                "platforms", java.util.List.of("pdd")
+        )).get("data");
+        JsonNode signOnlyItem = signOnlySearch.get("items").get(0);
+        assertThat(signOnlyItem.get("platform").asText()).isEqualTo("拼多多");
+        assertThat(signOnlyItem.get("sourceType").asText()).isEqualTo("official_api");
+        assertThat(signOnlyItem.get("title").asText()).contains("签名");
+        assertThat(signOnlyItem.get("url").asText()).contains("goods_sign=test-sign-only");
+
         long platformProductId = first.get("platformProductId").asLong();
         JsonNode history = getJson(token, "/api/platform-products/" + platformProductId + "/price-history").get("data");
         assertThat(history.get("currentPrice").get("amount").asText()).isEqualTo("129.00");
@@ -222,6 +233,31 @@ class OfficialApiFlowTests {
                               "error_response": {
                                 "error_code": 10019,
                                 "error_msg": "invalid client id or permission"
+                              }
+                            }
+                            """.getBytes(StandardCharsets.UTF_8);
+                    exchange.getResponseHeaders().add("Content-Type", "application/json;charset=UTF-8");
+                    exchange.sendResponseHeaders(200, response.length);
+                    exchange.getResponseBody().write(response);
+                    exchange.close();
+                    return;
+                }
+                if (lastRequest.getOrDefault("keyword", "").contains("签名商品")) {
+                    byte[] response = """
+                            {
+                              "goods_search_response": {
+                                "goods_list": [
+                                  {
+                                    "goods_sign": "test-sign-only",
+                                    "goods_name": "只返回 goods_sign 的拼多多签名商品",
+                                    "goods_thumbnail_url": "https://img.example.test/pdd-sign-only.jpg",
+                                    "min_group_price": 8800,
+                                    "min_normal_price": 9900,
+                                    "mall_name": "签名官方旗舰店",
+                                    "sales_tip": "800+件",
+                                    "avg_desc": "4.8"
+                                  }
+                                ]
                               }
                             }
                             """.getBytes(StandardCharsets.UTF_8);

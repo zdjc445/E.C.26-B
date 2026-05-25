@@ -8,7 +8,9 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -124,11 +126,14 @@ public class PddDdkApiClient implements OfficialApiClient {
         List<OfficialProductResult> items = new ArrayList<>();
         for (JsonNode node : list) {
             String goodsId = text(node, "goods_id", "goodsId");
-            if (isBlank(goodsId)) {
+            String goodsSign = text(node, "goods_sign", "goodsSign");
+            String externalId = firstNonBlank(goodsId, goodsSign);
+            if (isBlank(externalId)) {
                 continue;
             }
             String title = firstNonBlank(text(node, "goods_name", "goodsName"), query.keyword());
             String imageUrl = text(node, "goods_thumbnail_url", "goods_image_url", "image_url");
+            String productUrl = firstNonBlank(text(node, "goods_url", "goodsUrl", "mobile_url", "mobileUrl", "url"), pddGoodsUrl(goodsId, goodsSign));
             Money price = centsMoney(firstNonBlank(text(node, "min_group_price"), text(node, "min_normal_price"), text(node, "price")));
             Money originalPrice = centsMoney(firstNonBlank(text(node, "min_normal_price"), text(node, "market_fee")));
             String mallName = firstNonBlank(text(node, "mall_name", "mallName"), "拼多多店铺");
@@ -136,23 +141,24 @@ public class PddDdkApiClient implements OfficialApiClient {
             double rating = rating(firstNonBlank(text(node, "avg_desc"), text(node, "goods_eval_score")));
             boolean official = contains(mallName, "旗舰") || contains(title, "官方");
             Map<String, Object> attributes = new LinkedHashMap<>();
-            attributes.put("externalGoodsId", goodsId);
+            if (!isBlank(goodsId)) {
+                attributes.put("externalGoodsId", goodsId);
+            }
             attributes.put("sourcePlatform", platform());
             String category = firstNonBlank(query.category(), text(node, "category_name", "opt_name"), "拼多多商品");
             attributes.put("category", category);
-            String goodsSign = text(node, "goods_sign");
             if (!isBlank(goodsSign)) {
                 attributes.put("goodsSign", goodsSign);
             }
 
-            long productId = OfficialProductIds.productId(platform(), goodsId);
-            long platformProductId = OfficialProductIds.platformProductId(platform(), goodsId);
+            long productId = OfficialProductIds.productId(platform(), externalId);
+            long platformProductId = OfficialProductIds.platformProductId(platform(), externalId);
             MockCatalog.ProductData product = new MockCatalog.ProductData(
                     productId,
                     title,
                     category,
                     firstNonBlank(query.brand(), platform()),
-                    firstNonBlank(query.model(), goodsId),
+                    firstNonBlank(query.model(), externalId),
                     attributes
             );
             MockCatalog.PlatformProductData platformProduct = new MockCatalog.PlatformProductData(
@@ -163,7 +169,7 @@ public class PddDdkApiClient implements OfficialApiClient {
                     normalizeUrl(imageUrl),
                     price,
                     originalPrice,
-                    "https://mobile.yangkeduo.com/goods.html?goods_id=" + goodsId,
+                    normalizeUrl(productUrl),
                     mallName,
                     "official_api",
                     List.of("官方API", "拼多多", official ? "官方店铺" : "平台店铺"),
@@ -184,6 +190,20 @@ public class PddDdkApiClient implements OfficialApiClient {
             items.add(new OfficialProductResult(product, platformProduct, Optional.of(review)));
         }
         return items;
+    }
+
+    private String pddGoodsUrl(String goodsId, String goodsSign) {
+        if (!isBlank(goodsId)) {
+            return "https://mobile.yangkeduo.com/goods.html?goods_id=" + urlEncode(goodsId);
+        }
+        if (!isBlank(goodsSign)) {
+            return "https://mobile.yangkeduo.com/goods.html?goods_sign=" + urlEncode(goodsSign);
+        }
+        return "";
+    }
+
+    private String urlEncode(String value) {
+        return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
     }
 
     private void detectError(JsonNode root) {
