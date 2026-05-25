@@ -37,6 +37,7 @@ app:
       app-secret: ${JD_APP_SECRET:}
       access-token: ${JD_ACCESS_TOKEN:}
       method: ${JD_API_METHOD:jd.union.open.goods.query}
+      param-json-name: ${JD_PARAM_JSON_NAME:360buy_param_json}
       site-id: ${JD_SITE_ID:}
       position-id: ${JD_POSITION_ID:}
     pdd:

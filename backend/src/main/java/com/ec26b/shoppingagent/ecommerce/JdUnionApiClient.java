@@ -73,7 +73,7 @@ public class JdUnionApiClient implements OfficialApiClient {
             params.put("format", "json");
             params.put("v", "1.0");
             params.put("sign_method", "md5");
-            params.put("param_json", objectMapper.writeValueAsString(paramJson));
+            params.put(paramJsonName(jd), objectMapper.writeValueAsString(paramJson));
             if (OfficialCredentialValue.present(jd.getAccessToken())) {
                 params.put("access_token", jd.getAccessToken());
             }
@@ -86,6 +86,10 @@ public class JdUnionApiClient implements OfficialApiClient {
         } catch (Exception ex) {
             throw new IllegalStateException("JD official API parse failed", ex);
         }
+    }
+
+    private String paramJsonName(EcommerceApiProperties.Jd jd) {
+        return isBlank(jd.getParamJsonName()) ? "360buy_param_json" : jd.getParamJsonName().trim();
     }
 
     private void applySort(Map<String, Object> goodsReq, String sortBy) {

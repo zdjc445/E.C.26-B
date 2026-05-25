@@ -89,6 +89,7 @@ $env:JD_API_ENABLED="true"
 $env:JD_APP_KEY="..."
 $env:JD_APP_SECRET="..."
 $env:JD_ACCESS_TOKEN="..."
+$env:JD_PARAM_JSON_NAME="360buy_param_json" # 默认，按京东 JOS 公共参数规范
 $env:JD_SITE_ID="..." # 可选
 $env:JD_POSITION_ID="..." # 可选
 ```
@@ -100,6 +101,7 @@ $env:JD_POSITION_ID="..." # 可选
 
 `official_api` 会把常用筛选尽量下推到平台接口：拼多多支持 `minPrice` / `maxPrice`、`withCoupon`、`officialOnly`，京东支持 `minPrice` / `maxPrice`、`withCoupon`、`selfOperatedOnly`；平台返回后仍会按统一过滤规则做最终校验。
 可选的推广位/归因变量会随官方请求透传：拼多多 `PDD_PID` / `PDD_CUSTOM_PARAMETERS`，京东 `JD_SITE_ID` / `JD_POSITION_ID`。
+京东请求默认使用 JOS 公共参数字段 `360buy_param_json` 发送业务入参；如遇到兼容网关，可通过 `JD_PARAM_JSON_NAME` 覆盖。
 
 拿到真实平台密钥后，可以运行一次 live smoke test 验证线上链路：
 

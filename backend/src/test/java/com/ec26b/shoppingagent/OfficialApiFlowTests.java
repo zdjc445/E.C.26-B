@@ -179,8 +179,10 @@ class OfficialApiFlowTests {
 
         assertThat(lastJdRequest).containsEntry("method", "jd.union.open.goods.query");
         assertThat(lastJdRequest).containsEntry("app_key", "test-jd-key");
+        assertThat(lastJdRequest).containsKey("360buy_param_json");
+        assertThat(lastJdRequest).doesNotContainKey("param_json");
         assertThat(lastJdRequest.get("sign")).isNotBlank();
-        JsonNode paramJson = objectMapper.readTree(lastJdRequest.get("param_json"));
+        JsonNode paramJson = objectMapper.readTree(lastJdRequest.get("360buy_param_json"));
         assertThat(paramJson.path("goodsReqDTO").path("keyword").asText()).isEqualTo("京东成功耳机");
         assertThat(paramJson.path("goodsReqDTO").path("siteId").asLong()).isEqualTo(12345L);
         assertThat(paramJson.path("goodsReqDTO").path("positionId").asLong()).isEqualTo(67890L);
@@ -196,7 +198,7 @@ class OfficialApiFlowTests {
         assertThat(diagnostic(diagnostics, "京东").get("success").asBoolean()).isTrue();
         assertThat(diagnostic(diagnostics, "京东").get("itemCount").asInt()).isEqualTo(1);
         assertThat(diagnostic(diagnostics, "京东").get("sampleTitles").get(0).asText()).contains("降噪耳机");
-        JsonNode diagnosticParamJson = objectMapper.readTree(lastJdRequest.get("param_json"));
+        JsonNode diagnosticParamJson = objectMapper.readTree(lastJdRequest.get("360buy_param_json"));
         assertThat(diagnosticParamJson.path("goodsReqDTO").path("pricefrom").asText()).isEqualTo("100");
         assertThat(diagnosticParamJson.path("goodsReqDTO").path("priceto").asText()).isEqualTo("500");
         assertThat(diagnosticParamJson.path("goodsReqDTO").path("isCoupon").asInt()).isEqualTo(1);
@@ -257,7 +259,7 @@ class OfficialApiFlowTests {
                 byte[] requestBytes = exchange.getRequestBody().readAllBytes();
                 lastJdRequest.clear();
                 lastJdRequest.putAll(parseForm(new String(requestBytes, StandardCharsets.UTF_8)));
-                String paramJson = lastJdRequest.getOrDefault("param_json", "");
+                String paramJson = lastJdRequest.getOrDefault("360buy_param_json", "");
                 byte[] response;
                 if (paramJson.contains("京东成功")) {
                     response = """

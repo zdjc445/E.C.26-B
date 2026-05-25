@@ -42,6 +42,7 @@ public class EcommerceApiProperties {
         private String appSecret = "";
         private String accessToken = "";
         private String method = "jd.union.open.goods.query";
+        private String paramJsonName = "360buy_param_json";
         private String siteId = "";
         private String positionId = "";
 
@@ -91,6 +92,14 @@ public class EcommerceApiProperties {
 
         public void setMethod(String method) {
             this.method = method;
+        }
+
+        public String getParamJsonName() {
+            return paramJsonName;
+        }
+
+        public void setParamJsonName(String paramJsonName) {
+            this.paramJsonName = paramJsonName;
         }
 
         public String getSiteId() {
