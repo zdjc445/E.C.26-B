@@ -42,6 +42,8 @@ public class EcommerceApiProperties {
         private String appSecret = "";
         private String accessToken = "";
         private String method = "jd.union.open.goods.query";
+        private String siteId = "";
+        private String positionId = "";
 
         public boolean isEnabled() {
             return enabled;
@@ -90,6 +92,22 @@ public class EcommerceApiProperties {
         public void setMethod(String method) {
             this.method = method;
         }
+
+        public String getSiteId() {
+            return siteId;
+        }
+
+        public void setSiteId(String siteId) {
+            this.siteId = siteId;
+        }
+
+        public String getPositionId() {
+            return positionId;
+        }
+
+        public void setPositionId(String positionId) {
+            this.positionId = positionId;
+        }
     }
 
     public static class Pdd {
@@ -98,6 +116,8 @@ public class EcommerceApiProperties {
         private String clientId = "";
         private String clientSecret = "";
         private String type = "pdd.ddk.goods.search";
+        private String pid = "";
+        private String customParameters = "";
 
         public boolean isEnabled() {
             return enabled;
@@ -137,6 +157,22 @@ public class EcommerceApiProperties {
 
         public void setType(String type) {
             this.type = type;
+        }
+
+        public String getPid() {
+            return pid;
+        }
+
+        public void setPid(String pid) {
+            this.pid = pid;
+        }
+
+        public String getCustomParameters() {
+            return customParameters;
+        }
+
+        public void setCustomParameters(String customParameters) {
+            this.customParameters = customParameters;
         }
     }
 }

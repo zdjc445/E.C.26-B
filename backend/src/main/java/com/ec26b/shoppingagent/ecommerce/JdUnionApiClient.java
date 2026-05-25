@@ -60,6 +60,8 @@ public class JdUnionApiClient implements OfficialApiClient {
             goodsReq.put("keyword", query.keyword());
             goodsReq.put("pageIndex", 1);
             goodsReq.put("pageSize", Math.max(1, Math.min(30, query.pageSize())));
+            putLongIfPresent(goodsReq, "siteId", jd.getSiteId());
+            putLongIfPresent(goodsReq, "positionId", jd.getPositionId());
             applySort(goodsReq, query.sortBy());
             applyFilters(goodsReq, query);
             Map<String, Object> paramJson = Map.of("goodsReqDTO", goodsReq);
@@ -97,6 +99,17 @@ public class JdUnionApiClient implements OfficialApiClient {
         } else if ("rating_desc".equals(normalized)) {
             goodsReq.put("sortName", "goodCommentsShare");
             goodsReq.put("sort", "desc");
+        }
+    }
+
+    private void putLongIfPresent(Map<String, Object> goodsReq, String key, String value) {
+        if (isBlank(value)) {
+            return;
+        }
+        try {
+            goodsReq.put(key, Long.parseLong(value.trim()));
+        } catch (NumberFormatException ex) {
+            goodsReq.put(key, value.trim());
         }
     }
 

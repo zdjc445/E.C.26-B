@@ -12,6 +12,8 @@ $env:ECOMMERCE_API_ENABLED="true"
 $env:PDD_API_ENABLED="true"
 $env:PDD_CLIENT_ID="<pdd client id>"
 $env:PDD_CLIENT_SECRET="<pdd client secret>"
+$env:PDD_PID="<optional promotion pid>"
+$env:PDD_CUSTOM_PARAMETERS="<optional tracking json>"
 ```
 
 或：
@@ -23,9 +25,12 @@ $env:JD_API_ENABLED="true"
 $env:JD_APP_KEY="<jd app key>"
 $env:JD_APP_SECRET="<jd app secret>"
 $env:JD_ACCESS_TOKEN="<jd access token if required>"
+$env:JD_SITE_ID="<optional site id>"
+$env:JD_POSITION_ID="<optional position id>"
 ```
 
 也可以把 `.env.example` 复制为仓库根目录 `.env` 后填写真实凭证，live smoke 脚本会自动读取该文件；真实 `.env` 不要提交。
+`PDD_PID`、`PDD_CUSTOM_PARAMETERS`、`JD_SITE_ID`、`JD_POSITION_ID` 为可选推广位/归因参数，配置后会随官方搜索请求透传，未配置时不会影响普通搜索联调。
 
 ## 2. 启动服务
 

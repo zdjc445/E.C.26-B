@@ -60,6 +60,12 @@ public class PddDdkApiClient implements OfficialApiClient {
         params.put("keyword", query.keyword());
         params.put("page", "1");
         params.put("page_size", String.valueOf(Math.max(1, Math.min(30, query.pageSize()))));
+        if (!isBlank(pdd.getPid())) {
+            params.put("pid", pdd.getPid());
+        }
+        if (!isBlank(pdd.getCustomParameters())) {
+            params.put("custom_parameters", pdd.getCustomParameters());
+        }
         sortType(query.sortBy()).ifPresent(value -> params.put("sort_type", value));
         applyFilters(params, query);
         params.put("sign", EcommerceSigning.md5SignWithSecretWrap(params, pdd.getClientSecret()));

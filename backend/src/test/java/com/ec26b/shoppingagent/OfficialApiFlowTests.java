@@ -49,10 +49,14 @@ class OfficialApiFlowTests {
         registry.add("app.ecommerce.pdd.base-url", () -> "http://127.0.0.1:" + port + "/api/router");
         registry.add("app.ecommerce.pdd.client-id", () -> "test-client");
         registry.add("app.ecommerce.pdd.client-secret", () -> "test-secret");
+        registry.add("app.ecommerce.pdd.pid", () -> "pdd-test-pid");
+        registry.add("app.ecommerce.pdd.custom-parameters", () -> "{\"source\":\"flow-test\"}");
         registry.add("app.ecommerce.jd.enabled", () -> "true");
         registry.add("app.ecommerce.jd.base-url", () -> "http://127.0.0.1:" + port + "/jd/router");
         registry.add("app.ecommerce.jd.app-key", () -> "test-jd-key");
         registry.add("app.ecommerce.jd.app-secret", () -> "test-jd-secret");
+        registry.add("app.ecommerce.jd.site-id", () -> "12345");
+        registry.add("app.ecommerce.jd.position-id", () -> "67890");
         registry.add("app.ecommerce.request-timeout-seconds", () -> "3");
     }
 
@@ -94,6 +98,8 @@ class OfficialApiFlowTests {
 
         assertThat(lastRequest).containsEntry("type", "pdd.ddk.goods.search");
         assertThat(lastRequest).containsEntry("client_id", "test-client");
+        assertThat(lastRequest).containsEntry("pid", "pdd-test-pid");
+        assertThat(lastRequest).containsEntry("custom_parameters", "{\"source\":\"flow-test\"}");
         assertThat(lastRequest.get("keyword")).contains("吹风机");
         assertThat(lastRequest.get("sign")).isNotBlank();
         assertThat(lastRequest).containsEntry("with_coupon", "true");
@@ -173,6 +179,8 @@ class OfficialApiFlowTests {
         assertThat(lastJdRequest.get("sign")).isNotBlank();
         JsonNode paramJson = objectMapper.readTree(lastJdRequest.get("param_json"));
         assertThat(paramJson.path("goodsReqDTO").path("keyword").asText()).isEqualTo("京东成功耳机");
+        assertThat(paramJson.path("goodsReqDTO").path("siteId").asLong()).isEqualTo(12345L);
+        assertThat(paramJson.path("goodsReqDTO").path("positionId").asLong()).isEqualTo(67890L);
         assertThat(paramJson.path("goodsReqDTO").path("sortName").asText()).isEqualTo("goodCommentsShare");
         assertThat(paramJson.path("goodsReqDTO").path("sort").asText()).isEqualTo("desc");
         assertThat(paramJson.path("goodsReqDTO").path("pricefrom").asText()).isEqualTo("100");

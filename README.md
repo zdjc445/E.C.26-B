@@ -81,12 +81,16 @@ $env:ECOMMERCE_API_ENABLED="true"
 $env:PDD_API_ENABLED="true"
 $env:PDD_CLIENT_ID="..."
 $env:PDD_CLIENT_SECRET="..."
+$env:PDD_PID="..." # 可选
+$env:PDD_CUSTOM_PARAMETERS='{"source":"local"}' # 可选
 
 # 京东宙斯 / 京东联盟
 $env:JD_API_ENABLED="true"
 $env:JD_APP_KEY="..."
 $env:JD_APP_SECRET="..."
 $env:JD_ACCESS_TOKEN="..."
+$env:JD_SITE_ID="..." # 可选
+$env:JD_POSITION_ID="..." # 可选
 ```
 
 启动后可在 Web 演示端右上角“数据源”选择“官方 API”，或在 `POST /api/search-tasks` 中传入 `"sourceType": "official_api"`。未配置平台密钥时，后端会返回明确的 `official_api not configured` 错误，不会执行网页抓取。
@@ -94,6 +98,7 @@ $env:JD_ACCESS_TOKEN="..."
 可先访问 `GET /api/ecommerce/status` 检查后端是否启用真实电商 API，以及拼多多/京东适配器是否已配置。该接口会返回缺失的环境变量名，方便联调，但不会返回任何密钥。登录后也可以在 Web 演示端点击“诊断”，或直接请求 `GET /api/ecommerce/diagnostics?query=吹风机&pageSize=3&platforms=pdd`，让后端对已配置的平台发起一次小页量真实查询并返回每个平台的成功状态、耗时、商品数量和示例标题。`platforms` 可选，支持 `pdd`、`jd`。如果平台用 HTTP 200 返回权限、签名或应用配置错误，后端也会识别为失败并给出平台 `errorCode` 与安全错误摘要。
 
 `official_api` 会把常用筛选尽量下推到平台接口：拼多多支持 `minPrice` / `maxPrice`、`withCoupon`、`officialOnly`，京东支持 `minPrice` / `maxPrice`、`withCoupon`、`selfOperatedOnly`；平台返回后仍会按统一过滤规则做最终校验。
+可选的推广位/归因变量会随官方请求透传：拼多多 `PDD_PID` / `PDD_CUSTOM_PARAMETERS`，京东 `JD_SITE_ID` / `JD_POSITION_ID`。
 
 拿到真实平台密钥后，可以运行一次 live smoke test 验证线上链路：
 

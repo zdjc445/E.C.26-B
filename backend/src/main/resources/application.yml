@@ -37,12 +37,16 @@ app:
       app-secret: ${JD_APP_SECRET:}
       access-token: ${JD_ACCESS_TOKEN:}
       method: ${JD_API_METHOD:jd.union.open.goods.query}
+      site-id: ${JD_SITE_ID:}
+      position-id: ${JD_POSITION_ID:}
     pdd:
       enabled: ${PDD_API_ENABLED:false}
       base-url: ${PDD_API_BASE_URL:https://gw-api.pinduoduo.com/api/router}
       client-id: ${PDD_CLIENT_ID:}
       client-secret: ${PDD_CLIENT_SECRET:}
       type: ${PDD_API_TYPE:pdd.ddk.goods.search}
+      pid: ${PDD_PID:}
+      custom-parameters: ${PDD_CUSTOM_PARAMETERS:}
 
 ---
 spring:
