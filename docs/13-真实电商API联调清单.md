@@ -58,7 +58,7 @@ GET http://localhost:8080/api/ecommerce/status
 登录后请求：
 
 ```http
-GET http://localhost:8080/api/ecommerce/diagnostics?query=吹风机&pageSize=3&platforms=pdd
+GET http://localhost:8080/api/ecommerce/diagnostics?query=吹风机&pageSize=3&platforms=pdd&maxPrice=500.00&withCoupon=true&officialOnly=true
 Authorization: Bearer <accessToken>
 ```
 
@@ -69,10 +69,11 @@ Authorization: Bearer <accessToken>
 - `sampleTitles` 有真实商品标题
 - `durationMs > 0`
 - 失败时查看 `errorCode` 和 `errorMessage`
+- 可选筛选参数：`minPrice`、`maxPrice`、`withCoupon`、`officialOnly`、`selfOperatedOnly`
 
 ## 4.1 官方 API 筛选下推
 
-`POST /api/search-tasks` 使用 `sourceType=official_api` 时，会优先把部分业务筛选转换成平台官方参数，减少无效结果：
+`POST /api/search-tasks` 使用 `sourceType=official_api` 时，会优先把部分业务筛选转换成平台官方参数，减少无效结果；`GET /api/ecommerce/diagnostics` 也支持同名查询参数，方便联调时直接验证筛选下推：
 
 - 拼多多：`minPrice` / `maxPrice`、`withCoupon`、`officialOnly`
 - 京东：`minPrice` / `maxPrice`、`withCoupon`、`selfOperatedOnly`

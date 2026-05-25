@@ -135,9 +135,12 @@ class OfficialApiFlowTests {
         assertThat(diagnostic(diagnostics, "京东").get("errorCode").asText()).isEqualTo("40");
         assertThat(diagnostic(diagnostics, "京东").get("errorMessage").asText()).contains("invalid app key");
 
-        JsonNode pddDiagnostics = getJson(token, "/api/ecommerce/diagnostics?query=吹风机&pageSize=2&platforms=pdd").get("data");
+        JsonNode pddDiagnostics = getJson(token, "/api/ecommerce/diagnostics?query=吹风机&pageSize=2&platforms=pdd&minPrice=100.00&maxPrice=200.00&withCoupon=true&officialOnly=true").get("data");
         assertThat(pddDiagnostics.get("providers").size()).isEqualTo(1);
         assertThat(diagnostic(pddDiagnostics, "拼多多").get("success").asBoolean()).isTrue();
+        assertThat(lastRequest).containsEntry("with_coupon", "true");
+        assertThat(lastRequest).containsEntry("merchant_type", "3");
+        assertThat(lastRequest.get("range_list")).contains("\"range_from\":10000", "\"range_to\":20000");
 
         JsonNode pddBusinessError = getJson(token, "/api/ecommerce/diagnostics?query=业务错误&pageSize=2&platforms=pdd").get("data");
         assertThat(diagnostic(pddBusinessError, "拼多多").get("success").asBoolean()).isFalse();
@@ -188,11 +191,16 @@ class OfficialApiFlowTests {
         assertThat(paramJson.path("goodsReqDTO").path("isCoupon").asInt()).isEqualTo(1);
         assertThat(paramJson.path("goodsReqDTO").path("owner").asText()).isEqualTo("g");
 
-        JsonNode diagnostics = getJson(token, "/api/ecommerce/diagnostics?query=京东成功耳机&pageSize=2&platforms=jd").get("data");
+        JsonNode diagnostics = getJson(token, "/api/ecommerce/diagnostics?query=京东成功耳机&pageSize=2&platforms=jd&minPrice=100.00&maxPrice=500.00&withCoupon=true&selfOperatedOnly=true").get("data");
         assertThat(diagnostics.get("providers").size()).isEqualTo(1);
         assertThat(diagnostic(diagnostics, "京东").get("success").asBoolean()).isTrue();
         assertThat(diagnostic(diagnostics, "京东").get("itemCount").asInt()).isEqualTo(1);
         assertThat(diagnostic(diagnostics, "京东").get("sampleTitles").get(0).asText()).contains("降噪耳机");
+        JsonNode diagnosticParamJson = objectMapper.readTree(lastJdRequest.get("param_json"));
+        assertThat(diagnosticParamJson.path("goodsReqDTO").path("pricefrom").asText()).isEqualTo("100");
+        assertThat(diagnosticParamJson.path("goodsReqDTO").path("priceto").asText()).isEqualTo("500");
+        assertThat(diagnosticParamJson.path("goodsReqDTO").path("isCoupon").asInt()).isEqualTo(1);
+        assertThat(diagnosticParamJson.path("goodsReqDTO").path("owner").asText()).isEqualTo("g");
     }
 
     private static synchronized void ensureServer() {

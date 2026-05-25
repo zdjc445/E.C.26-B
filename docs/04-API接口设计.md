@@ -1285,7 +1285,7 @@ GET /api/ecommerce/status
 ### 电商 API 调用诊断
 
 ```http
-GET /api/ecommerce/diagnostics?query=吹风机&pageSize=3&platforms=pdd
+GET /api/ecommerce/diagnostics?query=吹风机&pageSize=3&platforms=pdd&maxPrice=500.00&withCoupon=true
 Authorization: Bearer <accessToken>
 ```
 
@@ -1328,4 +1328,4 @@ Authorization: Bearer <accessToken>
 }
 ```
 
-`platforms` 可选，支持 `pdd`、`jd`，可重复传参或用逗号分隔。该接口会真实请求已配置的平台 API，建议只在联调或运维检查时使用；响应不包含密钥、Token、签名参数或原始请求体。如果平台用 HTTP 200 返回业务错误，例如权限、签名、应用配置错误，后端会将该平台诊断为 `failed`，并返回平台 `errorCode` 与安全错误摘要。
+`platforms` 可选，支持 `pdd`、`jd`，可重复传参或用逗号分隔。诊断接口也支持 `minPrice`、`maxPrice`、`withCoupon`、`officialOnly`、`selfOperatedOnly` 查询参数，用于验证官方 API 筛选下推。该接口会真实请求已配置的平台 API，建议只在联调或运维检查时使用；响应不包含密钥、Token、签名参数或原始请求体。如果平台用 HTTP 200 返回业务错误，例如权限、签名、应用配置错误，后端会将该平台诊断为 `failed`，并返回平台 `errorCode` 与安全错误摘要。

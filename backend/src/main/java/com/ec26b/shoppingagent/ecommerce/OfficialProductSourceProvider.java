@@ -90,6 +90,10 @@ public class OfficialProductSourceProvider {
     }
 
     public EcommerceDiagnosticsPayload diagnostics(String keyword, int pageSize, List<String> platforms) {
+        return diagnostics(keyword, pageSize, platforms, Map.of());
+    }
+
+    public EcommerceDiagnosticsPayload diagnostics(String keyword, int pageSize, List<String> platforms, Map<String, Object> filters) {
         String normalizedKeyword = isBlank(keyword) ? "吹风机" : keyword.trim();
         int safePageSize = Math.max(1, Math.min(5, pageSize));
         ProductSourceQuery query = new ProductSourceQuery(
@@ -97,7 +101,7 @@ public class OfficialProductSourceProvider {
                 "",
                 "",
                 "",
-                Map.of(),
+                filters == null ? Map.of() : filters,
                 normalizePlatforms(platforms),
                 "comprehensive",
                 safePageSize

@@ -126,7 +126,7 @@ paths:
     get:
       tags: [Ecommerce]
       summary: 真实电商 API 调用诊断
-      description: 使用已配置的平台密钥发起一次小页量商品查询，返回每个平台是否调用成功、耗时、结果数量和示例标题；平台 HTTP 200 业务错误会被识别为 failed，不返回任何密钥。
+      description: 使用已配置的平台密钥发起一次小页量商品查询，返回每个平台是否调用成功、耗时、结果数量和示例标题；支持部分官方 API 筛选下推；平台 HTTP 200 业务错误会被识别为 failed，不返回任何密钥。
       parameters:
         - name: query
           in: query
@@ -150,6 +150,33 @@ paths:
               enum: [pdd, jd]
           style: form
           explode: false
+        - name: minPrice
+          in: query
+          description: 可选价格下限，按 CNY 元传入。
+          schema:
+            type: string
+            example: "100.00"
+        - name: maxPrice
+          in: query
+          description: 可选价格上限，按 CNY 元传入。
+          schema:
+            type: string
+            example: "500.00"
+        - name: withCoupon
+          in: query
+          description: 是否优先诊断带券商品搜索。
+          schema:
+            type: boolean
+        - name: officialOnly
+          in: query
+          description: 拼多多诊断时优先下推官方/旗舰店筛选。
+          schema:
+            type: boolean
+        - name: selfOperatedOnly
+          in: query
+          description: 京东诊断时优先下推自营筛选。
+          schema:
+            type: boolean
       responses:
         '200':
           description: 当前电商 API 调用诊断

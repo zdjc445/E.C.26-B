@@ -33,8 +33,25 @@ public class HealthController {
     public ApiResponse<EcommerceDiagnosticsPayload> ecommerceDiagnostics(
             @RequestParam(defaultValue = "吹风机") String query,
             @RequestParam(defaultValue = "3") int pageSize,
-            @RequestParam(required = false) List<String> platforms
+            @RequestParam(required = false) List<String> platforms,
+            @RequestParam(required = false) String minPrice,
+            @RequestParam(required = false) String maxPrice,
+            @RequestParam(required = false) Boolean withCoupon,
+            @RequestParam(required = false) Boolean officialOnly,
+            @RequestParam(required = false) Boolean selfOperatedOnly
     ) {
-        return ApiResponse.success(officialProductSource.diagnostics(query, pageSize, platforms));
+        Map<String, Object> filters = new java.util.LinkedHashMap<>();
+        putIfPresent(filters, "minPrice", minPrice);
+        putIfPresent(filters, "maxPrice", maxPrice);
+        putIfPresent(filters, "withCoupon", withCoupon);
+        putIfPresent(filters, "officialOnly", officialOnly);
+        putIfPresent(filters, "selfOperatedOnly", selfOperatedOnly);
+        return ApiResponse.success(officialProductSource.diagnostics(query, pageSize, platforms, filters));
+    }
+
+    private void putIfPresent(Map<String, Object> filters, String key, Object value) {
+        if (value != null && (!(value instanceof String text) || !text.isBlank())) {
+            filters.put(key, value);
+        }
     }
 }
