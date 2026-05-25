@@ -164,13 +164,15 @@ public class JdUnionApiClient implements OfficialApiClient {
             }
             String url = firstNonBlank(text(node, "materialUrl", "material_url", "url"), "https://item.jd.com/" + skuId + ".html");
             Money price = money(firstNonBlank(
-                    text(node.path("priceInfo"), "price"),
+                    text(node.path("priceInfo"), "lowestCouponPrice"),
                     text(node.path("priceInfo"), "lowestPrice"),
+                    text(node.path("priceInfo"), "price"),
                     text(node, "price")
             ));
             Money originalPrice = money(firstNonBlank(
                     text(node.path("priceInfo"), "originPrice"),
-                    text(node.path("priceInfo"), "lowestCouponPrice")
+                    text(node.path("priceInfo"), "price"),
+                    text(node.path("priceInfo"), "lowestPrice")
             ));
             String shopName = firstNonBlank(text(node.path("shopInfo"), "shopName"), "京东");
             int sales = intValue(node, "inOrderCount30Days", "comments", "commentCount");

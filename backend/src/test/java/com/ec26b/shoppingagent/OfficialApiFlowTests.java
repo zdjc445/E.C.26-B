@@ -180,7 +180,7 @@ class OfficialApiFlowTests {
         assertThat(first.get("platform").asText()).isEqualTo("京东");
         assertThat(first.get("sourceType").asText()).isEqualTo("official_api");
         assertThat(first.get("title").asText()).contains("降噪耳机");
-        assertThat(first.get("price").get("amount").asText()).isEqualTo("299.00");
+        assertThat(first.get("price").get("amount").asText()).isEqualTo("279.00");
         assertThat(first.get("originalPrice").get("amount").asText()).isEqualTo("399.00");
         assertThat(first.get("url").asText()).isEqualTo("https://item.jd.com/987654321.html");
         assertThat(first.get("imageUrl").asText()).isEqualTo("https://img.example.test/jd-headphone.jpg");
@@ -321,7 +321,7 @@ class OfficialApiFlowTests {
                             {
                               "jd_union_open_goods_query_response": {
                                 "code": "0",
-                                "result": "{\\"code\\":200,\\"data\\":[{\\"skuId\\":987654321,\\"skuName\\":\\"京东官方降噪耳机 Pro\\",\\"imageInfo\\":{\\"imageList\\":[{\\"url\\":\\"//img.example.test/jd-headphone.jpg\\"}]},\\"priceInfo\\":{\\"price\\":\\"299.00\\",\\"originPrice\\":\\"399.00\\"},\\"shopInfo\\":{\\"shopName\\":\\"京东自营旗舰店\\"},\\"inOrderCount30Days\\":1234,\\"goodCommentsShare\\":\\"98\\",\\"isJdSale\\":1,\\"materialUrl\\":\\"https://item.jd.com/987654321.html\\"}]}"
+                                "result": "{\\"code\\":200,\\"data\\":[{\\"skuId\\":987654321,\\"skuName\\":\\"京东官方降噪耳机 Pro\\",\\"imageInfo\\":{\\"imageList\\":[{\\"url\\":\\"//img.example.test/jd-headphone.jpg\\"}]},\\"priceInfo\\":{\\"price\\":\\"299.00\\",\\"lowestCouponPrice\\":\\"279.00\\",\\"originPrice\\":\\"399.00\\"},\\"shopInfo\\":{\\"shopName\\":\\"京东自营旗舰店\\"},\\"inOrderCount30Days\\":1234,\\"goodCommentsShare\\":\\"98\\",\\"isJdSale\\":1,\\"materialUrl\\":\\"https://item.jd.com/987654321.html\\"}]}"
                               }
                             }
                             """.getBytes(StandardCharsets.UTF_8);
