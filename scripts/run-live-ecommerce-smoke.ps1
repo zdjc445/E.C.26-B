@@ -6,7 +6,8 @@ param(
     [string]$MaxPrice = "",
     [switch]$WithCoupon,
     [switch]$OfficialOnly,
-    [switch]$SelfOperatedOnly
+    [switch]$SelfOperatedOnly,
+    [string]$ReportPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -130,10 +131,24 @@ if ($requestedPlatforms.Count -gt 0) {
 }
 
 $backendDir = Join-Path $repoRoot "backend"
+if ([string]::IsNullOrWhiteSpace($ReportPath)) {
+    $ReportPath = [Environment]::GetEnvironmentVariable("ECOMMERCE_LIVE_REPORT_PATH")
+}
+if ([string]::IsNullOrWhiteSpace($ReportPath)) {
+    $ReportPath = Join-Path $backendDir "target\live-ecommerce-smoke-report.json"
+}
+if (-not [System.IO.Path]::IsPathRooted($ReportPath)) {
+    $ReportPath = [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ReportPath))
+}
+$env:ECOMMERCE_LIVE_REPORT_PATH = $ReportPath
 
 Push-Location $backendDir
 try {
     mvn -Dtest=LiveOfficialApiSmokeTests test
 } finally {
     Pop-Location
+}
+
+if (Test-Path -LiteralPath $ReportPath) {
+    Write-Host "Live ecommerce smoke report: $ReportPath"
 }

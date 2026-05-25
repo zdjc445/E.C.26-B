@@ -13,6 +13,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.math.BigDecimal;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -78,6 +81,8 @@ class LiveOfficialApiSmokeTests {
         assertThat(first.get("title").asText()).isNotBlank();
         assertThat(first.get("url").asText()).startsWith("http");
         assertThat(new BigDecimal(first.get("price").get("amount").asText())).isGreaterThan(BigDecimal.ZERO);
+
+        writeLiveReport(query, platforms, filters, diagnostics, search);
     }
 
     private String registerAndToken() throws Exception {
@@ -144,6 +149,46 @@ class LiveOfficialApiSmokeTests {
     private String envOrDefault(String name, String fallback) {
         String value = System.getenv(name);
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private void writeLiveReport(String query, List<String> platforms, Map<String, Object> filters, JsonNode diagnostics, JsonNode search) throws Exception {
+        Path reportPath = Path.of(envOrDefault("ECOMMERCE_LIVE_REPORT_PATH", "target/live-ecommerce-smoke-report.json"));
+        Path parent = reportPath.toAbsolutePath().getParent();
+        if (parent != null) {
+            Files.createDirectories(parent);
+        }
+
+        var report = objectMapper.createObjectNode();
+        report.put("checkedAt", OffsetDateTime.now().toString());
+        report.put("query", query);
+        var requestedPlatforms = report.putArray("requestedPlatforms");
+        platforms.forEach(requestedPlatforms::add);
+        var reportFilters = report.putObject("filters");
+        filters.forEach((key, value) -> reportFilters.set(key, objectMapper.valueToTree(value)));
+        report.set("diagnostics", diagnostics);
+
+        JsonNode items = search.get("items");
+        var searchReport = report.putObject("search");
+        searchReport.put("itemCount", items == null ? 0 : items.size());
+        var sampleItems = searchReport.putArray("sampleItems");
+        if (items != null) {
+            for (int i = 0; i < Math.min(3, items.size()); i++) {
+                JsonNode item = items.get(i);
+                var sample = sampleItems.addObject();
+                sample.put("platform", textOrBlank(item.get("platform")));
+                sample.put("title", textOrBlank(item.get("title")));
+                sample.put("url", textOrBlank(item.get("url")));
+                sample.put("sourceType", textOrBlank(item.get("sourceType")));
+                JsonNode price = item.get("price");
+                if (price != null) {
+                    var priceNode = sample.putObject("price");
+                    priceNode.put("amount", textOrBlank(price.get("amount")));
+                    priceNode.put("currency", textOrBlank(price.get("currency")));
+                }
+            }
+        }
+
+        objectMapper.writerWithDefaultPrettyPrinter().writeValue(reportPath.toFile(), report);
     }
 
     private Map<String, Object> liveFilters() {

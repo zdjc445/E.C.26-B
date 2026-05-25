@@ -128,7 +128,7 @@ mvn -Dtest=LiveOfficialApiSmokeTests test
 ```
 
 该测试默认不会运行；脚本会自动加载仓库根目录的 `.env`，在本地检测密钥后显式设置 `ECOMMERCE_LIVE_TEST=true`。运行时会先请求 `GET /api/ecommerce/diagnostics` 验证平台诊断，再通过 `POST /api/search-tasks` 验证 `official_api` 搜索结果。
-脚本会把平台开关按布尔值校验，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`；`-Platforms` 仅支持 `pdd`、`jd`。筛选参数可通过命令行传入，也可写在 `.env` 的 `ECOMMERCE_LIVE_MIN_PRICE`、`ECOMMERCE_LIVE_MAX_PRICE`、`ECOMMERCE_LIVE_WITH_COUPON`、`ECOMMERCE_LIVE_OFFICIAL_ONLY`、`ECOMMERCE_LIVE_SELF_OPERATED_ONLY` 中。
+脚本会把平台开关按布尔值校验，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`；`-Platforms` 仅支持 `pdd`、`jd`。筛选参数可通过命令行传入，也可写在 `.env` 的 `ECOMMERCE_LIVE_MIN_PRICE`、`ECOMMERCE_LIVE_MAX_PRICE`、`ECOMMERCE_LIVE_WITH_COUPON`、`ECOMMERCE_LIVE_OFFICIAL_ONLY`、`ECOMMERCE_LIVE_SELF_OPERATED_ONLY` 中。真实调用通过后会生成脱敏验收报告 `backend/target/live-ecommerce-smoke-report.json`，也可用 `-ReportPath` 或 `ECOMMERCE_LIVE_REPORT_PATH` 指定输出位置；相对路径按仓库根目录解析。报告只包含诊断状态、样例标题、URL、价格等结果信息，不包含密钥、Token、签名或原始请求参数。
 如果密钥放在其他本地文件，可以追加 `-EnvFile "D:\path\to\ecommerce.env"`。
 
 完整联调步骤见 [真实电商 API 联调清单](docs/13-真实电商API联调清单.md)。仓库根目录提供 `.env.example` 作为变量模板；真实 `.env` 已被 `.gitignore` 忽略。

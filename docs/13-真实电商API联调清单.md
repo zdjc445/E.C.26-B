@@ -114,6 +114,7 @@ Authorization: Bearer <accessToken>
 - 返回至少 1 个 `sourceType=official_api` 商品
 - 商品包含平台、标题、URL 和大于 0 的价格
 - 使用筛选参数时，live smoke 会同时把筛选传给诊断接口和搜索接口
+- 通过后生成 `backend/target/live-ecommerce-smoke-report.json` 脱敏验收报告；可用 `-ReportPath` 或 `ECOMMERCE_LIVE_REPORT_PATH` 指定其他输出位置，相对路径按仓库根目录解析，报告不包含密钥、Token、签名或原始请求参数
 
 ## 6. 前端验证
 
