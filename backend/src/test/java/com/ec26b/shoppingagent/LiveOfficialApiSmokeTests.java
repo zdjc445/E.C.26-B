@@ -45,10 +45,11 @@ class LiveOfficialApiSmokeTests {
 
         String token = registerAndToken();
         String query = envOrDefault("ECOMMERCE_LIVE_QUERY", "吹风机");
+        String sortBy = envOrDefault("ECOMMERCE_LIVE_SORT_BY", "price_asc");
         List<String> platforms = csvEnv("ECOMMERCE_LIVE_PLATFORMS");
         Map<String, Object> filters = liveFilters();
 
-        JsonNode diagnostics = getJson(token, diagnosticsPath(query, platforms, filters)).get("data");
+        JsonNode diagnostics = getJson(token, diagnosticsPath(query, platforms, filters, sortBy)).get("data");
         JsonNode providerDiagnostics = diagnostics.get("providers");
         assertThat(providerDiagnostics).isNotNull();
         assertThat(providerDiagnostics.size()).isGreaterThan(0);
@@ -63,7 +64,7 @@ class LiveOfficialApiSmokeTests {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("query", query);
         request.put("sourceType", "official_api");
-        request.put("sortBy", "price_asc");
+        request.put("sortBy", sortBy);
         if (!filters.isEmpty()) {
             request.put("filters", filters);
         }
@@ -82,7 +83,7 @@ class LiveOfficialApiSmokeTests {
         assertThat(first.get("url").asText()).startsWith("http");
         assertThat(new BigDecimal(first.get("price").get("amount").asText())).isGreaterThan(BigDecimal.ZERO);
 
-        writeLiveReport(query, platforms, filters, diagnostics, search);
+        writeLiveReport(query, sortBy, platforms, filters, diagnostics, search);
     }
 
     private String registerAndToken() throws Exception {
@@ -94,10 +95,13 @@ class LiveOfficialApiSmokeTests {
         return response.get("data").get("accessToken").asText();
     }
 
-    private String diagnosticsPath(String query, List<String> platforms, Map<String, Object> filters) {
+    private String diagnosticsPath(String query, List<String> platforms, Map<String, Object> filters, String sortBy) {
         String path = "/api/ecommerce/diagnostics?query=" + encode(query) + "&pageSize=3";
         if (!platforms.isEmpty()) {
             path += "&platforms=" + encode(String.join(",", platforms));
+        }
+        if (sortBy != null && !sortBy.isBlank()) {
+            path += "&sortBy=" + encode(sortBy);
         }
         for (Map.Entry<String, Object> entry : filters.entrySet()) {
             path += "&" + encode(entry.getKey()) + "=" + encode(String.valueOf(entry.getValue()));
@@ -151,7 +155,7 @@ class LiveOfficialApiSmokeTests {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    private void writeLiveReport(String query, List<String> platforms, Map<String, Object> filters, JsonNode diagnostics, JsonNode search) throws Exception {
+    private void writeLiveReport(String query, String sortBy, List<String> platforms, Map<String, Object> filters, JsonNode diagnostics, JsonNode search) throws Exception {
         Path reportPath = Path.of(envOrDefault("ECOMMERCE_LIVE_REPORT_PATH", "target/live-ecommerce-smoke-report.json"));
         Path parent = reportPath.toAbsolutePath().getParent();
         if (parent != null) {
@@ -161,6 +165,7 @@ class LiveOfficialApiSmokeTests {
         var report = objectMapper.createObjectNode();
         report.put("checkedAt", OffsetDateTime.now().toString());
         report.put("query", query);
+        report.put("sortBy", sortBy);
         var requestedPlatforms = report.putArray("requestedPlatforms");
         platforms.forEach(requestedPlatforms::add);
         var reportFilters = report.putObject("filters");

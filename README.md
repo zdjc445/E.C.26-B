@@ -97,9 +97,9 @@ $env:JD_POSITION_ID="..." # 可选
 启动后可在 Web 演示端右上角“数据源”选择“官方 API”，或在 `POST /api/search-tasks` 中传入 `"sourceType": "official_api"`。未配置平台密钥时，后端会返回明确的 `official_api not configured` 错误，不会执行网页抓取。
 后端和 live smoke 会把 `...`、`<pdd client id>`、`your-*`、`replace-*` 等模板占位值视为未配置，复制 `.env.example` 后需要替换成真实凭证。
 
-可先访问 `GET /api/ecommerce/status` 检查后端是否启用真实电商 API，以及拼多多/京东适配器是否已配置。该接口会返回缺失的环境变量名，方便联调，但不会返回任何密钥。登录后也可以在 Web 演示端点击“诊断”，或直接请求 `GET /api/ecommerce/diagnostics?query=吹风机&pageSize=3&platforms=pdd&maxPrice=500.00&withCoupon=true`，让后端对已配置的平台发起一次小页量真实查询并返回每个平台的成功状态、耗时、商品数量和示例标题。`platforms` 可选，支持 `pdd`、`jd`；诊断也支持 `minPrice`、`maxPrice`、`withCoupon`、`officialOnly`、`selfOperatedOnly` 这些筛选参数。如果平台用 HTTP 200 返回权限、签名或应用配置错误，后端也会识别为失败并给出平台 `errorCode` 与安全错误摘要。
+可先访问 `GET /api/ecommerce/status` 检查后端是否启用真实电商 API，以及拼多多/京东适配器是否已配置。该接口会返回缺失的环境变量名，方便联调，但不会返回任何密钥。登录后也可以在 Web 演示端点击“诊断”，或直接请求 `GET /api/ecommerce/diagnostics?query=吹风机&pageSize=3&platforms=pdd&maxPrice=500.00&withCoupon=true&sortBy=price_asc`，让后端对已配置的平台发起一次小页量真实查询并返回每个平台的成功状态、耗时、商品数量和示例标题。`platforms` 可选，支持 `pdd`、`jd`；诊断也支持 `minPrice`、`maxPrice`、`withCoupon`、`officialOnly`、`selfOperatedOnly` 和 `sortBy` 这些筛选/排序参数。如果平台用 HTTP 200 返回权限、签名或应用配置错误，后端也会识别为失败并给出平台 `errorCode` 与安全错误摘要。
 
-`official_api` 会把常用筛选尽量下推到平台接口：拼多多支持 `minPrice` / `maxPrice`、`withCoupon`、`officialOnly`，京东支持 `minPrice` / `maxPrice`、`withCoupon`、`selfOperatedOnly`；平台返回后仍会按统一过滤规则做最终校验。
+`official_api` 会把常用筛选和排序尽量下推到平台接口：拼多多支持 `minPrice` / `maxPrice`、`withCoupon`、`officialOnly`、`sortBy=price_asc` / `sales_desc`，京东支持 `minPrice` / `maxPrice`、`withCoupon`、`selfOperatedOnly`、`sortBy=price_asc` / `sales_desc` / `rating_desc`；平台返回后仍会按统一过滤规则做最终校验。
 可选的推广位/归因变量会随官方请求透传：拼多多 `PDD_PID` / `PDD_CUSTOM_PARAMETERS`，京东 `JD_SITE_ID` / `JD_POSITION_ID`。拼多多返回缺少 `goods_id` 但包含 `goods_sign` 时，后端会用 `goods_sign` 生成稳定商品 ID 并保留可访问 URL。
 京东请求默认使用 JOS 公共参数字段 `360buy_param_json` 发送业务入参；如遇到兼容网关，可通过 `JD_PARAM_JSON_NAME` 覆盖。京东响应会兼容 `_response` 与部分平台历史上出现过的 `_responce` 包装字段；价格展示会优先使用 `lowestCouponPrice` / `lowestPrice` 这类到手价字段，并识别 `owner=g` 这类自营标记。
 
@@ -126,11 +126,11 @@ mvn -Dtest=LiveOfficialApiSmokeTests test
 也可以在 smoke 中覆盖筛选参数，同时验证诊断接口和搜索接口的官方筛选下推：
 
 ```powershell
-.\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd" -MaxPrice "500.00" -WithCoupon -OfficialOnly
+.\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd" -MaxPrice "500.00" -WithCoupon -OfficialOnly -SortBy "price_asc"
 ```
 
 该测试默认不会运行；脚本会自动加载仓库根目录的 `.env`，在本地检测密钥后显式设置 `ECOMMERCE_LIVE_TEST=true`。运行时会先请求 `GET /api/ecommerce/diagnostics` 验证平台诊断，再通过 `POST /api/search-tasks` 验证 `official_api` 搜索结果。
-脚本会把平台开关按布尔值校验，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`；`-Platforms` 仅支持 `pdd`、`jd`。筛选参数可通过命令行传入，也可写在 `.env` 的 `ECOMMERCE_LIVE_MIN_PRICE`、`ECOMMERCE_LIVE_MAX_PRICE`、`ECOMMERCE_LIVE_WITH_COUPON`、`ECOMMERCE_LIVE_OFFICIAL_ONLY`、`ECOMMERCE_LIVE_SELF_OPERATED_ONLY` 中。真实调用通过后会生成脱敏验收报告 `backend/target/live-ecommerce-smoke-report.json`，也可用 `-ReportPath` 或 `ECOMMERCE_LIVE_REPORT_PATH` 指定输出位置；相对路径按仓库根目录解析。报告只包含诊断状态、样例标题、URL、价格等结果信息，不包含密钥、Token、签名或原始请求参数。
+脚本会把平台开关按布尔值校验，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`；`-Platforms` 仅支持 `pdd`、`jd`，`-SortBy` 仅支持 `comprehensive`、`price_asc`、`sales_desc`、`rating_desc`。筛选和排序参数可通过命令行传入，也可写在 `.env` 的 `ECOMMERCE_LIVE_MIN_PRICE`、`ECOMMERCE_LIVE_MAX_PRICE`、`ECOMMERCE_LIVE_WITH_COUPON`、`ECOMMERCE_LIVE_OFFICIAL_ONLY`、`ECOMMERCE_LIVE_SELF_OPERATED_ONLY`、`ECOMMERCE_LIVE_SORT_BY` 中。真实调用通过后会生成脱敏验收报告 `backend/target/live-ecommerce-smoke-report.json`，也可用 `-ReportPath` 或 `ECOMMERCE_LIVE_REPORT_PATH` 指定输出位置；相对路径按仓库根目录解析。报告只包含诊断状态、样例标题、URL、价格等结果信息，不包含密钥、Token、签名或原始请求参数。
 如果密钥放在其他本地文件，可以追加 `-EnvFile "D:\path\to\ecommerce.env"`。
 
 完整联调步骤见 [真实电商 API 联调清单](docs/13-真实电商API联调清单.md)。仓库根目录提供 `.env.example` 作为变量模板；真实 `.env` 已被 `.gitignore` 忽略。

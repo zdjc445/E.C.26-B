@@ -4,6 +4,7 @@ param(
     [string]$EnvFile = "",
     [string]$MinPrice = "",
     [string]$MaxPrice = "",
+    [string]$SortBy = "",
     [switch]$WithCoupon,
     [switch]$OfficialOnly,
     [switch]$SelfOperatedOnly,
@@ -106,9 +107,23 @@ if (-not $pddConfigured -and -not $jdConfigured) {
     Write-Error "No live ecommerce provider is configured. Set PDD_API_ENABLED=true/PDD_CLIENT_ID/PDD_CLIENT_SECRET or JD_API_ENABLED=true/JD_APP_KEY/JD_APP_SECRET."
 }
 
+$allowedSortModes = @("comprehensive", "price_asc", "sales_desc", "rating_desc")
+$effectiveSortBy = $SortBy
+if ([string]::IsNullOrWhiteSpace($effectiveSortBy)) {
+    $effectiveSortBy = [Environment]::GetEnvironmentVariable("ECOMMERCE_LIVE_SORT_BY")
+}
+if ([string]::IsNullOrWhiteSpace($effectiveSortBy)) {
+    $effectiveSortBy = "price_asc"
+}
+$effectiveSortBy = $effectiveSortBy.Trim().ToLowerInvariant()
+if (-not $allowedSortModes.Contains($effectiveSortBy)) {
+    Write-Error "Unsupported sortBy '$effectiveSortBy'. Use comprehensive, price_asc, sales_desc, or rating_desc."
+}
+
 $env:ECOMMERCE_API_ENABLED = "true"
 $env:ECOMMERCE_LIVE_TEST = "true"
 $env:ECOMMERCE_LIVE_QUERY = $Query
+$env:ECOMMERCE_LIVE_SORT_BY = $effectiveSortBy
 if (-not [string]::IsNullOrWhiteSpace($MinPrice)) {
     $env:ECOMMERCE_LIVE_MIN_PRICE = $MinPrice
 }

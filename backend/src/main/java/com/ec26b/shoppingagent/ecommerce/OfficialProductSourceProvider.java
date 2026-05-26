@@ -20,6 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class OfficialProductSourceProvider {
+    private static final List<String> SORT_MODES = List.of("comprehensive", "price_asc", "sales_desc", "rating_desc");
+
     private final List<OfficialApiClient> clients;
     private final EcommerceApiProperties properties;
     private final Map<Long, MockCatalog.ProductData> products = new ConcurrentHashMap<>();
@@ -94,6 +96,10 @@ public class OfficialProductSourceProvider {
     }
 
     public EcommerceDiagnosticsPayload diagnostics(String keyword, int pageSize, List<String> platforms, Map<String, Object> filters) {
+        return diagnostics(keyword, pageSize, platforms, filters, "comprehensive");
+    }
+
+    public EcommerceDiagnosticsPayload diagnostics(String keyword, int pageSize, List<String> platforms, Map<String, Object> filters, String sortBy) {
         String normalizedKeyword = isBlank(keyword) ? "吹风机" : keyword.trim();
         int safePageSize = Math.max(1, Math.min(5, pageSize));
         ProductSourceQuery query = new ProductSourceQuery(
@@ -103,7 +109,7 @@ public class OfficialProductSourceProvider {
                 "",
                 filters == null ? Map.of() : filters,
                 normalizePlatforms(platforms),
-                "comprehensive",
+                normalizeSort(sortBy),
                 safePageSize
         );
         List<EcommerceProviderDiagnostic> providers = clientsFor(query.platforms()).stream()
@@ -228,6 +234,14 @@ public class OfficialProductSourceProvider {
             return "official ecommerce api request failed";
         }
         return value.length() <= 240 ? value : value.substring(0, 240);
+    }
+
+    private String normalizeSort(String value) {
+        if (isBlank(value)) {
+            return "comprehensive";
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return SORT_MODES.contains(normalized) ? normalized : "comprehensive";
     }
 
     private List<OfficialApiClient> clientsFor(List<String> platforms) {

@@ -129,6 +129,7 @@ async function checkEcommerceApi() {
   if (platforms.length) {
     params.set("platforms", platforms.join(","));
   }
+  params.set("sortBy", state.sortBy || "comprehensive");
   Object.entries(currentDiagnosticFilters()).forEach(([key, value]) => {
     appendFilterParam(params, key, value);
   });

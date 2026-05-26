@@ -38,7 +38,8 @@ public class HealthController {
             @RequestParam(required = false) String maxPrice,
             @RequestParam(required = false) Boolean withCoupon,
             @RequestParam(required = false) Boolean officialOnly,
-            @RequestParam(required = false) Boolean selfOperatedOnly
+            @RequestParam(required = false) Boolean selfOperatedOnly,
+            @RequestParam(required = false) String sortBy
     ) {
         Map<String, Object> filters = new java.util.LinkedHashMap<>();
         putIfPresent(filters, "minPrice", minPrice);
@@ -46,7 +47,7 @@ public class HealthController {
         putIfPresent(filters, "withCoupon", withCoupon);
         putIfPresent(filters, "officialOnly", officialOnly);
         putIfPresent(filters, "selfOperatedOnly", selfOperatedOnly);
-        return ApiResponse.success(officialProductSource.diagnostics(query, pageSize, platforms, filters));
+        return ApiResponse.success(officialProductSource.diagnostics(query, pageSize, platforms, filters, sortBy));
     }
 
     private void putIfPresent(Map<String, Object> filters, String key, Object value) {

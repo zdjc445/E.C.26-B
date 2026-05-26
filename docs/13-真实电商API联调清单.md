@@ -62,7 +62,7 @@ GET http://localhost:8080/api/ecommerce/status
 登录后请求：
 
 ```http
-GET http://localhost:8080/api/ecommerce/diagnostics?query=吹风机&pageSize=3&platforms=pdd&maxPrice=500.00&withCoupon=true&officialOnly=true
+GET http://localhost:8080/api/ecommerce/diagnostics?query=吹风机&pageSize=3&platforms=pdd&maxPrice=500.00&withCoupon=true&officialOnly=true&sortBy=price_asc
 Authorization: Bearer <accessToken>
 ```
 
@@ -73,20 +73,20 @@ Authorization: Bearer <accessToken>
 - `sampleTitles` 有真实商品标题
 - `durationMs > 0`
 - 失败时查看 `errorCode` 和 `errorMessage`
-- 可选筛选参数：`minPrice`、`maxPrice`、`withCoupon`、`officialOnly`、`selfOperatedOnly`
+- 可选筛选/排序参数：`minPrice`、`maxPrice`、`withCoupon`、`officialOnly`、`selfOperatedOnly`、`sortBy`
 
 ## 4.1 官方 API 筛选下推
 
 `POST /api/search-tasks` 使用 `sourceType=official_api` 时，会优先把部分业务筛选转换成平台官方参数，减少无效结果；`GET /api/ecommerce/diagnostics` 也支持同名查询参数，方便联调时直接验证筛选下推：
 
-- 拼多多：`minPrice` / `maxPrice`、`withCoupon`、`officialOnly`
-- 京东：`minPrice` / `maxPrice`、`withCoupon`、`selfOperatedOnly`
+- 拼多多：`minPrice` / `maxPrice`、`withCoupon`、`officialOnly`、`sortBy=price_asc` / `sales_desc`
+- 京东：`minPrice` / `maxPrice`、`withCoupon`、`selfOperatedOnly`、`sortBy=price_asc` / `sales_desc` / `rating_desc`
 
 价格筛选支持 `"500.00"` 这样的字符串，也支持 `{ "amount": "500.00", "currency": "CNY" }` 这样的金额对象。平台返回后，后端仍会按统一规则做一次最终过滤。
 
 ## 5. 跑 live smoke test
 
-脚本默认读取仓库根目录 `.env`，也可以用 `-EnvFile` 指定其他本地凭证文件。脚本会严格校验平台启用开关，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`。`-Platforms` 仅支持 `pdd`、`jd`。
+脚本默认读取仓库根目录 `.env`，也可以用 `-EnvFile` 指定其他本地凭证文件。脚本会严格校验平台启用开关，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`。`-Platforms` 仅支持 `pdd`、`jd`；`-SortBy` 仅支持 `comprehensive`、`price_asc`、`sales_desc`、`rating_desc`，默认 `price_asc`。
 
 ```powershell
 .\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd"
@@ -95,7 +95,7 @@ Authorization: Bearer <accessToken>
 带筛选下推的拼多多验收：
 
 ```powershell
-.\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd" -MaxPrice "500.00" -WithCoupon -OfficialOnly
+.\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd" -MaxPrice "500.00" -WithCoupon -OfficialOnly -SortBy "price_asc"
 ```
 
 京东单平台：
@@ -107,7 +107,7 @@ Authorization: Bearer <accessToken>
 带筛选下推的京东验收：
 
 ```powershell
-.\scripts\run-live-ecommerce-smoke.ps1 -Query "耳机" -Platforms "jd" -MinPrice "100.00" -MaxPrice "500.00" -WithCoupon -SelfOperatedOnly
+.\scripts\run-live-ecommerce-smoke.ps1 -Query "耳机" -Platforms "jd" -MinPrice "100.00" -MaxPrice "500.00" -WithCoupon -SelfOperatedOnly -SortBy "rating_desc"
 ```
 
 验收点：
@@ -116,7 +116,7 @@ Authorization: Bearer <accessToken>
 - 诊断接口至少一个目标平台 `success=true`
 - 返回至少 1 个 `sourceType=official_api` 商品
 - 商品包含平台、标题、URL 和大于 0 的价格
-- 使用筛选参数时，live smoke 会同时把筛选传给诊断接口和搜索接口
+- 使用筛选/排序参数时，live smoke 会同时把参数传给诊断接口和搜索接口
 - 通过后生成 `backend/target/live-ecommerce-smoke-report.json` 脱敏验收报告；可用 `-ReportPath` 或 `ECOMMERCE_LIVE_REPORT_PATH` 指定其他输出位置，相对路径按仓库根目录解析，报告不包含密钥、Token、签名或原始请求参数
 
 ## 6. 前端验证
