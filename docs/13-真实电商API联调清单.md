@@ -82,6 +82,7 @@ Authorization: Bearer <accessToken>
 - 拼多多：`minPrice` / `maxPrice`、`withCoupon`、`officialOnly`、`sortBy=price_asc` / `sales_desc`
 - 京东：`minPrice` / `maxPrice`、`withCoupon`、`selfOperatedOnly`、`sortBy=price_asc` / `sales_desc` / `rating_desc`
 
+搜索请求显式指定 `platforms` 时，所有指定官方平台都必须已配置且调用成功；如果其中一个平台失败，后端会返回错误，避免把部分平台结果误当成完整真实接入。
 价格筛选支持 `"500.00"` 这样的字符串，也支持 `{ "amount": "500.00", "currency": "CNY" }` 这样的金额对象。平台返回后，后端仍会按统一规则做一次最终过滤。
 
 ## 5. 跑 live smoke test

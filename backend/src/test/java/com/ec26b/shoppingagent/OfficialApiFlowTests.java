@@ -136,6 +136,18 @@ class OfficialApiFlowTests {
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertThat(jdFailure).contains("京东");
 
+        String mixedPlatformFailure = mockMvc.perform(post("/api/search-tasks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "query", "吹风机",
+                                "sourceType", "official_api",
+                                "platforms", java.util.List.of("pdd", "jd")
+                        )))
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(mixedPlatformFailure).contains("selected platforms", "京东");
+
         JsonNode diagnostics = getJson(token, "/api/ecommerce/diagnostics?query=吹风机&pageSize=2").get("data");
         assertThat(diagnostics.get("query").asText()).isEqualTo("吹风机");
         assertThat(diagnostic(diagnostics, "拼多多").get("success").asBoolean()).isTrue();

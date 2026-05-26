@@ -35,11 +35,24 @@ public class OfficialProductSourceProvider {
     }
 
     public List<MockCatalog.PlatformProductData> search(ProductSourceQuery query) {
+        List<String> requestedPlatforms = normalizePlatforms(query.platforms());
+        List<OfficialApiClient> selectedClients = clientsFor(requestedPlatforms);
         List<String> failures = new ArrayList<>();
         List<OfficialProductResult> results = new ArrayList<>();
         int attempted = 0;
-        for (OfficialApiClient client : clientsFor(query.platforms())) {
+        if (!requestedPlatforms.isEmpty()) {
+            List<String> supportedPlatforms = selectedClients.stream()
+                    .map(client -> normalizePlatform(client.platform()))
+                    .toList();
+            requestedPlatforms.stream()
+                    .filter(platform -> !supportedPlatforms.contains(platform))
+                    .forEach(platform -> failures.add(platform + ": not_supported"));
+        }
+        for (OfficialApiClient client : selectedClients) {
             if (!client.configured()) {
+                if (!requestedPlatforms.isEmpty()) {
+                    failures.add(client.platform() + ": not_configured");
+                }
                 continue;
             }
             attempted++;
@@ -49,7 +62,10 @@ public class OfficialProductSourceProvider {
                 failures.add(client.platform() + ": " + ex.getMessage());
             }
         }
-        if (attempted == 0 && !normalizePlatforms(query.platforms()).isEmpty()) {
+        if (!requestedPlatforms.isEmpty() && !failures.isEmpty()) {
+            throw ApiException.badRequest("official ecommerce api request failed for selected platforms: " + String.join("; ", failures));
+        }
+        if (attempted == 0 && !requestedPlatforms.isEmpty()) {
             throw ApiException.badRequest("official_api not configured for selected platforms: " + String.join(", ", query.platforms()));
         }
         if (attempted > 0 && results.isEmpty() && !failures.isEmpty()) {
