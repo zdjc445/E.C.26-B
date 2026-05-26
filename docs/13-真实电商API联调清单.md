@@ -37,6 +37,13 @@ $env:JD_POSITION_ID="<optional position id>"
 拼多多返回缺少 `goods_id` 但包含 `goods_sign` 时，后端会使用 `goods_sign` 生成稳定商品 ID，并把它保留到商品属性和 URL 中。
 `JD_PARAM_JSON_NAME` 默认为京东 JOS 公共参数字段 `360buy_param_json`，通常不需要修改；只有对接兼容网关时才建议覆盖。京东响应会兼容 `_response` 与部分平台历史上出现过的 `_responce` 包装字段；价格展示会优先使用 `lowestCouponPrice` / `lowestPrice` 这类到手价字段，并识别 `owner=g` 这类自营标记。
 
+可在真正调用平台前先跑配置自检；该脚本只输出缺失变量名，不会打印密钥：
+
+```powershell
+.\scripts\check-ecommerce-config.ps1
+.\scripts\check-ecommerce-config.ps1 -Platforms "pdd" -Strict
+```
+
 ## 2. 启动服务
 
 ```powershell
