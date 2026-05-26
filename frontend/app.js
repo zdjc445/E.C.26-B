@@ -494,6 +494,7 @@ function renderProducts(items) {
           <span>匹配 ${Math.round(item.matchScore * 100)}%</span>
         </div>
         <div class="tag-row">
+          ${sourceTypeTag(item)}
           ${(item.tags || []).map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}
           ${item.isOfficial ? `<span class="tag">官方</span>` : ""}
           ${item.isSelfOperated ? `<span class="tag">自营</span>` : ""}
@@ -567,7 +568,7 @@ function renderEcommerceDiagnostics(data) {
       ${(data.providers || []).map((provider) => `
         <div class="diagnostic-row">
           <span>${escapeHtml(provider.platform)}</span>
-          <span class="tag">${provider.success ? "通过" : statusLabel(provider.status)}</span>
+          <span class="tag ${diagnosticTagClass(provider)}">${provider.success ? "通过" : statusLabel(provider.status)}</span>
           <span>${provider.itemCount || 0} 个商品</span>
           <span>${provider.durationMs || 0} ms</span>
           <p class="muted">${escapeHtml(diagnosticMessage(provider))}</p>
@@ -579,8 +580,15 @@ function renderEcommerceDiagnostics(data) {
 
 function statusLabel(status) {
   if (status === "not_configured") return "未配置";
+  if (status === "not_supported") return "未接入";
   if (status === "failed") return "失败";
   return status || "未知";
+}
+
+function diagnosticTagClass(provider) {
+  if (provider.success) return "status-ok";
+  if (provider.status === "not_supported") return "status-muted";
+  return "status-failed";
 }
 
 function diagnosticMessage(provider) {
@@ -592,6 +600,13 @@ function diagnosticMessage(provider) {
   }
   const message = provider.errorMessage || "调用失败";
   return provider.errorCode ? `${provider.errorCode}：${message}` : message;
+}
+
+function sourceTypeTag(item) {
+  if (item.sourceType === "official_api") {
+    return `<span class="tag source-official">官方API</span>`;
+  }
+  return "";
 }
 
 function setSortActive(sortBy) {

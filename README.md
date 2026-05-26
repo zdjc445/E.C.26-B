@@ -96,7 +96,7 @@ $env:JD_POSITION_ID="..." # 可选
 
 启动时后端会自动读取当前目录或上一级目录的 `.env`，因此从仓库根目录或 `backend/` 目录启动都能读到本地密钥；已经存在的环境变量或 JVM `-D` 参数优先级更高。需要指定其他密钥文件时，可设置 `EC26B_DOTENV_FILE=D:\path\to\ecommerce.env`。
 
-启动后可在 Web 演示端右上角“数据源”选择“官方 API”，或在 `POST /api/search-tasks` 中传入 `"sourceType": "official_api"`。未配置平台密钥时，后端会返回明确的 `official_api not configured` 错误，不会执行网页抓取。
+启动后可在 Web 演示端右上角“数据源”选择“官方 API”，或在 `POST /api/search-tasks` 中传入 `"sourceType": "official_api"`。Web 商品卡会给 `official_api` 结果显示“官方API”标签，方便联调时直接确认页面使用真实平台数据源。未配置平台密钥时，后端会返回明确的 `official_api not configured` 错误，不会执行网页抓取。
 如果搜索请求显式指定了 `platforms`，后端会要求每个指定官方平台都已配置且调用成功；不会在某个平台失败时静默返回其他平台的部分结果。
 后端和 live smoke 会把 `...`、`<pdd client id>`、`your-*`、`replace-*` 等模板占位值视为未配置，复制 `.env.example` 后需要替换成真实凭证。
 
