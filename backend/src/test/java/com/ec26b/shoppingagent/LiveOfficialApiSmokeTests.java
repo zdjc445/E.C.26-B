@@ -53,6 +53,7 @@ class LiveOfficialApiSmokeTests {
         JsonNode providerDiagnostics = diagnostics.get("providers");
         assertThat(providerDiagnostics).isNotNull();
         assertThat(providerDiagnostics.size()).isGreaterThan(0);
+        assertRequestedProvidersSucceeded(providerDiagnostics, platforms);
         JsonNode successfulProvider = firstSuccessfulProvider(providerDiagnostics);
         assertThat(successfulProvider.get("configured").asBoolean()).isTrue();
         assertThat(successfulProvider.get("status").asText()).isEqualTo("ok");
@@ -120,6 +121,42 @@ class LiveOfficialApiSmokeTests {
             }
         }
         throw new AssertionError("No official ecommerce provider passed live diagnostics: " + providers);
+    }
+
+    private void assertRequestedProvidersSucceeded(JsonNode providers, List<String> requestedPlatforms) {
+        if (requestedPlatforms.isEmpty()) {
+            return;
+        }
+        for (String requestedPlatform : requestedPlatforms) {
+            JsonNode provider = providerFor(providers, requestedPlatform);
+            assertThat(provider)
+                    .as("diagnostics should include requested platform %s", requestedPlatform)
+                    .isNotNull();
+            assertThat(provider.get("configured").asBoolean())
+                    .as("requested platform %s should be configured", requestedPlatform)
+                    .isTrue();
+            assertThat(provider.get("success").asBoolean())
+                    .as("requested platform %s should pass diagnostics: %s", requestedPlatform, provider)
+                    .isTrue();
+        }
+    }
+
+    private JsonNode providerFor(JsonNode providers, String requestedPlatform) {
+        for (JsonNode provider : providers) {
+            if (samePlatform(provider.path("platform").asText(), requestedPlatform)) {
+                return provider;
+            }
+        }
+        return null;
+    }
+
+    private boolean samePlatform(String platform, String requestedPlatform) {
+        String normalized = requestedPlatform == null ? "" : requestedPlatform.trim().toLowerCase();
+        return switch (normalized) {
+            case "pdd", "拼多多", "多多进宝" -> "拼多多".equals(platform);
+            case "jd", "jingdong", "京东", "京东自营" -> "京东".equals(platform);
+            default -> platform.equalsIgnoreCase(normalized);
+        };
     }
 
     private String textOrBlank(JsonNode node) {
