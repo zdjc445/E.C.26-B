@@ -78,11 +78,8 @@ class LiveOfficialApiSmokeTests {
         assertThat(items).isNotNull();
         assertThat(items.size()).isGreaterThan(0);
         JsonNode first = items.get(0);
-        assertThat(first.get("sourceType").asText()).isEqualTo("official_api");
-        assertThat(first.get("platform").asText()).isNotBlank();
-        assertThat(first.get("title").asText()).isNotBlank();
-        assertThat(first.get("url").asText()).startsWith("http");
-        assertThat(new BigDecimal(first.get("price").get("amount").asText())).isGreaterThan(BigDecimal.ZERO);
+        assertLiveProductItem(first, "first official API search item");
+        assertSearchContainsRequestedPlatforms(items, platforms);
 
         writeLiveReport(query, sortBy, platforms, filters, diagnostics, search);
     }
@@ -154,6 +151,54 @@ class LiveOfficialApiSmokeTests {
             }
         }
         return null;
+    }
+
+    private void assertSearchContainsRequestedPlatforms(JsonNode items, List<String> requestedPlatforms) {
+        if (requestedPlatforms.isEmpty()) {
+            return;
+        }
+        for (String requestedPlatform : requestedPlatforms) {
+            JsonNode item = itemForPlatform(items, requestedPlatform);
+            assertThat(item)
+                    .as("search should include a live official_api product for requested platform %s", requestedPlatform)
+                    .isNotNull();
+            assertLiveProductItem(item, "requested platform " + requestedPlatform + " search item");
+        }
+    }
+
+    private JsonNode itemForPlatform(JsonNode items, String requestedPlatform) {
+        for (JsonNode item : items) {
+            if (samePlatform(item.path("platform").asText(), requestedPlatform)) {
+                return item;
+            }
+        }
+        return null;
+    }
+
+    private void assertLiveProductItem(JsonNode item, String description) {
+        assertThat(textOrBlank(item.get("sourceType")))
+                .as("%s sourceType", description)
+                .isEqualTo("official_api");
+        assertThat(textOrBlank(item.get("platform")))
+                .as("%s platform", description)
+                .isNotBlank();
+        assertThat(textOrBlank(item.get("title")))
+                .as("%s title", description)
+                .isNotBlank();
+        assertThat(textOrBlank(item.get("url")))
+                .as("%s url", description)
+                .startsWith("http");
+        JsonNode price = item.get("price");
+        assertThat(price)
+                .as("%s price", description)
+                .isNotNull();
+        String amount = textOrBlank(price.get("amount"));
+        assertThat(amount)
+                .as("%s price amount", description)
+                .isNotBlank();
+        assertThat(new BigDecimal(amount))
+                .as("%s price amount", description)
+                .isGreaterThan(BigDecimal.ZERO);
     }
 
     private boolean samePlatform(String platform, String requestedPlatform) {
