@@ -87,7 +87,7 @@ Authorization: Bearer <accessToken>
 
 ## 5. 跑 live smoke test
 
-脚本默认读取仓库根目录 `.env`，也可以用 `-EnvFile` 指定其他本地凭证文件。脚本会严格校验平台启用开关，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`。`-Platforms` 仅支持 `pdd`、`jd`；显式指定多个平台时，每个目标平台的诊断都必须成功。`-SortBy` 仅支持 `comprehensive`、`price_asc`、`sales_desc`、`rating_desc`，默认 `price_asc`。
+脚本默认读取仓库根目录 `.env`，也可以用 `-EnvFile` 指定其他本地凭证文件。脚本会严格校验平台启用开关，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`。`-Platforms` 仅支持 `pdd`、`jd`；显式指定多个平台时，每个目标平台的诊断都必须成功并返回商品。`-SortBy` 仅支持 `comprehensive`、`price_asc`、`sales_desc`、`rating_desc`，默认 `price_asc`。
 
 ```powershell
 .\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd"
@@ -115,7 +115,7 @@ Authorization: Bearer <accessToken>
 
 - `LiveOfficialApiSmokeTests` 未跳过
 - 诊断接口至少一个目标平台 `success=true`
-- 如果 `-Platforms` 指定了一个或多个平台，所有指定平台都必须 `success=true`
+- 如果 `-Platforms` 指定了一个或多个平台，所有指定平台都必须 `success=true` 且 `itemCount > 0`
 - 返回至少 1 个 `sourceType=official_api` 商品
 - 商品包含平台、标题、URL 和大于 0 的价格
 - 使用筛选/排序参数时，live smoke 会同时把参数传给诊断接口和搜索接口

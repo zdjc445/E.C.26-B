@@ -138,6 +138,12 @@ class LiveOfficialApiSmokeTests {
             assertThat(provider.get("success").asBoolean())
                     .as("requested platform %s should pass diagnostics: %s", requestedPlatform, provider)
                     .isTrue();
+            assertThat(provider.get("itemCount").asInt())
+                    .as("requested platform %s should return live products: %s", requestedPlatform, provider)
+                    .isGreaterThan(0);
+            assertThat(provider.get("sampleTitles").size())
+                    .as("requested platform %s should return sample titles: %s", requestedPlatform, provider)
+                    .isGreaterThan(0);
         }
     }
 
