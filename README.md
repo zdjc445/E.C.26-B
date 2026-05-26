@@ -72,7 +72,7 @@ Ark 未配置、返回非 JSON 或调用失败时，图片识别会回退到 moc
 
 ## 真实电商 API 配置
 
-默认仍使用 mock 数据源。启用真实平台数据时，后端通过 `official_api` 数据源调用已授权的开放平台 API，当前已实现拼多多多多进宝商品搜索和京东联盟商品查询适配器。密钥只通过环境变量配置：
+默认仍使用 mock 数据源。启用真实平台数据时，后端通过 `official_api` 数据源调用已授权的开放平台 API，当前已实现拼多多多多进宝商品搜索和京东联盟商品查询适配器。密钥只通过环境变量或本地未提交的 `.env` 配置：
 
 ```powershell
 $env:ECOMMERCE_API_ENABLED="true"
@@ -93,6 +93,8 @@ $env:JD_PARAM_JSON_NAME="360buy_param_json" # 默认，按京东 JOS 公共参�
 $env:JD_SITE_ID="..." # 可选
 $env:JD_POSITION_ID="..." # 可选
 ```
+
+启动时后端会自动读取当前目录或上一级目录的 `.env`，因此从仓库根目录或 `backend/` 目录启动都能读到本地密钥；已经存在的环境变量或 JVM `-D` 参数优先级更高。需要指定其他密钥文件时，可设置 `EC26B_DOTENV_FILE=D:\path\to\ecommerce.env`。
 
 启动后可在 Web 演示端右上角“数据源”选择“官方 API”，或在 `POST /api/search-tasks` 中传入 `"sourceType": "official_api"`。未配置平台密钥时，后端会返回明确的 `official_api not configured` 错误，不会执行网页抓取。
 如果搜索请求显式指定了 `platforms`，后端会要求每个指定官方平台都已配置且调用成功；不会在某个平台失败时静默返回其他平台的部分结果。
