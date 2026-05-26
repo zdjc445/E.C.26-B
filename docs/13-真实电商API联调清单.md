@@ -75,6 +75,7 @@ Authorization: Bearer <accessToken>
 - `durationMs > 0`
 - 失败时查看 `errorCode` 和 `errorMessage`
 - 可选筛选/排序参数：`minPrice`、`maxPrice`、`withCoupon`、`officialOnly`、`selfOperatedOnly`、`sortBy`
+- 如果传入尚未实现的平台，诊断项会返回 `status=not_supported`，不是空 providers
 
 ## 4.1 官方 API 筛选下推
 

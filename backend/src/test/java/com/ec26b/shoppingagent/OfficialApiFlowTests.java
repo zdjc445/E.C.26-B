@@ -178,6 +178,12 @@ class OfficialApiFlowTests {
         assertThat(diagnostic(pddHttpError, "拼多多").get("errorMessage").asText()).contains("[redacted]");
         assertThat(diagnostic(pddHttpError, "拼多多").get("errorMessage").asText())
                 .doesNotContain("test-client", lastRequest.get("sign"));
+
+        JsonNode unsupportedDiagnostics = getJson(token, "/api/ecommerce/diagnostics?query=吹风机&pageSize=2&platforms=taobao").get("data");
+        assertThat(unsupportedDiagnostics.get("providers").size()).isEqualTo(1);
+        assertThat(diagnostic(unsupportedDiagnostics, "淘宝").get("success").asBoolean()).isFalse();
+        assertThat(diagnostic(unsupportedDiagnostics, "淘宝").get("status").asText()).isEqualTo("not_supported");
+        assertThat(diagnostic(unsupportedDiagnostics, "淘宝").get("errorCode").asText()).isEqualTo("not_supported");
     }
 
     @Test

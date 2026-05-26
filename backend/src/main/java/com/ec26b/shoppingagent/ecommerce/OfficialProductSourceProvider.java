@@ -128,11 +128,35 @@ public class OfficialProductSourceProvider {
                 normalizeSort(sortBy),
                 safePageSize
         );
-        List<EcommerceProviderDiagnostic> providers = clientsFor(query.platforms()).stream()
+        List<EcommerceProviderDiagnostic> providers = new ArrayList<>();
+        List<String> supportedPlatforms = clients.stream()
+                .map(client -> normalizePlatform(client.platform()))
+                .toList();
+        query.platforms().stream()
+                .filter(platform -> !supportedPlatforms.contains(platform))
+                .map(this::unsupportedDiagnostic)
+                .forEach(providers::add);
+        providers.addAll(clientsFor(query.platforms()).stream()
                 .sorted(Comparator.comparing(OfficialApiClient::platform))
                 .map(client -> diagnose(client, query))
-                .toList();
+                .toList());
         return new EcommerceDiagnosticsPayload(normalizedKeyword, OffsetDateTime.now(), providers);
+    }
+
+    private EcommerceProviderDiagnostic unsupportedDiagnostic(String platform) {
+        String displayPlatform = displayPlatform(platform);
+        return new EcommerceProviderDiagnostic(
+                displayPlatform,
+                false,
+                false,
+                "not_supported",
+                0,
+                0,
+                List.of(),
+                "not_supported",
+                "unsupported official ecommerce platform: " + displayPlatform,
+                List.of()
+        );
     }
 
     private EcommerceProviderDiagnostic diagnose(OfficialApiClient client, ProductSourceQuery query) {
@@ -288,6 +312,16 @@ public class OfficialProductSourceProvider {
             case "taobao", "淘宝" -> "taobao";
             case "tmall", "天猫" -> "tmall";
             default -> normalized;
+        };
+    }
+
+    private String displayPlatform(String normalizedPlatform) {
+        return switch (normalizedPlatform) {
+            case "pdd" -> "拼多多";
+            case "jd" -> "京东";
+            case "taobao" -> "淘宝";
+            case "tmall" -> "天猫";
+            default -> normalizedPlatform == null || normalizedPlatform.isBlank() ? "unknown" : normalizedPlatform;
         };
     }
 }
