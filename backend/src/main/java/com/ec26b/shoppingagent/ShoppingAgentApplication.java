@@ -8,6 +8,21 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class ShoppingAgentApplication {
     public static void main(String[] args) {
         LocalDotEnv.load();
+        normalizeDebugFlag();
         SpringApplication.run(ShoppingAgentApplication.class, args);
+    }
+
+    static void normalizeDebugFlag() {
+        if (System.getProperty("debug") != null) {
+            return;
+        }
+        String debugEnv = System.getenv("DEBUG");
+        if (debugEnv != null
+                && !debugEnv.equalsIgnoreCase("true")
+                && !debugEnv.equalsIgnoreCase("1")
+                && !debugEnv.equalsIgnoreCase("yes")
+                && !debugEnv.equalsIgnoreCase("on")) {
+            System.setProperty("debug", "false");
+        }
     }
 }

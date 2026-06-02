@@ -469,7 +469,7 @@ PATCH /api/recognitions/{recognitionId}/attributes
 
 ```json
 {
-  "brand": "MockCare",
+  "brand": "LumaCare",
   "attributes": {
     "color": "深蓝色",
     "shape": "手持式"
@@ -943,6 +943,53 @@ POST /api/agent/recommendations
       },
       "matchScore": 0.91
     },
+    "decisionScore": 86,
+    "decisionSignals": [
+      {
+        "key": "match",
+        "label": "意图匹配",
+        "score": 91,
+        "explanation": "标题、类目、属性和自然语言筛选的综合匹配度。"
+      },
+      {
+        "key": "price",
+        "label": "价格位置",
+        "score": 84,
+        "explanation": "当前价相对 90 天历史低点/高点的位置，越接近低点越高。"
+      }
+    ],
+    "decisionTrace": [
+      {
+        "key": "intent",
+        "label": "识别意图",
+        "status": "done",
+        "confidence": 92,
+        "observation": "识别为 吹风机，品牌 LumaCare，模型 HD-2026。"
+      },
+      {
+        "key": "market",
+        "label": "价格时机",
+        "status": "done",
+        "confidence": 84,
+        "observation": "当前价 199.00 CNY，90 天低点 189.00 CNY，趋势 接近低位。"
+      }
+    ],
+    "candidateAnalyses": [
+      {
+        "platformProductId": 5001,
+        "platform": "jd",
+        "title": "某品牌低噪音宿舍吹风机",
+        "price": {
+          "amount": "199.00",
+          "currency": "CNY"
+        },
+        "rank": 1,
+        "decisionScore": 86,
+        "verdict": "winner",
+        "strengths": ["意图匹配高", "接近 90 天价格低位"],
+        "weaknesses": ["暂无明显短板"]
+      }
+    ],
     "reasons": [
       "同款匹配度较高",
       "当前价格低于候选商品平均价",
@@ -978,6 +1025,10 @@ POST /api/agent/recommendations
 - `candidateIds` 是平台商品 ID，只能引用当前搜索任务内的候选商品
 - Agent 必须从后端数据库或工具结果读取商品、价格、历史价格和评价摘要
 - Agent 输出必须包含 `evidence`，不能只返回自然语言结论
+- `decisionScore` 是后端基于 `decisionSignals` 加权计算的 0-100 决策分，前端只负责展示，不自行编造
+- `decisionSignals` 固定覆盖 `match`、`price`、`reputation`、`channel`、`risk` 五类信号，便于答辩解释推荐依据
+- `decisionTrace` 固定覆盖 `intent`、`constraints`、`retrieval`、`market`、`risk`、`decision` 六步，展示 Agent 从识别、筛选、召回到最终建议的服务端决策轨迹
+- `candidateAnalyses` 是后端对每个候选商品按同一套决策分排序后生成的胜因/败因矩阵，`verdict` 可取 `winner`、`runner_up`、`watch`、`rejected`
 - `suggestion` 可取 `buy`、`wait`、`avoid`、`compare`
 
 可能错误码：`40101`、`40102`、`40403`、`40405`、`50005`。
@@ -989,6 +1040,37 @@ GET /api/agent/recommendations/{recommendationId}
 ```
 
 响应字段与创建购物推荐一致。
+
+可能错误码：`40101`、`40102`、`40408`。
+
+### 导出推荐证据报告
+
+```http
+GET /api/agent/recommendations/{recommendationId}/report
+```
+
+响应：
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "recommendationId": 7001,
+    "searchTaskId": 3001,
+    "title": "购物决策证据报告 #7001",
+    "summary": "建议购买：Auralis ANC-20 京东自营降噪耳机黑色，决策分 91，来源搜索任务 3001，候选 3 个。",
+    "markdown": "# 购物决策证据报告 #7001\n\n> 建议购买：...\n\n## 五类决策信号\n...",
+    "generatedAt": "2026-05-31T23:52:00+08:00"
+  }
+}
+```
+
+说明：
+
+- 报告内容由后端根据已保存推荐记录、搜索任务、决策信号、轨迹、候选矩阵和 evidence 生成
+- `markdown` 适合复制到答辩材料、评审说明或问题复盘中
+- 报告不重新调用 LLM，不新增商品事实，只导出服务端已有证据
 
 可能错误码：`40101`、`40102`、`40408`。
 
@@ -1087,7 +1169,7 @@ DELETE /api/favorites/{favoriteId}
 
 ## 价格提醒接口
 
-价格提醒属于完整蓝图预留能力，MVP 阶段可以只保留接口设计，暂不实现调度通知。
+价格提醒已作为用户资产沉淀能力接入 Web/PWA 演示端和后端接口。当前实现支持创建、查询和启停目标价提醒；长周期调度通知仍作为后续扩展。
 
 ### 创建价格提醒
 

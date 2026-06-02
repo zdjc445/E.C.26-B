@@ -1,0 +1,46 @@
+name: shopping_agent_app
+description: E.C.26-B shopping decision workspace — Flutter mobile client
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.4.0
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.0
+  go_router: ^14.0.0
+
+  # Feature packages
+  app_core:
+    path: packages/core
+  app_auth:
+    path: packages/auth
+  app_image_picker:
+    path: packages/image_picker
+  app_recognition:
+    path: packages/recognition
+  app_search:
+    path: packages/search
+  app_comparison:
+    path: packages/comparison
+  app_recommendation:
+    path: packages/recommendation
+  app_product_inspection:
+    path: packages/product_inspection
+  app_favorites:
+    path: packages/favorites
+  app_price_alerts:
+    path: packages/price_alerts
+  app_ecommerce_diagnostics:
+    path: packages/ecommerce_diagnostics
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

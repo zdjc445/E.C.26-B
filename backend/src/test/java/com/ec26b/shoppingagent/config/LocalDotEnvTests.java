@@ -1,16 +1,21 @@
 package com.ec26b.shoppingagent.config;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class LocalDotEnvTests {
-    @TempDir
     Path tempDir;
+
+    @BeforeEach
+    void createWorkspaceTempDir() throws Exception {
+        tempDir = Files.createDirectories(Path.of("target", "test-temp", "LocalDotEnvTests", UUID.randomUUID().toString()));
+    }
 
     @Test
     void loadsDotEnvValuesWithoutOverridingExistingRuntimeValues() throws Exception {

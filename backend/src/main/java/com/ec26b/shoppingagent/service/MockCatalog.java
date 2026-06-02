@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -57,6 +58,36 @@ public class MockCatalog {
 
     public List<PlatformProductData> platformProducts() {
         return platformProducts;
+    }
+
+    public int recognitionSampleCount() {
+        return recognitions.size();
+    }
+
+    public int priceHistoryCount() {
+        return priceHistories.size();
+    }
+
+    public int reviewSummaryCount() {
+        return reviewSummaries.size();
+    }
+
+    public List<String> categories() {
+        return products.stream()
+                .map(ProductData::category)
+                .filter(category -> category != null && !category.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new))
+                .stream()
+                .toList();
+    }
+
+    public List<String> platforms() {
+        return platformProducts.stream()
+                .map(PlatformProductData::platform)
+                .filter(platform -> platform != null && !platform.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new))
+                .stream()
+                .toList();
     }
 
     public ProductData product(long productId) {

@@ -6,7 +6,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -211,7 +211,7 @@ class OfficialApiFlowTests {
         assertThat(first.get("originalPrice").get("amount").asText()).isEqualTo("399.00");
         assertThat(first.get("url").asText()).isEqualTo("https://item.jd.com/987654321.html");
         assertThat(first.get("imageUrl").asText()).isEqualTo("https://img.example.test/jd-headphone.jpg");
-        assertThat(first.get("shopName").asText()).contains("Mock品牌旗舰店");
+        assertThat(first.get("shopName").asText()).contains("Auralis旗舰店");
         assertThat(first.get("isSelfOperated").asBoolean()).isTrue();
         assertThat(first.get("rating").asDouble()).isEqualTo(4.9);
 
@@ -330,7 +330,7 @@ class OfficialApiFlowTests {
                                 "goods_thumbnail_url": "https://img.example.test/hair-dryer.jpg",
                                 "min_group_price": 12900,
                                 "min_normal_price": 16900,
-                                "mall_name": "MockCare官方旗舰店",
+                                "mall_name": "LumaCare官方旗舰店",
                                 "sales_tip": "2.5万+件",
                                 "avg_desc": "4.9",
                                 "goods_sign": "test-goods-sign"
@@ -364,7 +364,7 @@ class OfficialApiFlowTests {
                             {
                               "jd_union_open_goods_query_response": {
                                 "code": "0",
-                                "result": "{\\"code\\":200,\\"data\\":[{\\"skuId\\":987654321,\\"skuName\\":\\"京东官方降噪耳机 Pro\\",\\"imageInfo\\":{\\"imageList\\":[{\\"url\\":\\"//img.example.test/jd-headphone.jpg\\"}]},\\"priceInfo\\":{\\"price\\":\\"299.00\\",\\"lowestCouponPrice\\":\\"279.00\\",\\"originPrice\\":\\"399.00\\"},\\"shopInfo\\":{\\"shopName\\":\\"Mock品牌旗舰店\\"},\\"inOrderCount30Days\\":1234,\\"goodCommentsShare\\":\\"98\\",\\"owner\\":\\"g\\",\\"materialUrl\\":\\"https://item.jd.com/987654321.html\\"}]}"
+                                "result": "{\\"code\\":200,\\"data\\":[{\\"skuId\\":987654321,\\"skuName\\":\\"京东官方降噪耳机 Pro\\",\\"imageInfo\\":{\\"imageList\\":[{\\"url\\":\\"//img.example.test/jd-headphone.jpg\\"}]},\\"priceInfo\\":{\\"price\\":\\"299.00\\",\\"lowestCouponPrice\\":\\"279.00\\",\\"originPrice\\":\\"399.00\\"},\\"shopInfo\\":{\\"shopName\\":\\"Auralis旗舰店\\"},\\"inOrderCount30Days\\":1234,\\"goodCommentsShare\\":\\"98\\",\\"owner\\":\\"g\\",\\"materialUrl\\":\\"https://item.jd.com/987654321.html\\"}]}"
                               }
                             }
                             """.getBytes(StandardCharsets.UTF_8);

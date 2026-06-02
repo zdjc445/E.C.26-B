@@ -4,8 +4,9 @@
 
 ## 当前可运行能力
 
-- Web/PWA 演示端：登录、示例图/拍照上传、识别结果、数据源切换、建议卡片、推荐列表、追加筛选、比价、推荐理由
-- Spring Boot 后端：JWT 鉴权、统一响应、全局异常处理、Ark 可选 AI Provider、mock 商品源、拼多多/京东官方 API 适配器、LLM refine + 规则兜底
+- Web/PWA 演示端：登录、多类目示例图/拍照上传、识别结果修正、主链路进度、决策摘要、可复制证据报告、数据源切换、建议卡片、推荐列表、追加筛选、比价、Agent 决策中枢、商品洞察、收藏、价格提醒、搜索历史恢复和上传图片历史，并具备 service worker app shell 缓存和可安装图标
+- Flutter 移动端：`app/` 已按认证、拍照、识别、搜索、比价、推荐、收藏、价格提醒和诊断拆分功能包；搜索结果卡已接入商品洞察、比价、Agent 推荐、收藏和目标价提醒操作面板；搜索与购买链路 DTO/domain 已对齐当前后端契约，当前主交付仍以 Web/PWA 为准
+- Spring Boot 后端：JWT 鉴权、统一响应、全局异常处理、Ark 可选 AI Provider、mock 商品源、拼多多/京东官方 API 适配器、LLM refine + 规则兜底、后端结构化 Agent 决策信号、六步决策轨迹和候选胜因/败因矩阵
 - 契约资产：OpenAPI、Flyway schema、mock 商品/价格/评价数据
 - 合规边界：不实现非授权数据抓取；默认使用 `mock` / `sample_dataset`，真实平台通过 `official_api` 调用授权开放平台 API
 
@@ -14,7 +15,7 @@
 环境要求：
 
 ```text
-JDK 17
+JDK 21
 Maven 3.9+
 Python 3 或任意静态文件服务器
 ```
@@ -28,10 +29,33 @@ mvn -DskipTests clean package
 java -jar target/shopping-agent-0.1.0.jar
 ```
 
+Postgres 持久化契约检查：
+
+```powershell
+python scripts\check-postgres-persistence-contract.py
+```
+
 前端：
 
 ```powershell
 python -m http.server 5173 -d frontend
+```
+
+Flutter 静态分析与移动端契约检查：
+
+```powershell
+cd app
+C:\flutter\flutter\bin\flutter.bat analyze
+C:\flutter\flutter\bin\dart.bat run tool\check_search_contract.dart
+C:\flutter\flutter\bin\dart.bat run tool\check_mobile_contract.dart
+C:\flutter\flutter\bin\dart.bat run tool\check_mobile_network_config.dart
+```
+
+Flutter 运行时可通过 `EC26B_API_BASE_URL` 切换后端地址。Windows 桌面可继续使用默认 `http://localhost:8080`；Android 模拟器需要访问宿主机时使用：
+
+```powershell
+cd app
+C:\flutter\flutter\bin\flutter.bat run -d emulator-5554 --dart-define=EC26B_API_BASE_URL=http://10.0.2.2:8080
 ```
 
 访问：
@@ -40,22 +64,37 @@ python -m http.server 5173 -d frontend
 - Swagger UI：http://localhost:8080/swagger-ui.html
 - 健康检查：http://localhost:8080/api/health
 
-默认后端使用内存运行态加载 `mock-data/`，不要求本机 PostgreSQL。需要验证 Flyway/PostgreSQL schema 和运行时快照落库时可启用 `postgres` profile，并配置 `POSTGRES_JDBC_URL`、`POSTGRES_USER`、`POSTGRES_PASSWORD`。
+默认后端使用内存运行态加载 `mock-data/`，不要求本机 PostgreSQL。需要验证 Flyway/PostgreSQL schema 和运行时快照落库时可启用 `postgres` profile，并配置 `POSTGRES_JDBC_URL`、`POSTGRES_USER`、`POSTGRES_PASSWORD`。`postgres` profile 默认 `POSTGRES_PERSISTENCE_FAIL_FAST=true`，写库失败会直接暴露；如需临时宽松联调，可显式设为 `false`。
+
+`GET /api/health` 会返回当前 profile、mock 数据集数量、AI provider、持久化模式、fail-fast 状态和真实电商 API 配置摘要，只暴露环境变量名与状态，不返回密钥值。
 
 ## 最小验收路径
 
 1. 打开 Web 演示端，注册或登录。
-2. 点击“示例图”，再点击“上传并识别”。
-3. 查看识别结果和建议卡片。
-4. 点击“只看官方旗舰店”或输入：
+2. 录屏或现场演示时可直接点击“一键演示主链路”，左侧“主链路进度”会实时标记账号、识别召回、商品洞察、跨平台比价、Agent 决策和资产沉淀，顶部“决策摘要”会形成可复制的答辩结论。
+3. 如需手动讲解每一步，可在“演示场景”中选择吹风机、耳机、手机、键盘、水杯、运动鞋或护肤乳，再点击“示例图”和“上传并识别”。
+4. 查看识别结果和建议卡片。
+5. 点击“只看官方旗舰店”或输入：
 
 ```text
 1000 元以内的黑色款，要评价 4.8 分以上，只看官方
 ```
 
-5. 切换“低价 / 销量 / 好评”排序。
-6. 勾选 2-4 个商品，点击“生成比价”，查看平台最低价、均价、商品数和商品对比表。
-7. 点击“收藏”体验个性化入口，再点击“生成推荐”，查看推荐理由、风险和 evidence。
+6. 切换“低价 / 销量 / 好评”排序。
+7. 勾选 2-4 个商品，点击“生成比价”，查看平台最低价、均价、商品数和商品对比表。
+8. 点击商品卡“洞察”查看价格走势与评价风险，点击“提醒”设置目标价。
+9. 点击“收藏”体验个性化入口，再点击“历史工作台”的“搜索”恢复历史任务，确认过去的候选、识别结果和摘要可以回到主工作区。
+10. 点击“生成推荐”，查看后端输出的 Agent 决策分、五类决策信号、六步决策轨迹、候选胜因/败因矩阵、推荐理由、风险和 evidence。
+
+## Web 主链路烟测
+
+后端和前端启动后，可以运行真实浏览器烟测，自动点击“一键演示主链路”并断言识别召回、商品洞察、跨平台比价、Agent 决策、候选矩阵、证据链和资产沉淀都已渲染：
+
+```powershell
+python scripts\run-web-demo-smoke.py --scenario headphones
+```
+
+脚本默认使用 Microsoft Edge + Selenium，输出报告和截图到 `backend/target/web-demo-smoke-report.json`、`backend/target/web-demo-smoke.png`，并额外断言推荐证据报告接口可用、service worker 已激活、PWA app shell cache 已创建。如果本机缺少 Selenium，可先执行 `python -m pip install selenium`。
 
 ## AI Provider 配置
 
@@ -150,26 +189,26 @@ mvn -Dtest=LiveOfficialApiSmokeTests test
 
 - [文档目录](docs/README.md)
 - [赛事方要求记录](docs/00-比赛要求.md)
-- [需求分析](docs/01-需求分析.md)
+- [项目范围与进度](docs/01-项目范围与进度.md)
 - [系统架构](docs/02-系统架构.md)
 - [Agent 设计](docs/03-Agent设计.md)
 - [API 接口设计](docs/04-API接口设计.md)
 - [OpenAPI 契约](docs/openapi.yaml)
 - [数据库设计](docs/05-数据库设计.md)
-- [开发计划](docs/06-开发计划.md)
 - [测试方案](docs/07-测试方案.md)
 - [演示说明](docs/08-演示说明.md)
 - [用户认证与数据隔离](docs/09-用户认证与数据隔离.md)
 - [项目分工说明](docs/10-项目分工说明.md)
 - [AI 使用总结](docs/11-AI使用总结.md)
-- [最终交付清单](docs/12-最终交付清单.md)
 - [真实电商 API 联调清单](docs/13-真实电商API联调清单.md)
+- [Mock 数据说明](docs/15-Mock数据说明.md)
 
 ## 工程结构
 
 ```text
 backend/     Spring Boot API 服务
 frontend/    Web/PWA 演示端
+app/         Flutter 移动端骨架
 docs/        需求、架构、API、数据库、测试和演示文档
 mock-data/   商品、平台商品、价格历史、评价摘要和识别样例
 uploads/     本地上传文件目录，真实图片不提交

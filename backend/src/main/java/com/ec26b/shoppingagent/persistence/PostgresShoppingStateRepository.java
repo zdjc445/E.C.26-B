@@ -30,19 +30,22 @@ public class PostgresShoppingStateRepository implements ShoppingStateRepository 
     private final String url;
     private final String username;
     private final String password;
+    private final boolean failFast;
 
     public PostgresShoppingStateRepository(
             ObjectMapper objectMapper,
             MockCatalog catalog,
             @Value("${spring.datasource.url}") String url,
             @Value("${spring.datasource.username}") String username,
-            @Value("${spring.datasource.password}") String password
+            @Value("${spring.datasource.password}") String password,
+            @Value("${app.persistence.fail-fast:true}") boolean failFast
     ) {
         this.objectMapper = objectMapper;
         this.catalog = catalog;
         this.url = url;
         this.username = username;
         this.password = password;
+        this.failFast = failFast;
     }
 
     @PostConstruct
@@ -327,6 +330,9 @@ public class PostgresShoppingStateRepository implements ShoppingStateRepository 
         try (Connection connection = DriverManager.getConnection(url, username, password)) {
             work.run(connection);
         } catch (Exception ex) {
+            if (failFast) {
+                throw new IllegalStateException("PostgreSQL persistence failed during " + action, ex);
+            }
             log.warn("PostgreSQL persistence skipped during {}: {}", action, ex.getMessage());
         }
     }

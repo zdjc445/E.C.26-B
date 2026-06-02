@@ -410,17 +410,34 @@ public class ShoppingService {
         if (candidates.isEmpty()) {
             throw ApiException.badRequest("candidateIds is empty or not in search task");
         }
-        SearchTaskItemDto best = candidates.stream()
-                .max(Comparator.comparingDouble(this::recommendationScore))
-                .orElseThrow();
-        ReviewSummaryDto review = reviewSummary(best.platformProductId());
-        PriceHistoryDto history = priceHistory(best.platformProductId(), 90);
+        List<CandidateDecision> rankedCandidates = candidates.stream()
+                .map(this::candidateDecision)
+                .sorted((left, right) -> {
+                    int score = Integer.compare(right.decisionScore(), left.decisionScore());
+                    if (score != 0) {
+                        return score;
+                    }
+                    return Double.compare(recommendationScore(right.item()), recommendationScore(left.item()));
+                })
+                .toList();
+        CandidateDecision bestDecision = rankedCandidates.get(0);
+        SearchTaskItemDto best = bestDecision.item();
+        ReviewSummaryDto review = bestDecision.review();
+        PriceHistoryDto history = bestDecision.history();
+        List<RecommendationSignalDto> decisionSignals = bestDecision.signals();
+        int decisionScore = bestDecision.decisionScore();
         BigDecimal current = amount(best.price());
         BigDecimal historicalLow = amount(history.lowestPrice());
-        String suggestion = review.riskScore() > 0.35 ? "avoid" : current.compareTo(historicalLow.multiply(new BigDecimal("1.12"))) > 0 ? "wait" : "buy";
+        String suggestion = signalScore(decisionSignals, "risk") < 65
+                ? "avoid"
+                : current.compareTo(historicalLow.multiply(new BigDecimal("1.12"))) > 0 || signalScore(decisionSignals, "price") < 70
+                ? "wait"
+                : "buy";
         List<String> reasons = new ArrayList<>();
         reasons.add("匹配分 " + formatDouble(best.matchScore()) + "，与当前识别或搜索意图接近。");
         reasons.add("当前价格 " + best.price().amount() + " CNY，处于候选商品中靠前位置。");
+        reasons.add("综合决策分 " + decisionScore + "，由匹配、价格、口碑、渠道和风险五类信号加权得到。");
+        reasons.add("已对 " + rankedCandidates.size() + " 个候选商品生成胜因/败因矩阵，推荐结果来自同一套评分规则。");
         if (best.isOfficial() || best.isSelfOperated()) {
             reasons.add("官方或自营渠道确定性更高，适合比赛演示中的可信推荐。");
         }
@@ -437,12 +454,18 @@ public class ShoppingService {
                 new RecommendationEvidenceDto("review", best.platformProductId(), "评价风险分 " + formatDouble(review.riskScore()) + "，评分 " + best.rating() + "。"),
                 new RecommendationEvidenceDto("history", best.platformProductId(), "90 天历史低价 " + history.lowestPrice().amount() + " CNY。")
         );
+        List<RecommendationTraceStepDto> decisionTrace = decisionTrace(task, candidates, best, review, history, decisionSignals, suggestion, decisionScore);
+        List<RecommendationCandidateDto> candidateAnalyses = candidateAnalyses(rankedCandidates);
         long id = recommendationIds.getAndIncrement();
         RecommendationDto dto = new RecommendationDto(
                 id,
                 task.id,
                 suggestion,
                 new RecommendedPlatformProductDto(best.platformProductId(), best.platform(), best.title(), best.price(), best.matchScore()),
+                decisionScore,
+                decisionSignals,
+                decisionTrace,
+                candidateAnalyses,
                 reasons,
                 risks,
                 evidence,
@@ -459,6 +482,21 @@ public class ShoppingService {
             throw ApiException.notFound(40408, "recommendation not found");
         }
         return dto;
+    }
+
+    public RecommendationReportDto recommendationReport(long userId, long recommendationId) {
+        RecommendationDto dto = recommendation(userId, recommendationId);
+        SearchTaskRecord task = searchTaskForUser(userId, dto.searchTaskId());
+        String title = "购物决策证据报告 #" + dto.recommendationId();
+        String summary = recommendationSummary(dto, task);
+        return new RecommendationReportDto(
+                dto.recommendationId(),
+                dto.searchTaskId(),
+                title,
+                summary,
+                recommendationMarkdown(dto, task, summary),
+                OffsetDateTime.now()
+        );
     }
 
     public FavoriteDto createFavorite(long userId, CreateFavoriteRequest request) {
@@ -918,6 +956,287 @@ public class ShoppingService {
         return item.matchScore() * 0.55 + item.rating() * 0.08 + Math.log1p(item.salesVolume()) * 0.02 + priceScore + (item.isOfficial() ? 0.05 : 0) + (item.isSelfOperated() ? 0.05 : 0);
     }
 
+    private List<RecommendationSignalDto> decisionSignals(SearchTaskItemDto item, ReviewSummaryDto review, PriceHistoryDto history) {
+        int match = percent(item.matchScore() * 100);
+        int price = priceSignal(item, history);
+        int reputation = percent((item.rating() / 5.0) * 100 - review.riskScore() * 18);
+        int channel = percent(62 + (item.isOfficial() ? 22 : 0) + (item.isSelfOperated() ? 16 : 0));
+        int risk = percent(100 - review.riskScore() * 100);
+        return List.of(
+                new RecommendationSignalDto("match", "意图匹配", match, "标题、类目、属性和自然语言筛选的综合匹配度。"),
+                new RecommendationSignalDto("price", "价格位置", price, "当前价相对 90 天历史低点/高点的位置，越接近低点越高。"),
+                new RecommendationSignalDto("reputation", "口碑质量", reputation, "评分和评价风险摘要的综合口碑信号。"),
+                new RecommendationSignalDto("channel", "渠道可信", channel, "官方旗舰店、自营等渠道标签提升可信度。"),
+                new RecommendationSignalDto("risk", "风险控制", risk, "评价风险越少、风险分越低，该信号越高。")
+        );
+    }
+
+    private CandidateDecision candidateDecision(SearchTaskItemDto item) {
+        ReviewSummaryDto review = reviewSummary(item.platformProductId());
+        PriceHistoryDto history = priceHistory(item.platformProductId(), 90);
+        List<RecommendationSignalDto> signals = decisionSignals(item, review, history);
+        int score = decisionScore(signals);
+        return new CandidateDecision(
+                item,
+                review,
+                history,
+                signals,
+                score,
+                candidateStrengths(item, review, history, signals),
+                candidateWeaknesses(item, review, history, signals)
+        );
+    }
+
+    private List<RecommendationCandidateDto> candidateAnalyses(List<CandidateDecision> rankedCandidates) {
+        List<RecommendationCandidateDto> analyses = new ArrayList<>();
+        for (int index = 0; index < rankedCandidates.size(); index++) {
+            CandidateDecision candidate = rankedCandidates.get(index);
+            SearchTaskItemDto item = candidate.item();
+            analyses.add(new RecommendationCandidateDto(
+                    item.platformProductId(),
+                    item.platform(),
+                    item.title(),
+                    item.price(),
+                    index + 1,
+                    candidate.decisionScore(),
+                    candidateVerdict(index, candidate),
+                    candidate.strengths(),
+                    candidate.weaknesses()
+            ));
+        }
+        return analyses;
+    }
+
+    private String recommendationSummary(RecommendationDto dto, SearchTaskRecord task) {
+        RecommendedPlatformProductDto product = dto.recommendedPlatformProduct();
+        return suggestionText(dto.suggestion()) + "：" + product.title()
+                + "，决策分 " + dto.decisionScore()
+                + "，来源搜索任务 " + task.id
+                + "，候选 " + dto.candidateAnalyses().size() + " 个。";
+    }
+
+    private String recommendationMarkdown(RecommendationDto dto, SearchTaskRecord task, String summary) {
+        StringBuilder report = new StringBuilder();
+        report.append("# 购物决策证据报告 #").append(dto.recommendationId()).append("\n\n");
+        report.append("> ").append(summary).append("\n\n");
+        report.append("## 任务上下文\n\n");
+        report.append("- 搜索任务：").append(task.id).append("\n");
+        report.append("- 数据源：").append(sourceTypeText(task.sourceType)).append("\n");
+        report.append("- 用户需求：").append(fallbackText(task.query, "未提供")).append("\n");
+        report.append("- 生成时间：").append(dto.createdAt()).append("\n\n");
+
+        RecommendedPlatformProductDto product = dto.recommendedPlatformProduct();
+        report.append("## 推荐结论\n\n");
+        report.append("- 建议：").append(suggestionText(dto.suggestion())).append("\n");
+        report.append("- 推荐商品：").append(product.title()).append("\n");
+        report.append("- 平台：").append(product.platform()).append("\n");
+        report.append("- 当前价：").append(product.price().amount()).append(" ").append(product.price().currency()).append("\n");
+        report.append("- 匹配分：").append(formatDouble(product.matchScore())).append("\n");
+        report.append("- 决策分：").append(dto.decisionScore()).append("/100\n\n");
+
+        report.append("## 五类决策信号\n\n");
+        for (RecommendationSignalDto signal : dto.decisionSignals()) {
+            report.append("- ").append(signal.label()).append("：").append(signal.score()).append("/100。")
+                    .append(signal.explanation()).append("\n");
+        }
+        report.append("\n## 六步决策轨迹\n\n");
+        for (RecommendationTraceStepDto step : dto.decisionTrace()) {
+            report.append("- ").append(step.label()).append("（").append(step.status()).append("，")
+                    .append(step.confidence()).append("/100）：")
+                    .append(step.observation()).append("\n");
+        }
+        report.append("\n## 候选胜因/败因矩阵\n\n");
+        for (RecommendationCandidateDto candidate : dto.candidateAnalyses()) {
+            report.append("### #").append(candidate.rank()).append(" ")
+                    .append(verdictText(candidate.verdict())).append("：")
+                    .append(candidate.title()).append("\n\n");
+            report.append("- 平台：").append(candidate.platform()).append("\n");
+            report.append("- 当前价：").append(candidate.price().amount()).append(" ").append(candidate.price().currency()).append("\n");
+            report.append("- 决策分：").append(candidate.decisionScore()).append("/100\n");
+            report.append("- 胜因：").append(String.join("；", candidate.strengths())).append("\n");
+            report.append("- 败因：").append(String.join("；", candidate.weaknesses())).append("\n\n");
+        }
+        report.append("## 推荐理由\n\n");
+        for (String reason : dto.reasons()) {
+            report.append("- ").append(reason).append("\n");
+        }
+        report.append("\n## 风险提示\n\n");
+        if (dto.risks().isEmpty()) {
+            report.append("- 未发现明确高频风险。\n");
+        } else {
+            for (String risk : dto.risks()) {
+                report.append("- ").append(risk).append("\n");
+            }
+        }
+        report.append("\n## Evidence\n\n");
+        for (RecommendationEvidenceDto evidence : dto.evidence()) {
+            report.append("- [").append(evidence.type()).append("] 商品 ")
+                    .append(evidence.platformProductId()).append("：")
+                    .append(evidence.content()).append("\n");
+        }
+        report.append("\n## 合规边界\n\n");
+        report.append("- 本报告中的价格、评分、评价摘要和历史价格来自服务端数据源。\n");
+        report.append("- LLM 不直接生成商品事实；推荐结论由服务端证据和规则计算得到。\n");
+        report.append("- 默认演示数据集来自本地 mock/sample dataset，不代表真实实时价格。\n");
+        return report.toString();
+    }
+
+    private String verdictText(String verdict) {
+        return switch (verdict == null ? "" : verdict) {
+            case "winner" -> "胜出";
+            case "runner_up" -> "备选";
+            case "watch" -> "观察";
+            case "rejected" -> "暂不推荐";
+            default -> "候选";
+        };
+    }
+
+    private List<String> candidateStrengths(SearchTaskItemDto item, ReviewSummaryDto review, PriceHistoryDto history, List<RecommendationSignalDto> signals) {
+        List<String> strengths = new ArrayList<>();
+        if (signalScore(signals, "match") >= 80) {
+            strengths.add("意图匹配高");
+        }
+        if (signalScore(signals, "price") >= 82) {
+            strengths.add("接近 90 天价格低位");
+        }
+        if (signalScore(signals, "reputation") >= 82) {
+            strengths.add("口碑评分稳定");
+        }
+        if (signalScore(signals, "channel") >= 80) {
+            strengths.add(item.isOfficial() && item.isSelfOperated() ? "官方/自营双标签" : "渠道可信度较高");
+        }
+        if (signalScore(signals, "risk") >= 82) {
+            strengths.add("评价风险低");
+        }
+        if ("low".equals(history.trend())) {
+            strengths.add("价格趋势接近低位");
+        }
+        if (review.positiveTags() != null && !review.positiveTags().isEmpty()) {
+            strengths.add("评价亮点：" + String.join("、", review.positiveTags().stream().limit(2).toList()));
+        }
+        if (strengths.isEmpty()) {
+            strengths.add("综合表现均衡");
+        }
+        return strengths.stream().limit(4).toList();
+    }
+
+    private List<String> candidateWeaknesses(SearchTaskItemDto item, ReviewSummaryDto review, PriceHistoryDto history, List<RecommendationSignalDto> signals) {
+        List<String> weaknesses = new ArrayList<>();
+        if (signalScore(signals, "match") < 72) {
+            weaknesses.add("意图匹配弱于首选");
+        }
+        if (signalScore(signals, "price") < 72) {
+            weaknesses.add("当前价距离历史低位偏远");
+        }
+        if (signalScore(signals, "reputation") < 76) {
+            weaknesses.add("口碑信号不够稳定");
+        }
+        if (signalScore(signals, "channel") < 76) {
+            weaknesses.add("缺少官方或自营确定性");
+        }
+        if (signalScore(signals, "risk") < 72) {
+            weaknesses.add("评价风险需关注");
+        }
+        if ("high".equals(history.trend())) {
+            weaknesses.add("历史价格处于高位");
+        }
+        if (review.riskTags() != null && !review.riskTags().isEmpty()) {
+            weaknesses.add("风险标签：" + String.join("、", review.riskTags().stream().limit(2).toList()));
+        }
+        if (weaknesses.isEmpty()) {
+            weaknesses.add(item.isOfficial() || item.isSelfOperated() ? "暂无明显短板" : "渠道背书略弱");
+        }
+        return weaknesses.stream().limit(4).toList();
+    }
+
+    private String candidateVerdict(int index, CandidateDecision candidate) {
+        if (index == 0) {
+            return "winner";
+        }
+        if (candidate.decisionScore() >= 82) {
+            return "runner_up";
+        }
+        if (candidate.decisionScore() >= 70) {
+            return "watch";
+        }
+        return "rejected";
+    }
+
+    private List<RecommendationTraceStepDto> decisionTrace(
+            SearchTaskRecord task,
+            List<SearchTaskItemDto> candidates,
+            SearchTaskItemDto best,
+            ReviewSummaryDto review,
+            PriceHistoryDto history,
+            List<RecommendationSignalDto> decisionSignals,
+            String suggestion,
+            int decisionScore
+    ) {
+        RecognitionRecord recognition = task.recognitionId == null ? null : recognitions.get(task.recognitionId);
+        Map<String, Object> filters = task.filters == null ? Map.of() : task.filters;
+        int intentConfidence = recognition == null ? 72 : percent(recognition.confidence * 100);
+        String intentObservation = recognition == null
+                ? "使用文本需求：" + compactText(task.query, 30)
+                : "识别为 " + recognition.category + "，品牌 " + fallbackText(recognition.brand, "未知") + "，模型 " + fallbackText(recognition.model, "未识别") + "。";
+        String filterObservation = filterSummary(filters);
+        String sourceLabel = sourceTypeText(task.sourceType);
+        String riskObservation = review.riskTags() == null || review.riskTags().isEmpty()
+                ? "评价摘要未发现明确高频风险，风险分 " + formatDouble(review.riskScore()) + "。"
+                : "评价风险：" + String.join("、", review.riskTags()) + "，风险分 " + formatDouble(review.riskScore()) + "。";
+        return List.of(
+                new RecommendationTraceStepDto("intent", "识别意图", "done", intentConfidence, intentObservation),
+                new RecommendationTraceStepDto("constraints", "约束解析", filters.isEmpty() ? "watch" : "done", Math.max(70, signalScore(decisionSignals, "match")), filterObservation),
+                new RecommendationTraceStepDto("retrieval", "商品召回", "done", percent(Math.min(100, candidates.size() * 18 + 42)), sourceLabel + "返回 " + candidates.size() + " 个候选，覆盖 " + platformStats(candidates).size() + " 个平台。"),
+                new RecommendationTraceStepDto("market", "价格时机", signalScore(decisionSignals, "price") >= 70 ? "done" : "watch", signalScore(decisionSignals, "price"), "当前价 " + best.price().amount() + " CNY，90 天低点 " + history.lowestPrice().amount() + " CNY，趋势 " + trendText(history.trend()) + "。"),
+                new RecommendationTraceStepDto("risk", "风险审计", signalScore(decisionSignals, "risk") >= 65 ? "done" : "watch", signalScore(decisionSignals, "risk"), riskObservation),
+                new RecommendationTraceStepDto("decision", "最终建议", "buy".equals(suggestion) ? "done" : "watch", decisionScore, suggestionText(suggestion) + "，综合决策分 " + decisionScore + "。")
+        );
+    }
+
+    private int priceSignal(SearchTaskItemDto item, PriceHistoryDto history) {
+        BigDecimal current = amount(item.price());
+        BigDecimal lowest = amount(history.lowestPrice());
+        BigDecimal highest = amount(history.highestPrice());
+        BigDecimal span = highest.subtract(lowest);
+        int score;
+        if (span.compareTo(BigDecimal.ZERO) <= 0) {
+            score = 72;
+        } else if (current.compareTo(lowest.multiply(new BigDecimal("1.05"))) <= 0) {
+            score = 96;
+        } else if (current.compareTo(lowest.multiply(new BigDecimal("1.12"))) <= 0) {
+            score = 84;
+        } else if (current.compareTo(highest.multiply(new BigDecimal("0.95"))) >= 0) {
+            score = 46;
+        } else {
+            BigDecimal position = current.subtract(lowest).divide(span, 4, RoundingMode.HALF_UP);
+            score = percent(100 - position.doubleValue() * 48);
+        }
+        if ("low".equals(history.trend())) {
+            score += 4;
+        } else if ("high".equals(history.trend())) {
+            score -= 8;
+        }
+        return percent(score);
+    }
+
+    private int decisionScore(List<RecommendationSignalDto> signals) {
+        return percent(
+                signalScore(signals, "match") * 0.28
+                        + signalScore(signals, "price") * 0.24
+                        + signalScore(signals, "reputation") * 0.18
+                        + signalScore(signals, "channel") * 0.14
+                        + signalScore(signals, "risk") * 0.16
+        );
+    }
+
+    private int signalScore(List<RecommendationSignalDto> signals, String key) {
+        return signals.stream()
+                .filter(signal -> key.equals(signal.key()))
+                .findFirst()
+                .map(RecommendationSignalDto::score)
+                .orElse(0);
+    }
+
     private SearchTaskRecord searchTaskForUser(long userId, long searchTaskId) {
         SearchTaskRecord record = searchTasks.get(searchTaskId);
         if (record == null || record.userId != userId) {
@@ -1163,8 +1482,89 @@ public class ShoppingService {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
+    private int percent(double value) {
+        return Math.max(0, Math.min(100, (int) Math.round(value)));
+    }
+
     private String formatDouble(double value) {
         return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private String fallbackText(String value, String fallback) {
+        return isBlank(value) ? fallback : value;
+    }
+
+    private String compactText(String value, int maxLength) {
+        String text = fallbackText(value, "未提供").trim();
+        if (text.length() <= maxLength) {
+            return text;
+        }
+        return text.substring(0, maxLength) + "...";
+    }
+
+    private String filterSummary(Map<String, Object> filters) {
+        List<String> parts = new ArrayList<>();
+        if (filters.containsKey("minPrice") || filters.containsKey("maxPrice")) {
+            String min = filters.containsKey("minPrice") ? String.valueOf(filters.get("minPrice")) : "不限";
+            String max = filters.containsKey("maxPrice") ? String.valueOf(filters.get("maxPrice")) : "不限";
+            parts.add("预算 " + min + "-" + max);
+        }
+        if (Boolean.TRUE.equals(bool(filters.get("officialOnly")))) {
+            parts.add("只看官方");
+        }
+        if (Boolean.TRUE.equals(bool(filters.get("selfOperatedOnly")))) {
+            parts.add("只看自营");
+        }
+        if (filters.containsKey("minRating")) {
+            parts.add("评分不低于 " + filters.get("minRating"));
+        }
+        if (filters.containsKey("color")) {
+            parts.add("颜色 " + filters.get("color"));
+        }
+        if (filters.containsKey("sortBy")) {
+            parts.add("排序 " + sortText(String.valueOf(filters.get("sortBy"))));
+        }
+        if (parts.isEmpty()) {
+            return "未解析到额外筛选条件，按识别意图和综合排序检索。";
+        }
+        return "解析出 " + String.join("、", parts) + "。";
+    }
+
+    private String sortText(String sortBy) {
+        return switch (sortBy) {
+            case "price_asc" -> "低价优先";
+            case "sales_desc" -> "销量优先";
+            case "rating_desc" -> "好评优先";
+            default -> "综合";
+        };
+    }
+
+    private String trendText(String trend) {
+        String normalized = fallbackText(trend, "unknown");
+        return switch (normalized) {
+            case "low" -> "接近低位";
+            case "high" -> "接近高位";
+            case "flat" -> "平稳";
+            default -> normalized;
+        };
+    }
+
+    private String suggestionText(String suggestion) {
+        String normalized = fallbackText(suggestion, "compare");
+        return switch (normalized) {
+            case "buy" -> "建议购买";
+            case "wait" -> "建议观望";
+            case "avoid" -> "建议避开";
+            default -> "建议继续对比";
+        };
+    }
+
+    private String sourceTypeText(String sourceType) {
+        return switch (fallbackText(sourceType, "mock")) {
+            case "official_api" -> "官方 API";
+            case "sample_dataset" -> "授权样例数据";
+            default -> "演示数据集";
+        };
     }
 
     public record UserAccount(long id, String username, String passwordHash, String nickname, String avatarUrl, String status) {
@@ -1239,6 +1639,17 @@ public class ShoppingService {
     }
 
     private record ScoredProduct(MockCatalog.PlatformProductData product, double score) {
+    }
+
+    private record CandidateDecision(
+            SearchTaskItemDto item,
+            ReviewSummaryDto review,
+            PriceHistoryDto history,
+            List<RecommendationSignalDto> signals,
+            int decisionScore,
+            List<String> strengths,
+            List<String> weaknesses
+    ) {
     }
 
     private record ComparisonRecord(long id, long userId, ComparisonDto dto) {

@@ -213,6 +213,40 @@ public final class ApiModels {
     ) {
     }
 
+    public record DatasetHealth(
+            int productCount,
+            int platformProductCount,
+            int recognitionSampleCount,
+            int priceHistoryCount,
+            int reviewSummaryCount,
+            List<String> categories,
+            List<String> platforms
+    ) {
+    }
+
+    public record AiRuntimeHealth(
+            String recognitionProvider,
+            String refineProvider
+    ) {
+    }
+
+    public record PersistenceHealth(
+            String mode,
+            boolean failFast
+    ) {
+    }
+
+    public record HealthPayload(
+            String status,
+            String profile,
+            DatasetHealth dataset,
+            AiRuntimeHealth ai,
+            PersistenceHealth persistence,
+            EcommerceStatusPayload ecommerce,
+            OffsetDateTime checkedAt
+    ) {
+    }
+
     public record EcommerceProviderStatus(
             String platform,
             boolean enabled,
@@ -270,6 +304,25 @@ public final class ApiModels {
     public record RecommendationEvidenceDto(String type, Long platformProductId, String content) {
     }
 
+    public record RecommendationSignalDto(String key, String label, int score, String explanation) {
+    }
+
+    public record RecommendationTraceStepDto(String key, String label, String status, int confidence, String observation) {
+    }
+
+    public record RecommendationCandidateDto(
+            long platformProductId,
+            String platform,
+            String title,
+            Money price,
+            int rank,
+            int decisionScore,
+            String verdict,
+            List<String> strengths,
+            List<String> weaknesses
+    ) {
+    }
+
     public record RecommendedPlatformProductDto(
             long platformProductId,
             String platform,
@@ -284,10 +337,24 @@ public final class ApiModels {
             long searchTaskId,
             String suggestion,
             RecommendedPlatformProductDto recommendedPlatformProduct,
+            int decisionScore,
+            List<RecommendationSignalDto> decisionSignals,
+            List<RecommendationTraceStepDto> decisionTrace,
+            List<RecommendationCandidateDto> candidateAnalyses,
             List<String> reasons,
             List<String> risks,
             List<RecommendationEvidenceDto> evidence,
             OffsetDateTime createdAt
+    ) {
+    }
+
+    public record RecommendationReportDto(
+            long recommendationId,
+            long searchTaskId,
+            String title,
+            String summary,
+            String markdown,
+            OffsetDateTime generatedAt
     ) {
     }
 

@@ -29,6 +29,11 @@ public class AgentController {
         return ApiResponse.success(shoppingService.recommendation(userId(authentication), recommendationId));
     }
 
+    @GetMapping("/{recommendationId}/report")
+    public ApiResponse<RecommendationReportDto> report(Authentication authentication, @PathVariable long recommendationId) {
+        return ApiResponse.success(shoppingService.recommendationReport(userId(authentication), recommendationId));
+    }
+
     private long userId(Authentication authentication) {
         return (Long) authentication.getPrincipal();
     }

@@ -38,7 +38,7 @@ POST /api/agent/recommendations
 | 平台商品 | `platform_products` | 获取标题、平台、价格、店铺和来源 |
 | 历史价格 | `price_records` | 判断当前价格高低 |
 | 评价摘要 | `review_summaries` | 判断售后、物流、质量等风险 |
-| 用户行为 | `favorites`、`price_alerts` | 后续可用于个性化推荐，MVP 可不启用 |
+| 用户行为 | `favorites`、`price_alerts` | 当前已用于演示用户资产沉淀，后续可进一步做个性化推荐 |
 
 ## Agent 工具
 
@@ -120,4 +120,3 @@ Agent 输出必须对齐 `/api/agent/recommendations`：
 - Agent 只能读取当前用户授权范围内的 `searchTaskId`、`candidateIds`、收藏、价格提醒和推荐记录
 - Agent 可以读取公共商品库、平台商品库、价格记录和评价摘要
 - Agent 不允许跨用户读取图片、识别记录、搜索任务、推荐记录或用户行为数据
-

@@ -1,9 +1,25 @@
 {
-  "name": "智能识物比价助手",
-  "short_name": "识物比价",
+  "name": "E.C.26-B 购物决策工作台",
+  "short_name": "E.C.26-B",
+  "description": "面向购物候选、比价证据和购买建议的决策工作台",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#f6f7f5",
-  "theme_color": "#0f766e",
-  "icons": []
+  "orientation": "any",
+  "background_color": "#f7f8fa",
+  "theme_color": "#4F46E5",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
 }

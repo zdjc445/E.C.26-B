@@ -6,6 +6,10 @@ spring:
     name: shopping-agent
   flyway:
     enabled: false
+  datasource:
+    url: ${POSTGRES_JDBC_URL:jdbc:postgresql://localhost:5432/shopping_agent}
+    username: ${POSTGRES_USER:shopping_agent}
+    password: ${POSTGRES_PASSWORD:shopping_agent}
   servlet:
     multipart:
       max-file-size: 8MB
@@ -14,6 +18,15 @@ spring:
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+
+logging:
+  level:
+    root: INFO
+    org.springframework: INFO
+    org.springframework.boot.autoconfigure: INFO
+    org.springframework.security: INFO
+    org.springframework.web: INFO
+    org.hibernate: WARN
 
 app:
   jwt:
@@ -48,6 +61,8 @@ app:
       type: ${PDD_API_TYPE:pdd.ddk.goods.search}
       pid: ${PDD_PID:}
       custom-parameters: ${PDD_CUSTOM_PARAMETERS:}
+  persistence:
+    fail-fast: ${POSTGRES_PERSISTENCE_FAIL_FAST:false}
 
 ---
 spring:
@@ -63,3 +78,6 @@ spring:
     url: ${POSTGRES_JDBC_URL:jdbc:postgresql://localhost:5432/shopping_agent}
     username: ${POSTGRES_USER:shopping_agent}
     password: ${POSTGRES_PASSWORD:shopping_agent}
+app:
+  persistence:
+    fail-fast: ${POSTGRES_PERSISTENCE_FAIL_FAST:true}

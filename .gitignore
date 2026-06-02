@@ -1,7 +1,48 @@
-backend/target/
-backend/server.*.log
+# ── Secrets & environment ──
 .env
+*.pem
+*.key
+*.jks
+
+# ── OS files ──
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# ── IDE & editors ──
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# ── Logs ──
 *.log
+
+# ── Python local artifacts ──
+__pycache__/
+*.pyc
+
+# ── Backend (Java / Maven) ──
+backend/target/
+backend/*.log
+
+# ── Frontend (Web / Vite) ──
 node_modules/
 frontend/.vite/
 frontend/dist/
+
+# ── Flutter / Dart ──
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+
+# Pubspec.lock — ignore for library packages, keep for the main app
+app/packages/**/pubspec.lock
+
+# ── Uploads (user-generated, not for repo) ──
+uploads/*
+!uploads/.gitkeep

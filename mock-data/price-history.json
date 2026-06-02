@@ -80,6 +80,14 @@
     ]
   },
   {
+    "platformProductId": 5016,
+    "points": [
+      { "recordedAt": "2026-03-01T00:00:00+08:00", "price": { "amount": "319.00", "currency": "CNY" } },
+      { "recordedAt": "2026-04-01T00:00:00+08:00", "price": { "amount": "289.00", "currency": "CNY" } },
+      { "recordedAt": "2026-05-20T00:00:00+08:00", "price": { "amount": "269.00", "currency": "CNY" } }
+    ]
+  },
+  {
     "platformProductId": 5013,
     "points": [
       { "recordedAt": "2026-03-01T00:00:00+08:00", "price": { "amount": "109.00", "currency": "CNY" } },

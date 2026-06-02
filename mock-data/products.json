@@ -3,7 +3,7 @@
     "productId": 4001,
     "name": "低噪音宿舍吹风机",
     "category": "吹风机",
-    "brand": "MockCare",
+    "brand": "LumaCare",
     "model": "HD-001",
     "attributes": {
       "power": "1600W",
@@ -15,7 +15,7 @@
     "productId": 4002,
     "name": "主动降噪蓝牙耳机",
     "category": "耳机",
-    "brand": "MockSound",
+    "brand": "Auralis",
     "model": "ANC-20",
     "attributes": {
       "noiseCancellation": true,
@@ -26,7 +26,7 @@
     "productId": 4003,
     "name": "轻薄 5G 智能手机",
     "category": "手机",
-    "brand": "MockPhone",
+    "brand": "NovaLink",
     "model": "M5",
     "attributes": {
       "storage": "256GB",
@@ -37,7 +37,7 @@
     "productId": 4004,
     "name": "机械键盘 87 键",
     "category": "键盘",
-    "brand": "MockKey",
+    "brand": "KeyNest",
     "model": "K87",
     "attributes": {
       "layout": "87键",
@@ -48,7 +48,7 @@
     "productId": 4005,
     "name": "便携保温水杯",
     "category": "水杯",
-    "brand": "MockCup",
+    "brand": "ThermoNest",
     "model": "T500",
     "attributes": {
       "capacity": "500ml",
@@ -59,7 +59,7 @@
     "productId": 4006,
     "name": "缓震运动鞋",
     "category": "运动鞋",
-    "brand": "MockRun",
+    "brand": "StrideLab",
     "model": "R2",
     "attributes": {
       "gender": "unisex",
@@ -70,7 +70,7 @@
     "productId": 4007,
     "name": "温和保湿护肤乳",
     "category": "护肤品",
-    "brand": "MockSkin",
+    "brand": "DermaKind",
     "model": "H100",
     "attributes": {
       "skinType": "敏感肌",
@@ -78,4 +78,3 @@
     }
   }
 ]
-

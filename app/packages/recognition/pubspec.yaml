@@ -1,0 +1,22 @@
+name: app_recognition
+description: Image recognition module — product identification, attribute editing, suggestions.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.4.0
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  app_core:
+    path: ../core
+  app_image_picker:
+    path: ../image_picker
+  flutter_riverpod: ^2.5.0
+  dio: ^5.4.0
+  go_router: ^14.0.0
+
+dev_dependencies:
+  mocktail: ^1.0.0
