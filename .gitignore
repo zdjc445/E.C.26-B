@@ -1,5 +1,10 @@
 # ── Secrets & environment ──
 .env
+*.env
+.env.local
+.env.*.local
+*.env.local
+secrets/
 *.pem
 *.key
 *.jks
@@ -20,29 +25,18 @@ Desktop.ini
 # ── Logs ──
 *.log
 
-# ── Python local artifacts ──
-__pycache__/
-*.pyc
-
 # ── Backend (Java / Maven) ──
 backend/target/
 backend/*.log
 
-# ── Frontend (Web / Vite) ──
-node_modules/
-frontend/.vite/
-frontend/dist/
-
 # ── Flutter / Dart ──
-.dart_tool/
-build/
+app/build/
+app/.dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
 .packages
 
-# Pubspec.lock — ignore for library packages, keep for the main app
-app/packages/**/pubspec.lock
-
 # ── Uploads (user-generated, not for repo) ──
 uploads/*
 !uploads/.gitkeep
+!uploads/.gitignore

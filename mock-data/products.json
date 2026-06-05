@@ -1,80 +1,32 @@
 [
   {
-    "productId": 4001,
-    "name": "低噪音宿舍吹风机",
-    "category": "吹风机",
-    "brand": "LumaCare",
-    "model": "HD-001",
-    "attributes": {
-      "power": "1600W",
-      "noiseLevel": "低噪音",
-      "scenario": "宿舍"
-    }
+    "id": "prod-001",
+    "title": "示例运动鞋 轻便透气跑步鞋 白色",
+    "price": 299.00,
+    "platform": "jd",
+    "sourceType": "mock",
+    "imageUrl": "",
+    "tags": ["自营", "好评4.8+"],
+    "category": "运动鞋"
   },
   {
-    "productId": 4002,
-    "name": "主动降噪蓝牙耳机",
-    "category": "耳机",
-    "brand": "Auralis",
-    "model": "ANC-20",
-    "attributes": {
-      "noiseCancellation": true,
-      "batteryLife": "32h"
-    }
+    "id": "prod-002",
+    "title": "同款运动鞋 网面透气 白色",
+    "price": 279.00,
+    "platform": "pdd",
+    "sourceType": "mock",
+    "imageUrl": "",
+    "tags": ["旗舰店"],
+    "category": "运动鞋"
   },
   {
-    "productId": 4003,
-    "name": "轻薄 5G 智能手机",
-    "category": "手机",
-    "brand": "NovaLink",
-    "model": "M5",
-    "attributes": {
-      "storage": "256GB",
-      "network": "5G"
-    }
-  },
-  {
-    "productId": 4004,
-    "name": "机械键盘 87 键",
-    "category": "键盘",
-    "brand": "KeyNest",
-    "model": "K87",
-    "attributes": {
-      "layout": "87键",
-      "switch": "茶轴"
-    }
-  },
-  {
-    "productId": 4005,
-    "name": "便携保温水杯",
-    "category": "水杯",
-    "brand": "ThermoNest",
-    "model": "T500",
-    "attributes": {
-      "capacity": "500ml",
-      "material": "316不锈钢"
-    }
-  },
-  {
-    "productId": 4006,
-    "name": "缓震运动鞋",
-    "category": "运动鞋",
-    "brand": "StrideLab",
-    "model": "R2",
-    "attributes": {
-      "gender": "unisex",
-      "scene": "日常跑步"
-    }
-  },
-  {
-    "productId": 4007,
-    "name": "温和保湿护肤乳",
-    "category": "护肤品",
-    "brand": "DermaKind",
-    "model": "H100",
-    "attributes": {
-      "skinType": "敏感肌",
-      "effect": "保湿"
-    }
+    "id": "prod-003",
+    "title": "品牌运动鞋 减震跑步鞋 白色经典款",
+    "price": 349.00,
+    "platform": "taobao",
+    "sourceType": "mock",
+    "imageUrl": "",
+    "tags": ["官方", "销量1万+"],
+    "category": "运动鞋"
   }
 ]

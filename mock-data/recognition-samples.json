@@ -1,0 +1,18 @@
+[
+  {
+    "id": "rec-sample-001",
+    "label": "运动鞋 — 白色跑步鞋",
+    "category": "运动鞋",
+    "attributes": {
+      "color": "白色",
+      "brand": "示例品牌",
+      "style": "跑步鞋"
+    },
+    "confidence": 0.92,
+    "suggestionCards": [
+      { "type": "low_price", "label": "查看同款低价" },
+      { "type": "official_store", "label": "只看官方旗舰店" },
+      { "type": "similar_style", "label": "相似风格推荐" }
+    ]
+  }
+]

@@ -1,4 +1,3 @@
+# Ignore uploaded files, keep .gitkeep
 *
-!.gitignore
 !.gitkeep
-

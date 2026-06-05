@@ -4,80 +4,8 @@ server:
 spring:
   application:
     name: shopping-agent
-  flyway:
-    enabled: false
-  datasource:
-    url: ${POSTGRES_JDBC_URL:jdbc:postgresql://localhost:5432/shopping_agent}
-    username: ${POSTGRES_USER:shopping_agent}
-    password: ${POSTGRES_PASSWORD:shopping_agent}
-  servlet:
-    multipart:
-      max-file-size: 8MB
-      max-request-size: 8MB
-
-springdoc:
-  swagger-ui:
-    path: /swagger-ui.html
 
 logging:
   level:
     root: INFO
     org.springframework: INFO
-    org.springframework.boot.autoconfigure: INFO
-    org.springframework.security: INFO
-    org.springframework.web: INFO
-    org.hibernate: WARN
-
-app:
-  jwt:
-    secret: ${APP_JWT_SECRET:dev-only-change-me-dev-only-change-me}
-    access-token-seconds: 7200
-  upload-dir: ${UPLOAD_DIR:uploads}
-  mock-data-dir: ${MOCK_DATA_DIR:mock-data}
-  ai:
-    provider: ${AI_PROVIDER:mock}
-    ark:
-      api-key: ${ARK_API_KEY:}
-      endpoint-id: ${ARK_ENDPOINT_ID:}
-      base-url: ${ARK_BASE_URL:https://ark.cn-beijing.volces.com/api/v3}
-  ecommerce:
-    enabled: ${ECOMMERCE_API_ENABLED:false}
-    request-timeout-seconds: ${ECOMMERCE_API_TIMEOUT_SECONDS:8}
-    jd:
-      enabled: ${JD_API_ENABLED:false}
-      base-url: ${JD_API_BASE_URL:https://api.jd.com/routerjson}
-      app-key: ${JD_APP_KEY:}
-      app-secret: ${JD_APP_SECRET:}
-      access-token: ${JD_ACCESS_TOKEN:}
-      method: ${JD_API_METHOD:jd.union.open.goods.query}
-      param-json-name: ${JD_PARAM_JSON_NAME:360buy_param_json}
-      site-id: ${JD_SITE_ID:}
-      position-id: ${JD_POSITION_ID:}
-    pdd:
-      enabled: ${PDD_API_ENABLED:false}
-      base-url: ${PDD_API_BASE_URL:https://gw-api.pinduoduo.com/api/router}
-      client-id: ${PDD_CLIENT_ID:}
-      client-secret: ${PDD_CLIENT_SECRET:}
-      type: ${PDD_API_TYPE:pdd.ddk.goods.search}
-      pid: ${PDD_PID:}
-      custom-parameters: ${PDD_CUSTOM_PARAMETERS:}
-  persistence:
-    fail-fast: ${POSTGRES_PERSISTENCE_FAIL_FAST:false}
-
----
-spring:
-  config:
-    activate:
-      on-profile: postgres
-  flyway:
-    enabled: true
-    url: ${POSTGRES_JDBC_URL:jdbc:postgresql://localhost:5432/shopping_agent}
-    user: ${POSTGRES_USER:shopping_agent}
-    password: ${POSTGRES_PASSWORD:shopping_agent}
-  datasource:
-    url: ${POSTGRES_JDBC_URL:jdbc:postgresql://localhost:5432/shopping_agent}
-    username: ${POSTGRES_USER:shopping_agent}
-    password: ${POSTGRES_PASSWORD:shopping_agent}
-app:
-  persistence:
-    fail-fast: ${POSTGRES_PERSISTENCE_FAIL_FAST:true}

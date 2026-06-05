@@ -1,26 +1,38 @@
-# 智能识物比价购物 AI APP 助手
+# AI 拍照识物与智能比价购物助手
 
-本项目实现面向购物决策的 AI Agent 演示应用：用户通过拍照或上传图片表达购物需求，系统完成商品识别、动态建议卡片、跨平台 mock 比价、自然语言追加筛选和带证据链的购买推荐。
+本项目实现一款面向 C 端消费者的智能购物助手：通过摄像头采集商品图像，服务端完成商品识别后生成交互式导购建议卡片，支持跨平台商品匹配、自然语言追加筛选与购买决策辅助。
 
-## 当前可运行能力
+**当前阶段：工程骨架与核心流程设计阶段。**
 
-- Web/PWA 演示端：登录、多类目示例图/拍照上传、识别结果修正、主链路进度、决策摘要、可复制证据报告、数据源切换、建议卡片、推荐列表、追加筛选、比价、Agent 决策中枢、商品洞察、收藏、价格提醒、搜索历史恢复和上传图片历史，并具备 service worker app shell 缓存和可安装图标
-- Flutter 移动端：`app/` 已按认证、拍照、识别、搜索、比价、推荐、收藏、价格提醒和诊断拆分功能包；搜索结果卡已接入商品洞察、比价、Agent 推荐、收藏和目标价提醒操作面板；搜索与购买链路 DTO/domain 已对齐当前后端契约，当前主交付仍以 Web/PWA 为准
-- Spring Boot 后端：JWT 鉴权、统一响应、全局异常处理、Ark 可选 AI Provider、mock 商品源、拼多多/京东官方 API 适配器、LLM refine + 规则兜底、后端结构化 Agent 决策信号、六步决策轨迹和候选胜因/败因矩阵
-- 契约资产：OpenAPI、Flyway schema、mock 商品/价格/评价数据
-- 合规边界：不实现非授权数据抓取；默认使用 `mock` / `sample_dataset`，真实平台通过 `official_api` 调用授权开放平台 API
+## 技术栈
+
+- **客户端：** Flutter (Android)
+- **服务端：** Java + Spring Boot
+- **构建工具：** Maven (后端) / Flutter CLI (客户端)
+
+## 当前阶段能力边界
+
+本阶段搭建项目骨架，不实现完整业务闭环：
+
+- ✅ Spring Boot 最小可启动服务
+- ✅ `GET /api/health` 健康检查
+- ✅ Flutter Android APP 可启动
+- ✅ 各功能模块占位页面
+- ✅ `--dart-define=EC26B_API_BASE_URL` 后端地址配置
+- ⏳ 真实 AI 识别与搜索（后续迭代）
+- ⏳ 真实电商 API 接入（后续迭代）
+- ⏳ 用户认证与数据持久化（后续迭代）
+- ⏳ 收藏、价格提醒、AgentRun 决策（后续迭代）
 
 ## 本地启动
 
 环境要求：
 
-```text
-JDK 21
-Maven 3.9+
-Python 3 或任意静态文件服务器
-```
+- JDK 21+
+- Maven 3.9+
+- Flutter SDK 3.22+
 
-后端：
+### 后端
 
 ```powershell
 cd backend
@@ -29,187 +41,39 @@ mvn -DskipTests clean package
 java -jar target/shopping-agent-0.1.0.jar
 ```
 
-Postgres 持久化契约检查：
+访问：
+- 健康检查：http://localhost:8080/api/health
 
-```powershell
-python scripts\check-postgres-persistence-contract.py
-```
-
-前端：
-
-```powershell
-python -m http.server 5173 -d frontend
-```
-
-Flutter 静态分析与移动端契约检查：
+### Flutter 客户端
 
 ```powershell
 cd app
-C:\flutter\flutter\bin\flutter.bat analyze
-C:\flutter\flutter\bin\dart.bat run tool\check_search_contract.dart
-C:\flutter\flutter\bin\dart.bat run tool\check_mobile_contract.dart
-C:\flutter\flutter\bin\dart.bat run tool\check_mobile_network_config.dart
-```
-
-Flutter 运行时可通过 `EC26B_API_BASE_URL` 切换后端地址。Windows 桌面可继续使用默认 `http://localhost:8080`；Android 模拟器需要访问宿主机时使用：
-
-```powershell
-cd app
+C:\flutter\flutter\bin\flutter.bat pub get
 C:\flutter\flutter\bin\flutter.bat run -d emulator-5554 --dart-define=EC26B_API_BASE_URL=http://10.0.2.2:8080
 ```
 
-访问：
-
-- Web 演示端：http://localhost:5173
-- Swagger UI：http://localhost:8080/swagger-ui.html
-- 健康检查：http://localhost:8080/api/health
-
-默认后端使用内存运行态加载 `mock-data/`，不要求本机 PostgreSQL。需要验证 Flyway/PostgreSQL schema 和运行时快照落库时可启用 `postgres` profile，并配置 `POSTGRES_JDBC_URL`、`POSTGRES_USER`、`POSTGRES_PASSWORD`。`postgres` profile 默认 `POSTGRES_PERSISTENCE_FAIL_FAST=true`，写库失败会直接暴露；如需临时宽松联调，可显式设为 `false`。
-
-`GET /api/health` 会返回当前 profile、mock 数据集数量、AI provider、持久化模式、fail-fast 状态和真实电商 API 配置摘要，只暴露环境变量名与状态，不返回密钥值。
-
-## 最小验收路径
-
-1. 打开 Web 演示端，注册或登录。
-2. 录屏或现场演示时可直接点击“一键演示主链路”，左侧“主链路进度”会实时标记账号、识别召回、商品洞察、跨平台比价、Agent 决策和资产沉淀，顶部“决策摘要”会形成可复制的答辩结论。
-3. 如需手动讲解每一步，可在“演示场景”中选择吹风机、耳机、手机、键盘、水杯、运动鞋或护肤乳，再点击“示例图”和“上传并识别”。
-4. 查看识别结果和建议卡片。
-5. 点击“只看官方旗舰店”或输入：
-
-```text
-1000 元以内的黑色款，要评价 4.8 分以上，只看官方
-```
-
-6. 切换“低价 / 销量 / 好评”排序。
-7. 勾选 2-4 个商品，点击“生成比价”，查看平台最低价、均价、商品数和商品对比表。
-8. 点击商品卡“洞察”查看价格走势与评价风险，点击“提醒”设置目标价。
-9. 点击“收藏”体验个性化入口，再点击“历史工作台”的“搜索”恢复历史任务，确认过去的候选、识别结果和摘要可以回到主工作区。
-10. 点击“生成推荐”，查看后端输出的 Agent 决策分、五类决策信号、六步决策轨迹、候选胜因/败因矩阵、推荐理由、风险和 evidence。
-
-## Web 主链路烟测
-
-后端和前端启动后，可以运行真实浏览器烟测，自动点击“一键演示主链路”并断言识别召回、商品洞察、跨平台比价、Agent 决策、候选矩阵、证据链和资产沉淀都已渲染：
-
-```powershell
-python scripts\run-web-demo-smoke.py --scenario headphones
-```
-
-脚本默认使用 Microsoft Edge + Selenium，输出报告和截图到 `backend/target/web-demo-smoke-report.json`、`backend/target/web-demo-smoke.png`，并额外断言推荐证据报告接口可用、service worker 已激活、PWA app shell cache 已创建。如果本机缺少 Selenium，可先执行 `python -m pip install selenium`。
-
-## AI Provider 配置
-
-默认使用 mock provider，保证离线演示稳定。启用 Ark 时只通过环境变量配置，密钥不写入仓库：
-
-```powershell
-$env:AI_PROVIDER="ark"
-$env:ARK_API_KEY="..."
-$env:ARK_ENDPOINT_ID="..."
-$env:ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
-```
-
-Ark 未配置、返回非 JSON 或调用失败时，图片识别会回退到 mock，追加筛选会回退到规则解析，接口响应会带上 provider/fallback 状态。
-
-## 真实电商 API 配置
-
-默认仍使用 mock 数据源。启用真实平台数据时，后端通过 `official_api` 数据源调用已授权的开放平台 API，当前已实现拼多多多多进宝商品搜索和京东联盟商品查询适配器。密钥只通过环境变量或本地未提交的 `.env` 配置：
-
-```powershell
-$env:ECOMMERCE_API_ENABLED="true"
-
-# 拼多多开放平台 / 多多进宝
-$env:PDD_API_ENABLED="true"
-$env:PDD_CLIENT_ID="..."
-$env:PDD_CLIENT_SECRET="..."
-$env:PDD_PID="..." # 可选
-$env:PDD_CUSTOM_PARAMETERS='{"source":"local"}' # 可选
-
-# 京东宙斯 / 京东联盟
-$env:JD_API_ENABLED="true"
-$env:JD_APP_KEY="..."
-$env:JD_APP_SECRET="..."
-$env:JD_ACCESS_TOKEN="..."
-$env:JD_PARAM_JSON_NAME="360buy_param_json" # 默认，按京东 JOS 公共参数规范
-$env:JD_SITE_ID="..." # 可选
-$env:JD_POSITION_ID="..." # 可选
-```
-
-启动时后端会自动读取当前目录或上一级目录的 `.env`，因此从仓库根目录或 `backend/` 目录启动都能读到本地密钥；已经存在的环境变量或 JVM `-D` 参数优先级更高。需要指定其他密钥文件时，可设置 `EC26B_DOTENV_FILE=D:\path\to\ecommerce.env`。
-
-启动后可在 Web 演示端右上角“数据源”选择“官方 API”，或在 `POST /api/search-tasks` 中传入 `"sourceType": "official_api"`。Web 商品卡会给 `official_api` 结果显示“官方API”标签，方便联调时直接确认页面使用真实平台数据源。未配置平台密钥时，后端会返回明确的 `official_api not configured` 错误，不会执行网页抓取。
-如果搜索请求显式指定了 `platforms`，后端会要求每个指定官方平台都已配置且调用成功；不会在某个平台失败时静默返回其他平台的部分结果。
-后端和 live smoke 会把 `...`、`<pdd client id>`、`your-*`、`replace-*` 等模板占位值视为未配置，复制 `.env.example` 后需要替换成真实凭证。
-
-可先访问 `GET /api/ecommerce/status` 检查后端是否启用真实电商 API，以及拼多多/京东适配器是否已配置。该接口会返回缺失的环境变量名，方便联调，但不会返回任何密钥。登录后也可以在 Web 演示端点击“诊断”，或直接请求 `GET /api/ecommerce/diagnostics?query=吹风机&pageSize=3&platforms=pdd&maxPrice=500.00&withCoupon=true&sortBy=price_asc`，让后端对已配置的平台发起一次小页量真实查询并返回每个平台的成功状态、耗时、商品数量和示例标题。`platforms` 可选，支持 `pdd`、`jd`；诊断也支持 `minPrice`、`maxPrice`、`withCoupon`、`officialOnly`、`selfOperatedOnly` 和 `sortBy` 这些筛选/排序参数。如果平台用 HTTP 200 返回权限、签名或应用配置错误，后端也会识别为失败并给出平台 `errorCode` 与安全错误摘要。
-如果诊断请求传入尚未实现的平台，例如 `taobao`，返回会包含 `status=not_supported` 的诊断项，方便区分“平台未接入”和“已接入但凭证或接口失败”。
-
-`official_api` 会把常用筛选和排序尽量下推到平台接口：拼多多支持 `minPrice` / `maxPrice`、`withCoupon`、`officialOnly`、`sortBy=price_asc` / `sales_desc`，京东支持 `minPrice` / `maxPrice`、`withCoupon`、`selfOperatedOnly`、`sortBy=price_asc` / `sales_desc` / `rating_desc`；平台返回后仍会按统一过滤规则做最终校验。
-可选的推广位/归因变量会随官方请求透传：拼多多 `PDD_PID` / `PDD_CUSTOM_PARAMETERS`，京东 `JD_SITE_ID` / `JD_POSITION_ID`。拼多多返回缺少 `goods_id` 但包含 `goods_sign` 时，后端会用 `goods_sign` 生成稳定商品 ID 并保留可访问 URL。
-京东请求默认使用 JOS 公共参数字段 `360buy_param_json` 发送业务入参；如遇到兼容网关，可通过 `JD_PARAM_JSON_NAME` 覆盖。京东响应会兼容 `_response` 与部分平台历史上出现过的 `_responce` 包装字段；价格展示会优先使用 `lowestCouponPrice` / `lowestPrice` 这类到手价字段，并识别 `owner=g` 这类自营标记。
-
-拿到真实平台密钥后，可以运行一次 live smoke test 验证线上链路：
-
-```powershell
-$env:ECOMMERCE_LIVE_TEST="true"
-$env:ECOMMERCE_LIVE_QUERY="吹风机"
-mvn -Dtest=LiveOfficialApiSmokeTests test
-```
-
-也可以直接使用仓库脚本，它会先检查至少一个真实平台是否配置好：
-
-```powershell
-.\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机"
-```
-
-如果只验证单个平台，可传入平台过滤：
-
-```powershell
-.\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd"
-```
-
-也可以在 smoke 中覆盖筛选参数，同时验证诊断接口和搜索接口的官方筛选下推：
-
-```powershell
-.\scripts\run-live-ecommerce-smoke.ps1 -Query "吹风机" -Platforms "pdd" -MaxPrice "500.00" -WithCoupon -OfficialOnly -SortBy "price_asc"
-```
-
-该测试默认不会运行；脚本会自动加载仓库根目录的 `.env`，在本地检测密钥后显式设置 `ECOMMERCE_LIVE_TEST=true`。运行时会先请求 `GET /api/ecommerce/diagnostics` 验证平台诊断，再通过 `POST /api/search-tasks` 验证 `official_api` 搜索结果；如果指定了 `-Platforms`，诊断和搜索结果都必须逐个平台通过。
-脚本会把平台开关按布尔值校验，`PDD_API_ENABLED` / `JD_API_ENABLED` 需要设置为 `true`、`1`、`yes` 或 `on`；`-Platforms` 仅支持 `pdd`、`jd`，且显式指定多个平台时每个平台的诊断都必须成功并返回商品。`-SortBy` 仅支持 `comprehensive`、`price_asc`、`sales_desc`、`rating_desc`。筛选和排序参数可通过命令行传入，也可写在 `.env` 的 `ECOMMERCE_LIVE_MIN_PRICE`、`ECOMMERCE_LIVE_MAX_PRICE`、`ECOMMERCE_LIVE_WITH_COUPON`、`ECOMMERCE_LIVE_OFFICIAL_ONLY`、`ECOMMERCE_LIVE_SELF_OPERATED_ONLY`、`ECOMMERCE_LIVE_SORT_BY` 中。真实调用通过后会生成脱敏验收报告 `backend/target/live-ecommerce-smoke-report.json`，也可用 `-ReportPath` 或 `ECOMMERCE_LIVE_REPORT_PATH` 指定输出位置；相对路径按仓库根目录解析。报告只包含诊断状态、样例标题、URL、价格等结果信息，不包含密钥、Token、签名或原始请求参数。
-如果密钥放在其他本地文件，可以追加 `-EnvFile "D:\path\to\ecommerce.env"`。
-
-联调前可先跑本地配置自检；该脚本只输出缺失变量名，不会打印密钥：
-
-```powershell
-.\scripts\check-ecommerce-config.ps1
-.\scripts\check-ecommerce-config.ps1 -Platforms "pdd" -Strict
-```
-
-完整联调步骤见 [真实电商 API 联调清单](docs/13-真实电商API联调清单.md)。仓库根目录提供 `.env.example` 作为变量模板；真实 `.env` 已被 `.gitignore` 忽略。
-
 ## 文档导航
 
-- [文档目录](docs/README.md)
-- [赛事方要求记录](docs/00-比赛要求.md)
-- [项目范围与进度](docs/01-项目范围与进度.md)
-- [系统架构](docs/02-系统架构.md)
-- [Agent 设计](docs/03-Agent设计.md)
-- [API 接口设计](docs/04-API接口设计.md)
-- [OpenAPI 契约](docs/openapi.yaml)
-- [数据库设计](docs/05-数据库设计.md)
-- [测试方案](docs/07-测试方案.md)
-- [演示说明](docs/08-演示说明.md)
-- [用户认证与数据隔离](docs/09-用户认证与数据隔离.md)
-- [项目分工说明](docs/10-项目分工说明.md)
-- [AI 使用总结](docs/11-AI使用总结.md)
-- [真实电商 API 联调清单](docs/13-真实电商API联调清单.md)
-- [Mock 数据说明](docs/15-Mock数据说明.md)
+| 文档 | 说明 |
+|------|------|
+| [docs/README.md](docs/README.md) | 文档目录 |
+| [docs/00-比赛要求.md](docs/00-比赛要求.md) | 赛事官方要求 |
+| [docs/01-项目范围与阶段计划.md](docs/01-项目范围与阶段计划.md) | 项目范围与阶段计划 |
+| [docs/02-系统架构草案.md](docs/02-系统架构草案.md) | 系统架构草案 |
+| [docs/03-核心流程设计.md](docs/03-核心流程设计.md) | 核心流程设计 |
+| [docs/04-API草案.md](docs/04-API草案.md) | API 草案 |
+| [docs/05-数据与Mock策略.md](docs/05-数据与Mock策略.md) | 数据与 Mock 策略 |
+| [docs/06-AI与Agent设计草案.md](docs/06-AI与Agent设计草案.md) | AI 与 Agent 设计草案 |
+| [docs/07-测试与验收计划.md](docs/07-测试与验收计划.md) | 测试与验收计划 |
+| [docs/08-后续迭代清单.md](docs/08-后续迭代清单.md) | 后续迭代清单 |
 
 ## 工程结构
 
 ```text
 backend/     Spring Boot API 服务
-frontend/    Web/PWA 演示端
-app/         Flutter 移动端骨架
-docs/        需求、架构、API、数据库、测试和演示文档
-mock-data/   商品、平台商品、价格历史、评价摘要和识别样例
-uploads/     本地上传文件目录，真实图片不提交
+app/         Flutter Android 客户端
+docs/        项目文档
+mock-data/   开发用模拟数据
+scripts/     辅助脚本
+uploads/     本地上传文件目录
 ```
