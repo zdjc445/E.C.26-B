@@ -8,9 +8,22 @@ spring:
     multipart:
       max-file-size: 8MB
       max-request-size: 8MB
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration
 
 app:
   upload-dir: ${UPLOAD_DIR:../uploads}
+  ai:
+    provider: ${AI_PROVIDER:mock}
+    ark:
+      api-key: ${ARK_API_KEY:}
+      endpoint-id: ${ARK_ENDPOINT_ID:}
+      base-url: ${ARK_BASE_URL:https://ark.cn-beijing.volces.com/api/v3}
+
+chat:
+  history-store: ${CHAT_HISTORY_STORE:memory}
 
 logging:
   level:

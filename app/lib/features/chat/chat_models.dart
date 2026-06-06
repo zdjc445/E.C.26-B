@@ -35,9 +35,35 @@ class SessionResult {
   }
 }
 
+class ChatSessionSummary {
+  final String sessionId;
+  final String title;
+  final String createdAt;
+  final String updatedAt;
+  final int messageCount;
+
+  const ChatSessionSummary({
+    required this.sessionId,
+    required this.title,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.messageCount,
+  });
+
+  factory ChatSessionSummary.fromJson(Map<String, dynamic> json) {
+    return ChatSessionSummary(
+      sessionId: json['sessionId'] as String,
+      title: json['title'] as String,
+      createdAt: json['createdAt'] as String,
+      updatedAt: json['updatedAt'] as String,
+      messageCount: json['messageCount'] as int,
+    );
+  }
+}
+
 class AgentReply {
   final String replyId;
-  final String replyType; // "clarification" or "recommendation"
+  final String replyType;
   final String text;
   final List<ReplyCard> cards;
 
@@ -68,6 +94,18 @@ class ReplyCard {
   final double? price;
   final String? reason;
   final List<ClarificationOption>? options;
+  // recognition fields
+  final String? imageId;
+  final String? category;
+  final String? brand;
+  final String? model;
+  final List<String>? keywords;
+  final Map<String, dynamic>? attributes;
+  final double? confidence;
+  final String? aiProvider;
+  final bool? fallbackUsed;
+  final String? explanation;
+  final String? recognitionId;
 
   const ReplyCard({
     required this.cardType,
@@ -77,6 +115,17 @@ class ReplyCard {
     this.price,
     this.reason,
     this.options,
+    this.imageId,
+    this.category,
+    this.brand,
+    this.model,
+    this.keywords,
+    this.attributes,
+    this.confidence,
+    this.aiProvider,
+    this.fallbackUsed,
+    this.explanation,
+    this.recognitionId,
   });
 
   factory ReplyCard.fromJson(Map<String, dynamic> json) {
@@ -88,8 +137,23 @@ class ReplyCard {
       price: (json['price'] as num?)?.toDouble(),
       reason: json['reason'] as String?,
       options: (json['options'] as List?)
-          ?.map((o) => ClarificationOption.fromJson(o as Map<String, dynamic>))
+          ?.map((o) =>
+              ClarificationOption.fromJson(o as Map<String, dynamic>))
           .toList(),
+      imageId: json['imageId'] as String?,
+      category: json['category'] as String?,
+      brand: json['brand'] as String?,
+      model: json['model'] as String?,
+      keywords: (json['keywords'] as List?)
+          ?.map((k) => k.toString())
+          .toList(),
+      attributes:
+          json['attributes'] as Map<String, dynamic>?,
+      confidence: (json['confidence'] as num?)?.toDouble(),
+      aiProvider: json['aiProvider'] as String?,
+      fallbackUsed: json['fallbackUsed'] as bool?,
+      explanation: json['explanation'] as String?,
+      recognitionId: json['recognitionId'] as String?,
     );
   }
 }
@@ -98,7 +162,8 @@ class ClarificationOption {
   final String optionId;
   final String label;
 
-  const ClarificationOption({required this.optionId, required this.label});
+  const ClarificationOption(
+      {required this.optionId, required this.label});
 
   factory ClarificationOption.fromJson(Map<String, dynamic> json) {
     return ClarificationOption(
@@ -113,8 +178,8 @@ class ChatMessage {
   final String id;
   final ChatRole role;
   final String? text;
-  final List<String> imagePaths; // local preview paths
-  final List<String> imageIds; // uploaded image IDs
+  final List<String> imagePaths;
+  final List<String> imageIds;
   final AgentReply? agentReply;
   final bool isLoading;
 
