@@ -375,4 +375,80 @@ class ChatControllerTest {
                     "product title should contain 耳机 but got: " + p.title());
         }
     }
+
+    // ── Explanation fields ───────────────────────────────────
+
+    @Test
+    void shouldIncludeExplanationInRecommendationCard() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        var body = Map.of("text", "我想买300以内的耳机，价格低一点");
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_list"))
+                .andExpect(jsonPath("$.data.cards[1].cardType").value("comparison"))
+                .andExpect(jsonPath("$.data.cards[2].cardType").value("recommendation"))
+                .andExpect(jsonPath("$.data.cards[2].decisionScore").isNumber())
+                .andExpect(jsonPath("$.data.cards[2].decisionSignals.length()").value(5))
+                .andExpect(jsonPath("$.data.cards[2].evidence").isArray())
+                .andExpect(jsonPath("$.data.cards[2].risks").isArray())
+                .andExpect(jsonPath("$.data.cards[2].productAnalyses").isArray());
+    }
+
+    @Test
+    void shouldApplyPreferenceParsingToInfluenceSignals() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        // Text with low-price preference
+        var body = Map.of("text", "便宜一点的吹风机");
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[2].decisionSignals.length()").value(5))
+                .andExpect(jsonPath("$.data.cards[2].decisionSignals[0].key").isString());
+    }
+
+    @Test
+    void shouldNotIncludeRecommendationCardWhenOverBudget() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        var body = Map.of("text", "50以内的耳机");
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_list"))
+                .andExpect(jsonPath("$.data.cards[1].cardType").value("comparison"))
+                // No recommendation card when empty
+                .andExpect(jsonPath("$.data.cards.length()").value(2));
+    }
+
+    @Test
+    void shouldRestoreExplanationInHistory() throws Exception {
+        var sessionResult = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(sessionResult.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        var body = Map.of("text", "推荐耳机");
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk());
+        // GET history — third card is recommendation with explanation
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .get("/api/chat/sessions/{sessionId}/messages", sid))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.messages[1].agentReply.cards[2].decisionScore").isNumber())
+                .andExpect(jsonPath("$.data.messages[1].agentReply.cards[2].decisionSignals").isArray());
+    }
 }

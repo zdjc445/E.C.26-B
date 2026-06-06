@@ -138,7 +138,11 @@ class FakeChatApi extends ChatApi {
     final hasOptions =
         selectedOptionIds != null && selectedOptionIds.isNotEmpty;
     final hasImages = imageIds != null && imageIds.isNotEmpty;
-    return _buildReply(hasOptions: hasOptions, hasImages: hasImages);
+    final hasShoppingText = _isShoppingText(text);
+    return _buildReply(
+      hasProductRecommendation: hasOptions || hasShoppingText,
+      hasImages: hasImages,
+    );
   }
 
   @override
@@ -147,68 +151,68 @@ class FakeChatApi extends ChatApi {
     return _storedMessages[sessionId] ?? [];
   }
 
-  AgentReply _buildReply(
-      {bool hasOptions = false, bool hasImages = false}) {
-    if (hasOptions) {
+  bool _isShoppingText(String? text) {
+    if (text == null || text.trim().isEmpty) {
+      return false;
+    }
+    return RegExp(
+      '买|想买|想要|推荐|帮我找|找.*商品|多少钱|价格|便宜|优惠|性价比|官方|自营|旗舰|配送|物流|评价|评分|销量|预算|以内|不超过|以下',
+    ).hasMatch(text);
+  }
+
+  AgentReply _buildReply({
+    bool hasProductRecommendation = false,
+    bool hasImages = false,
+  }) {
+    if (hasProductRecommendation) {
       return AgentReply(
         replyId: 'reply-002',
         replyType: 'product_recommendation',
         text: '我按你的偏好整理了几个平台的选择。',
         cards: [
           ReplyCard(
-            cardType: 'product_list',
-            title: '多平台商品结果',
+            cardType: 'product_list', title: '多平台商品结果',
             products: [
-              ProductItem(
-                productId: 'jd-001',
-                title: 'Mock 运动鞋 京东自营',
-                platform: '京东-mock',
-                price: 299.00,
-                originalPrice: 399.00,
-                shopName: '京东自营',
-                imageUrl: '',
-                productUrl: '',
-                rating: 4.8,
-                sales: 12000,
-                tags: ['自营', '好评'],
-                reasons: ['价格优惠', '官方/自营渠道'],
-                score: 7.0,
+              const ProductItem(
+                productId: 'jd-001', title: 'Mock 运动鞋 京东自营',
+                platform: '京东-mock', price: 299.00, originalPrice: 399.00,
+                shopName: '京东自营', imageUrl: '', productUrl: '',
+                rating: 4.8, sales: 12000, tags: ['自营', '好评'],
+                reasons: ['价格优惠', '官方/自营渠道'], score: 7.0,
               ),
             ],
-            platformStats: {
-              '京东-mock': {
-                'platform': '京东-mock',
-                'lowestPrice': 299.0,
-                'productCount': 2,
-                'highlight': '自营保障',
-              },
+            platformStats: const {
+              '京东-mock': {'platform': '京东-mock', 'lowestPrice': 299.0, 'productCount': 2, 'highlight': '自营保障'},
             },
           ),
           ReplyCard(
-            cardType: 'comparison',
-            title: '平台比价',
-            platformStats: {
-              '京东-mock': {
-                'platform': '京东-mock',
-                'lowestPrice': 299.0,
-                'productCount': 2,
-                'highlight': '自营保障',
-              },
-              '拼多多-mock': {
-                'platform': '拼多多-mock',
-                'lowestPrice': 199.0,
-                'productCount': 2,
-                'highlight': '价格优势',
-              },
+            cardType: 'comparison', title: '平台比价',
+            platformStats: const {
+              '京东-mock': {'platform': '京东-mock', 'lowestPrice': 299.0, 'productCount': 2, 'highlight': '自营保障'},
+              '拼多多-mock': {'platform': '拼多多-mock', 'lowestPrice': 199.0, 'productCount': 2, 'highlight': '价格优势'},
             },
           ),
-          const ReplyCard(
-            cardType: 'recommendation',
-            title: '推荐购买',
-            productName: 'Mock 商品',
-            platform: '京东-mock',
-            price: 299.00,
+          ReplyCard(
+            cardType: 'recommendation', title: '推荐购买',
+            productName: 'Mock 商品', platform: '京东-mock', price: 299.00,
             reason: '价格、店铺和匹配度综合更适合当前需求。',
+            decisionScore: 86,
+            decisionSignals: const [
+              DecisionSignal(key: 'match', label: '意图匹配', score: 85, explanation: '与搜索关键词相关。'),
+              DecisionSignal(key: 'price', label: '价格', score: 92, explanation: '价格符合预算。'),
+              DecisionSignal(key: 'reputation', label: '店铺信誉', score: 78, explanation: '评分较高。'),
+              DecisionSignal(key: 'channel', label: '渠道可信', score: 80, explanation: '平台可信任。'),
+              DecisionSignal(key: 'risk', label: '风险', score: 40, explanation: 'Mock 数据。'),
+            ],
+            evidence: const [
+              RecommendationEvidence(type: 'price', content: '价格符合预算。'),
+            ],
+            risks: const ['当前为 Mock 商品数据。'],
+            productAnalyses: const [
+              ProductAnalysis(productId: 'jd-001', platform: '京东-mock',
+                  title: 'Mock 运动鞋', rank: 1, score: 88,
+                  strengths: ['价格低', '自营'], weaknesses: []),
+            ],
           ),
         ],
       );
@@ -356,7 +360,7 @@ void main() {
 
       expect(find.text('隐私与数据'), findsOneWidget);
       expect(find.text('接口状态'), findsOneWidget);
-      expect(find.text('聊天式 Mock Agent 闭环阶段'), findsOneWidget);
+      expect(find.text('聊天式 AI 识别与多平台 Mock 推荐阶段'), findsOneWidget);
     });
   });
 
@@ -651,6 +655,59 @@ void main() {
       expect(find.text('平台比价'), findsOneWidget);
       expect(find.text('暂无可比价平台'), findsOneWidget);
       expect(find.text('暂无符合条件的商品'), findsOneWidget);
+    });
+
+    testWidgets('recommendation card shows decision score', (tester) async {
+      final ov = _TestOverrides();
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), '推荐耳机');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.send));
+      await tester.pumpAndSettle();
+
+      expect(find.text('综合分 86'), findsOneWidget);
+      expect(find.text('决策信号'), findsOneWidget);
+      expect(find.text('证据摘要'), findsOneWidget);
+      expect(find.text('风险提示'), findsOneWidget);
+      expect(find.text('商品对比'), findsOneWidget);
+    });
+
+    testWidgets('old recommendation card without explanation still works',
+        (tester) async {
+      final ov = _TestOverrides();
+      final completer = Completer<AgentReply>();
+      ov.chatApi.stubSendMessage(completer);
+
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), 'test');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.send));
+      await tester.pump();
+
+      // Old-style recommendation without explanation fields
+      completer.complete(const AgentReply(
+        replyId: 'reply-old',
+        replyType: 'product_recommendation',
+        text: '推荐结果',
+        cards: [
+          ReplyCard(cardType: 'product_list', title: '商品列表',
+              products: [
+                ProductItem(productId: 'p1', title: 'Test', platform: '京东-mock',
+                    price: 100, originalPrice: 150, shopName: 'Shop',
+                    imageUrl: '', productUrl: '', rating: 4.0, sales: 100,
+                    tags: [], reasons: [], score: 5),
+              ]),
+          ReplyCard(cardType: 'comparison', title: '比价', platformStats: {}),
+          ReplyCard(cardType: 'recommendation', title: '推荐',
+              productName: 'Old Card', platform: '京东-mock',
+              price: 100, reason: 'test'),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Old Card'), findsOneWidget);
+      // Should not crash on missing fields
+      expect(find.text('综合分'), findsNothing);
     });
   });
 }

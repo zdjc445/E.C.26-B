@@ -555,68 +555,141 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       decoration: BoxDecoration(
         color: AppColors.panel,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.line),
+        border: Border.all(color: AppColors.accent.withAlpha(40)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.recommend, size: 18,
-                  color: AppColors.accent),
-              const SizedBox(width: 6),
-              Text(card.title,
-                  style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600)),
-            ],
-          ),
+          Row(children: [
+            const Icon(Icons.recommend, size: 18, color: AppColors.accent),
+            const SizedBox(width: 6),
+            Text(card.title,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            const Spacer(),
+            if (card.decisionScore != null)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: card.decisionScore! >= 80
+                      ? AppColors.good.withAlpha(20)
+                      : AppColors.warn.withAlpha(20),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text('综合分 ${card.decisionScore}',
+                    style: TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w700,
+                        color: card.decisionScore! >= 80 ? AppColors.good : AppColors.warn)),
+              ),
+          ]),
           const SizedBox(height: 8),
           if (card.productName != null)
             Text(card.productName!,
-                style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500)),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
           const SizedBox(height: 4),
           if (card.platform != null || card.price != null)
-            Row(
-              children: [
-                if (card.platform != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 5, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: AppColors.background,
-                      borderRadius:
-                          BorderRadius.circular(4),
-                    ),
-                    child: Text(card.platform!,
-                        style: const TextStyle(
-                            fontSize: 10,
-                            color: AppColors.inkSoft)),
-                  ),
-                if (card.platform != null &&
-                    card.price != null)
-                  const SizedBox(width: 8),
-                if (card.price != null)
-                  Text(
-                      '¥${card.price!.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.priceRed)),
-              ],
-            ),
+            Row(children: [
+              if (card.platform != null) _platformBadge(card.platform!),
+              if (card.platform != null && card.price != null) const SizedBox(width: 8),
+              if (card.price != null)
+                Text('¥${card.price!.toStringAsFixed(2)}',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700,
+                        color: AppColors.priceRed)),
+            ]),
           if (card.reason != null) ...[
             const SizedBox(height: 6),
             Text(card.reason!,
-                style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.inkSoft)),
+                style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
+          ],
+          // Decision signals
+          if (card.decisionSignals != null && card.decisionSignals!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Text('决策信号', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            ...card.decisionSignals!.map((s) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(children: [
+                SizedBox(width: 60, child: Text(s.label,
+                    style: const TextStyle(fontSize: 11, color: AppColors.inkSoft))),
+                Expanded(child: ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    value: s.score / 100.0,
+                    backgroundColor: AppColors.line,
+                    color: _signalColor(s.score),
+                    minHeight: 6,
+                  ),
+                )),
+                const SizedBox(width: 6),
+                Text('${s.score}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+              ]),
+            )),
+          ],
+          // Evidence
+          if (card.evidence != null && card.evidence!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Text('证据摘要', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ...card.evidence!.map((e) => Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(children: [
+                const Icon(Icons.check_circle_outline, size: 12, color: AppColors.good),
+                const SizedBox(width: 4),
+                Expanded(child: Text(e.content,
+                    style: const TextStyle(fontSize: 11, color: AppColors.inkSoft))),
+              ]),
+            )),
+          ],
+          // Risks
+          if (card.risks != null && card.risks!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Text('风险提示', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ...card.risks!.map((r) => Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(children: [
+                const Icon(Icons.warning_amber, size: 12, color: AppColors.warn),
+                const SizedBox(width: 4),
+                Expanded(child: Text(r,
+                    style: const TextStyle(fontSize: 11, color: AppColors.warn))),
+              ]),
+            )),
+          ],
+          // Product analyses
+          if (card.productAnalyses != null && card.productAnalyses!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Text('商品对比', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            ...card.productAnalyses!.map((a) => Container(
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Text('#${a.rank}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 6),
+                  _platformBadge(a.platform),
+                  const Spacer(),
+                  Text('${a.score}分', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                ]),
+                const SizedBox(height: 2),
+                if (a.strengths.isNotEmpty)
+                  Text('优势：${a.strengths.join("、")}',
+                      style: const TextStyle(fontSize: 11, color: AppColors.good)),
+                if (a.weaknesses.isNotEmpty)
+                  Text('不足：${a.weaknesses.join("、")}',
+                      style: const TextStyle(fontSize: 11, color: AppColors.warn)),
+              ]),
+            )),
           ],
         ],
       ),
     );
+  }
+
+  Color _signalColor(int score) {
+    if (score >= 80) return AppColors.good;
+    if (score >= 50) return AppColors.warn;
+    return AppColors.priceRed;
   }
 
   Widget _buildRecognitionCard(ReplyCard card) {

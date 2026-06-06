@@ -109,6 +109,12 @@ class ReplyCard {
   // product fields
   final List<ProductItem>? products;
   final Map<String, dynamic>? platformStats;
+  // explanation fields
+  final int? decisionScore;
+  final List<DecisionSignal>? decisionSignals;
+  final List<RecommendationEvidence>? evidence;
+  final List<String>? risks;
+  final List<ProductAnalysis>? productAnalyses;
 
   const ReplyCard({
     required this.cardType,
@@ -131,6 +137,11 @@ class ReplyCard {
     this.recognitionId,
     this.products,
     this.platformStats,
+    this.decisionScore,
+    this.decisionSignals,
+    this.evidence,
+    this.risks,
+    this.productAnalyses,
   });
 
   factory ReplyCard.fromJson(Map<String, dynamic> json) {
@@ -163,6 +174,88 @@ class ReplyCard {
           ?.map((p) => ProductItem.fromJson(p as Map<String, dynamic>))
           .toList(),
       platformStats: json['platformStats'] as Map<String, dynamic>?,
+      decisionScore: json['decisionScore'] as int?,
+      decisionSignals: (json['decisionSignals'] as List?)
+          ?.map((s) => DecisionSignal.fromJson(s as Map<String, dynamic>))
+          .toList(),
+      evidence: (json['evidence'] as List?)
+          ?.map((e) => RecommendationEvidence.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      risks: (json['risks'] as List?)
+          ?.map((r) => r.toString())
+          .toList(),
+      productAnalyses: (json['productAnalyses'] as List?)
+          ?.map((a) => ProductAnalysis.fromJson(a as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+class DecisionSignal {
+  final String key;
+  final String label;
+  final int score;
+  final String explanation;
+
+  const DecisionSignal({
+    required this.key,
+    required this.label,
+    required this.score,
+    required this.explanation,
+  });
+
+  factory DecisionSignal.fromJson(Map<String, dynamic> json) {
+    return DecisionSignal(
+      key: json['key'] as String,
+      label: json['label'] as String,
+      score: json['score'] as int,
+      explanation: json['explanation'] as String,
+    );
+  }
+}
+
+class RecommendationEvidence {
+  final String type;
+  final String content;
+
+  const RecommendationEvidence({required this.type, required this.content});
+
+  factory RecommendationEvidence.fromJson(Map<String, dynamic> json) {
+    return RecommendationEvidence(
+      type: json['type'] as String,
+      content: json['content'] as String,
+    );
+  }
+}
+
+class ProductAnalysis {
+  final String productId;
+  final String platform;
+  final String title;
+  final int rank;
+  final int score;
+  final List<String> strengths;
+  final List<String> weaknesses;
+
+  const ProductAnalysis({
+    required this.productId,
+    required this.platform,
+    required this.title,
+    required this.rank,
+    required this.score,
+    required this.strengths,
+    required this.weaknesses,
+  });
+
+  factory ProductAnalysis.fromJson(Map<String, dynamic> json) {
+    return ProductAnalysis(
+      productId: json['productId'] as String,
+      platform: json['platform'] as String,
+      title: json['title'] as String,
+      rank: json['rank'] as int,
+      score: json['score'] as int,
+      strengths: (json['strengths'] as List).map((s) => s.toString()).toList(),
+      weaknesses: (json['weaknesses'] as List).map((w) => w.toString()).toList(),
     );
   }
 }

@@ -190,7 +190,7 @@ class ProfileScreen extends StatelessWidget {
             child: const ListTile(
               leading: Icon(Icons.info_outline),
               title: Text('当前阶段'),
-              subtitle: Text('聊天式 Mock Agent 闭环阶段'),
+              subtitle: Text('聊天式 AI 识别与多平台 Mock 推荐阶段'),
             ),
           ),
           const SizedBox(height: 24),
