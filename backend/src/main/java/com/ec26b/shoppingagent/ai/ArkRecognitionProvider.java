@@ -22,8 +22,7 @@ public class ArkRecognitionProvider implements AiRecognitionProvider {
         if (image.bytes() == null || image.bytes().length == 0) {
             throw new IllegalArgumentException("image bytes are required for Ark recognition");
         }
-        String contentType = image.contentType() == null || image.contentType().isBlank()
-                ? "image/jpeg" : image.contentType();
+        String contentType = normalizeContentType(image.bytes(), image.contentType());
         String dataUrl = "data:" + contentType + ";base64,"
                 + Base64.getEncoder().encodeToString(image.bytes());
 
@@ -65,6 +64,37 @@ public class ArkRecognitionProvider implements AiRecognitionProvider {
     @Override
     public String providerName() {
         return "ark";
+    }
+
+    /**
+     * Resolve a valid image MIME type. Priority:
+     * 1. File header magic bytes (JPEG / PNG / WebP)
+     * 2. Provided content type if it is image/jpeg, image/png, or image/webp
+     * 3. Default to image/jpeg for safety
+     */
+    public static String normalizeContentType(byte[] bytes, String declaredType) {
+        if (bytes != null && bytes.length >= 4) {
+            if ((bytes[0] & 0xFF) == 0xFF && (bytes[1] & 0xFF) == 0xD8) {
+                return "image/jpeg";
+            }
+            if (bytes[0] == (byte) 0x89 && bytes[1] == (byte) 0x50
+                    && bytes[2] == (byte) 0x4E && bytes[3] == (byte) 0x47) {
+                return "image/png";
+            }
+            if (bytes.length >= 12
+                    && bytes[0] == (byte) 0x52 && bytes[1] == (byte) 0x49
+                    && bytes[2] == (byte) 0x46 && bytes[3] == (byte) 0x46
+                    && bytes[8] == (byte) 0x57 && bytes[9] == (byte) 0x45
+                    && bytes[10] == (byte) 0x42 && bytes[11] == (byte) 0x50) {
+                return "image/webp";
+            }
+        }
+        if (declaredType != null && (declaredType.equals("image/jpeg")
+                || declaredType.equals("image/png")
+                || declaredType.equals("image/webp"))) {
+            return declaredType;
+        }
+        return "image/jpeg";
     }
 
     private String text(JsonNode json, String field, String fallback) {

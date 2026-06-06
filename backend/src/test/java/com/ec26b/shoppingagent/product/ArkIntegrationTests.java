@@ -1,8 +1,7 @@
 package com.ec26b.shoppingagent.product;
 
 import com.ec26b.shoppingagent.ai.ArkClient;
-import com.ec26b.shoppingagent.ai.MockRecognitionProvider;
-import com.ec26b.shoppingagent.chat.ChatStore;
+import com.ec26b.shoppingagent.ai.ArkRecognitionProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -172,5 +171,38 @@ class ArkIntegrationTests {
         assertEquals("Ark改写优势", result.productAnalyses().get(0).strengths().get(0));
         assertEquals("ark", result.explanationProvider());
         assertFalse(result.explanationFallbackUsed());
+    }
+
+    @Test
+    void shouldNormalizeOctetStreamWithJpegHeaderToImageJpeg() {
+        // JPEG magic: FF D8
+        byte[] jpegBytes = new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0, 0, 0};
+        String result = ArkRecognitionProvider.normalizeContentType(jpegBytes, "application/octet-stream");
+        assertEquals("image/jpeg", result,
+                "JPEG header should override application/octet-stream");
+    }
+
+    @Test
+    void shouldNormalizePngHeaderToImagePng() {
+        byte[] pngBytes = new byte[]{(byte) 0x89, (byte) 0x50, (byte) 0x4E, (byte) 0x47, 0, 0, 0, 0};
+        String result = ArkRecognitionProvider.normalizeContentType(pngBytes, "application/octet-stream");
+        assertEquals("image/png", result,
+                "PNG header should override application/octet-stream");
+    }
+
+    @Test
+    void shouldDefaultToImageJpegWhenHeaderUnknown() {
+        byte[] unknown = new byte[]{0, 0, 0, 0};
+        String result = ArkRecognitionProvider.normalizeContentType(unknown, "application/octet-stream");
+        assertEquals("image/jpeg", result,
+                "Unknown header with invalid declared type should default to image/jpeg");
+    }
+
+    @Test
+    void shouldUseDeclaredTypeWhenHeaderUnknownButTypeValid() {
+        byte[] unknown = new byte[]{0, 0, 0, 0};
+        String result = ArkRecognitionProvider.normalizeContentType(unknown, "image/png");
+        assertEquals("image/png", result,
+                "Valid declared type should be used when header is unknown");
     }
 }
