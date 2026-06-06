@@ -1,16 +1,14 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../features/chat/chat_screen.dart';
 import '../features/auth/login_placeholder.dart';
 import '../features/camera/camera_placeholder.dart';
 import '../features/recognition/recognition_placeholder.dart';
 import '../features/search/search_placeholder.dart';
 import '../features/comparison/comparison_placeholder.dart';
 import '../features/recommendation/recommendation_placeholder.dart';
-import 'home_screen.dart';
 
-/// Central router for the app skeleton.
-///
-/// All feature pages are placeholder stubs in this phase.
+/// Central router. /home is now the chat-style shopping agent.
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/home',
@@ -21,7 +19,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/home',
-        builder: (context, state) => const HomeScreen(),
+        builder: (context, state) => const ChatScreen(),
       ),
       GoRoute(
         path: '/camera',

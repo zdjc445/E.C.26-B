@@ -1,0 +1,44 @@
+[
+  {
+    "scenarioId": "chat-demo-001",
+    "userInputs": {
+      "text": "我想买一双通勤能穿的白色运动鞋",
+      "imageIds": ["demo-image-id"]
+    },
+    "clarification": {
+      "replyType": "clarification",
+      "text": "我已经收到你的需求。你更看重哪一点？",
+      "card": {
+        "cardType": "clarification",
+        "title": "你更看重哪一点？",
+        "options": [
+          {
+            "optionId": "lowest_price",
+            "label": "价格最低"
+          },
+          {
+            "optionId": "official_store",
+            "label": "官方店铺"
+          },
+          {
+            "optionId": "fast_delivery",
+            "label": "配送更快"
+          }
+        ]
+      }
+    },
+    "recommendation": {
+      "selectedOptionIds": ["lowest_price"],
+      "replyType": "recommendation",
+      "text": "根据你的偏好，我给出以下推荐。",
+      "card": {
+        "cardType": "recommendation",
+        "title": "推荐购买",
+        "productName": "Mock 商品",
+        "platform": "Mock 平台-mock",
+        "price": 199.00,
+        "reason": "符合你选择的偏好，适合作为当前演示推荐。"
+      }
+    }
+  }
+]

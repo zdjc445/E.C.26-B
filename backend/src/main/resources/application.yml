@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: shopping-agent
+  servlet:
+    multipart:
+      max-file-size: 8MB
+      max-request-size: 8MB
+
+app:
+  upload-dir: ${UPLOAD_DIR:../uploads}
 
 logging:
   level:

@@ -1,28 +1,28 @@
 # AI 拍照识物与智能比价购物助手
 
-本项目实现一款面向 C 端消费者的智能购物助手：通过摄像头采集商品图像，服务端完成商品识别后生成交互式导购建议卡片，支持跨平台商品匹配、自然语言追加筛选与购买决策辅助。
+本项目是面向 C 端消费者的聊天式购物 Agent。用户进入 APP 后，可在首页对话框中输入需求、添加商品图片，Agent 通过追问卡片明确偏好，并在信息足够后给出推荐卡片。
 
-**当前阶段：工程骨架与核心流程设计阶段。**
+**当前阶段：聊天式 Mock Agent 闭环阶段。**
 
 ## 技术栈
 
 - **客户端：** Flutter (Android)
 - **服务端：** Java + Spring Boot
 - **构建工具：** Maven (后端) / Flutter CLI (客户端)
+- **交互形态：** 聊天首页 + 追问卡片 + 推荐卡片
 
 ## 当前阶段能力边界
 
-本阶段搭建项目骨架，不实现完整业务闭环：
+当前阶段实现可演示的 Mock 闭环，不接入真实外部服务：
 
-- ✅ Spring Boot 最小可启动服务
-- ✅ `GET /api/health` 健康检查
-- ✅ Flutter Android APP 可启动
-- ✅ 各功能模块占位页面
-- ✅ `--dart-define=EC26B_API_BASE_URL` 后端地址配置
-- ⏳ 真实 AI 识别与搜索（后续迭代）
-- ⏳ 真实电商 API 接入（后续迭代）
-- ⏳ 用户认证与数据持久化（后续迭代）
-- ⏳ 收藏、价格提醒、AgentRun 决策（后续迭代）
+- 已完成 Spring Boot 最小可启动服务
+- 已完成 `GET /api/health` 健康检查
+- 已完成 `POST /api/images/upload` 图片上传
+- 已完成 `POST /api/chat/sessions` 创建聊天会话
+- 已完成 `POST /api/chat/sessions/{sessionId}/messages` 发送聊天消息
+- 已完成 Flutter 聊天式首页、底部输入框、追问卡片、推荐卡片
+- 语音按钮当前作为占位能力，后续接入真实语音识别
+- 真实 AI 识别、真实电商 API、用户认证、数据库、收藏、价格提醒均为后续迭代
 
 ## 本地启动
 
@@ -42,6 +42,7 @@ java -jar target/shopping-agent-0.1.0.jar
 ```
 
 访问：
+
 - 健康检查：http://localhost:8080/api/health
 
 ### Flutter 客户端

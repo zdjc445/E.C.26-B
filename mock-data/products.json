@@ -1,32 +1,35 @@
 [
   {
-    "id": "prod-001",
-    "title": "示例运动鞋 轻便透气跑步鞋 白色",
-    "price": 299.00,
-    "platform": "jd",
+    "id": "prod-demo-001",
+    "title": "Mock 商品",
+    "platform": "Mock 平台-mock",
+    "price": 199.00,
     "sourceType": "mock",
     "imageUrl": "",
-    "tags": ["自营", "好评4.8+"],
-    "category": "运动鞋"
+    "tags": ["演示商品", "价格优先"],
+    "category": "运动鞋",
+    "reason": "符合你选择的偏好，适合作为当前演示推荐。"
   },
   {
-    "id": "prod-002",
-    "title": "同款运动鞋 网面透气 白色",
-    "price": 279.00,
-    "platform": "pdd",
+    "id": "prod-demo-002",
+    "title": "Mock 官方店铺商品",
+    "platform": "Mock 官方店铺-mock",
+    "price": 239.00,
     "sourceType": "mock",
     "imageUrl": "",
-    "tags": ["旗舰店"],
-    "category": "运动鞋"
+    "tags": ["演示商品", "官方店铺"],
+    "category": "运动鞋",
+    "reason": "适合更看重店铺可靠性的演示场景。"
   },
   {
-    "id": "prod-003",
-    "title": "品牌运动鞋 减震跑步鞋 白色经典款",
-    "price": 349.00,
-    "platform": "taobao",
+    "id": "prod-demo-003",
+    "title": "Mock 快速配送商品",
+    "platform": "Mock 快送平台-mock",
+    "price": 229.00,
     "sourceType": "mock",
     "imageUrl": "",
-    "tags": ["官方", "销量1万+"],
-    "category": "运动鞋"
+    "tags": ["演示商品", "配送更快"],
+    "category": "运动鞋",
+    "reason": "适合更看重配送速度的演示场景。"
   }
 ]

@@ -2,17 +2,58 @@
 
 ## 概述
 
-项目的 AI 能力分为两个层面：
+项目的 AI 与 Agent 能力分为两个阶段：
 
-1. **AI 识别层：** 使用 VLM（视觉语言模型）对商品图片进行类目识别与属性提取
-2. **Agent 编排层：** 使用 LLM 进行意图理解、筛选条件解析与购买决策推荐
+1. **当前阶段：** Mock Agent 根据固定规则返回追问卡片和推荐卡片
+2. **后续阶段：** 引入真实 AI Provider，完成图片识别、自然语言理解和购买推荐
 
-## AI Provider 架构
+当前阶段不调用真实模型，不输出真实模型推理链。
+
+## 当前 Mock Agent
+
+```text
+用户消息
+  ├─ 包含 text
+  ├─ 包含 imageIds
+  └─ 包含 selectedOptionIds
+        ↓
+Mock Agent 判断输入状态
+        ↓
+信息不足：返回 clarification 卡片
+信息足够：返回 recommendation 卡片
+```
+
+### 追问卡片
+
+当用户首次发送文字或图片后，Mock Agent 返回固定追问：
+
+```text
+你更看重哪一点？
+```
+
+固定选项：
+
+| optionId | label |
+|----------|-------|
+| lowest_price | 价格最低 |
+| official_store | 官方店铺 |
+| fast_delivery | 配送更快 |
+
+### 推荐卡片
+
+当用户点击追问选项后，Mock Agent 返回推荐卡片。当前推荐内容来自人工构造的 Mock 数据，展示字段包括：
+
+- 商品名
+- 平台，名称统一带 `-mock` 后缀
+- 价格
+- 推荐理由
+
+## 后续 AI Provider 架构
 
 ```text
                     ┌─────────────────┐
                     │  AI Provider    │
-                    │  (Interface)    │
+                    │  Interface      │
                     └────────┬────────┘
                              │
             ┌────────────────┼────────────────┐
@@ -23,60 +64,33 @@
      └──────────────┘  └──────────────┘  └──────────────┘
 ```
 
-### AI Provider 接口（计划）
+### 计划接口
 
-- `AiRecognitionProvider` — 图片识别接口
-  - `recognize(image)` → `RecognitionResult`
-- `AiRefineProvider` — 自然语言筛选解析接口
-  - `parseFilter(text, context)` → `FilterConditions`
+- `AiRecognitionProvider`
+  - 图片识别接口
+  - 输入图片或图片 ID
+  - 输出类目和属性
+- `AiIntentProvider`
+  - 自然语言意图解析接口
+  - 输入用户文本和会话上下文
+  - 输出筛选条件与追问建议
+- `AiRecommendationProvider`
+  - 购买推荐接口
+  - 输入商品数据和用户偏好
+  - 输出推荐结论与解释摘要
 
-### Mock Provider（当前阶段默认）
+## Prompt 工程原则（后续）
 
-- 返回预定义的占位识别结果
-- 离线可用，保证骨架阶段开发调试不受 AI 服务影响
-
-### Ark Provider（后续迭代）
-
-- 调用火山引擎 Ark API
-- 模型：Doubao-Seed-2.0-lite
-- 需配置 `ARK_API_KEY` 和 `ARK_ENDPOINT_ID`
-- 调用失败时自动 fallback 到 Mock
-
-## Agent 设计（后续迭代）
-
-### 决策流程
-
-```text
-候选商品列表 → 多维评分 → 决策矩阵 → 推荐输出
-                        ↓
-                  决策轨迹 + 候选胜因/败因
-```
-
-### 评分维度
-
-- 价格竞争力
-- 平台可靠性（自营/官方旗舰店）
-- 用户评价
-- 与用户筛选条件匹配度
-
-### 输出格式
-
-- 推荐结论（首选 / 备选）
-- 决策信号（价格优势、平台可靠等）
-- 决策轨迹（关键决策步骤）
-- 候选矩阵（各商品多维度得分对比）
-- 证据链（支撑推荐结论的具体数据点）
-
-## Prompt 工程原则（计划）
-
-- 系统 Prompt 设计保证结构化输出
-- 使用 JSON 格式约束响应
-- 非 JSON 响应自动 fallback 到规则引擎
-- Prompt 模板化管理，便于迭代与 A/B 测试
+- Prompt 模板化管理
+- 使用 JSON 格式约束模型响应
+- 非 JSON 响应进入规则兜底
+- 对外只展示解释摘要，不展示内部推理链
+- Mock Provider 保留为演示模式和降级能力
 
 ## 当前阶段状态
 
-- AI Provider 接口与 Mock 实现：后续迭代
-- Ark Provider 集成：后续迭代
-- Agent 决策引擎：后续迭代
-- Prompt 模板：后续迭代
+- Mock Agent：已实现固定追问卡片与推荐卡片
+- Ark Provider：后续迭代
+- 真实图片识别：后续迭代
+- 真实自然语言理解：后续迭代
+- 完整 Agent 推荐与证据摘要：后续迭代
