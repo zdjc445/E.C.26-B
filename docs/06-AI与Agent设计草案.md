@@ -2,95 +2,136 @@
 
 ## 概述
 
-项目的 AI 与 Agent 能力分为两个阶段：
+当前项目已具备 Mock/Ark 图片识别路径、多平台 Mock 商品推荐和聊天式 Agent 卡片输出。AI 与 Agent 设计遵循两个原则：
 
-1. **当前阶段：** Mock Agent 根据固定规则返回追问卡片和推荐卡片
-2. **后续阶段：** 引入真实 AI Provider，完成图片识别、自然语言理解和购买推荐
+- 对外展示结构化结果和解释摘要，不展示真实模型推理链。
+- 外部服务不可用时保持 Mock 降级，保证演示闭环可运行。
 
-当前阶段不调用真实模型，不输出真实模型推理链。
+## 当前 AI Provider
 
-## 当前 Mock Agent
+```text
+AiRecognitionProvider
+  ├─ MockRecognitionProvider
+  ├─ ArkRecognitionProvider
+  └─ FallbackRecognitionProvider
+```
+
+### MockRecognitionProvider
+
+- 默认 Provider。
+- 返回稳定识别结果，适合本地演示和测试。
+
+### ArkRecognitionProvider
+
+- 通过 Ark Chat Completions 接口调用视觉模型。
+- 输入图片 bytes、content type 和文件名。
+- 输出固定结构：
+  - `category`
+  - `brand`
+  - `model`
+  - `keywords`
+  - `attributes`
+  - `confidence`
+  - `explanation`
+
+### FallbackRecognitionProvider
+
+- `AI_PROVIDER=ark` 时启用。
+- Ark 配置缺失或调用失败时回退 Mock。
+- 返回结果中通过 `fallbackUsed` 标记回退状态。
+
+## 配置
+
+```powershell
+$env:AI_PROVIDER="mock"
+```
+
+```powershell
+$env:AI_PROVIDER="ark"
+$env:ARK_API_KEY="你的 Ark API Key"
+$env:ARK_ENDPOINT_ID="你的 Ark Endpoint ID"
+$env:ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
+```
+
+## 当前 Agent 流程
 
 ```text
 用户消息
-  ├─ 包含 text
-  ├─ 包含 imageIds
-  └─ 包含 selectedOptionIds
+  ├─ text
+  ├─ imageIds
+  └─ selectedOptionIds
         ↓
-Mock Agent 判断输入状态
+MockAgent 读取会话上下文
         ↓
-信息不足：返回 clarification 卡片
-信息足够：返回 recommendation 卡片
+图片：生成 recognition + clarification
+文字购物意图：生成 product_recommendation
+选项：继承最近用户文本预算和最近识别 category
+        ↓
+MockProductSourceProvider 生成三平台商品
+        ↓
+RecommendationScorer 排序
+        ↓
+输出 product_list + comparison + recommendation
 ```
 
-### 追问卡片
+## 当前卡片类型
 
-当用户首次发送文字或图片后，Mock Agent 返回固定追问：
+| cardType | 说明 |
+|----------|------|
+| clarification | 用户偏好追问 |
+| recognition | 图片识别结果 |
+| product_list | 多平台商品列表 |
+| comparison | 平台比价 |
+| recommendation | 推荐购买 |
 
-```text
-你更看重哪一点？
-```
+## 当前 Agent 解释
 
-固定选项：
+当前解释为轻量摘要：
 
-| optionId | label |
-|----------|-------|
-| lowest_price | 价格最低 |
-| official_store | 官方店铺 |
-| fast_delivery | 配送更快 |
+- 命中价格偏好时添加价格理由。
+- 命中官方/自营时添加渠道理由。
+- 命中配送偏好时添加物流理由。
+- 高评分、高销量会增加评分理由。
+- 预算过滤影响最终商品集合。
 
-### 推荐卡片
+## 下一阶段推荐解释增强
 
-当用户点击追问选项后，Mock Agent 返回推荐卡片。当前推荐内容来自人工构造的 Mock 数据，展示字段包括：
+后续建议参考以下设计方向：
 
-- 商品名
-- 平台，名称统一带 `-mock` 后缀
-- 价格
-- 推荐理由
+- 决策信号：
+  - 意图匹配
+  - 价格
+  - 口碑
+  - 渠道可信
+  - 风险
+- 输出增强：
+  - 综合分
+  - 推荐理由
+  - 风险提示
+  - 证据摘要
+  - 商品胜因/不足
+  - 多商品对比矩阵
 
-## 后续 AI Provider 架构
+## 自然语言筛选增强方向
 
-```text
-                    ┌─────────────────┐
-                    │  AI Provider    │
-                    │  Interface      │
-                    └────────┬────────┘
-                             │
-            ┌────────────────┼────────────────┐
-            │                │                │
-     ┌──────▼──────┐  ┌──────▼──────┐  ┌──────▼──────┐
-     │ Mock         │  │ Ark         │  │ Future       │
-     │ Provider     │  │ Provider    │  │ Providers    │
-     └──────────────┘  └──────────────┘  └──────────────┘
-```
+后续可增强规则或 AI 解析能力，将自然语言转为筛选条件：
 
-### 计划接口
+- 预算上限 / 下限
+- 颜色
+- 品牌
+- 类别
+- 最低评分
+- 官方店铺
+- 自营
+- 排序方式
+- 指定平台
 
-- `AiRecognitionProvider`
-  - 图片识别接口
-  - 输入图片或图片 ID
-  - 输出类目和属性
-- `AiIntentProvider`
-  - 自然语言意图解析接口
-  - 输入用户文本和会话上下文
-  - 输出筛选条件与追问建议
-- `AiRecommendationProvider`
-  - 购买推荐接口
-  - 输入商品数据和用户偏好
-  - 输出推荐结论与解释摘要
+当前阶段仅实现与聊天推荐闭环相关的轻量规则解析。
 
-## Prompt 工程原则（后续）
+## 未完成能力
 
-- Prompt 模板化管理
-- 使用 JSON 格式约束模型响应
-- 非 JSON 响应进入规则兜底
-- 对外只展示解释摘要，不展示内部推理链
-- Mock Provider 保留为演示模式和降级能力
-
-## 当前阶段状态
-
-- Mock Agent：已实现固定追问卡片与推荐卡片
-- Ark Provider：后续迭代
-- 真实图片识别：后续迭代
-- 真实自然语言理解：后续迭代
-- 完整 Agent 推荐与证据摘要：后续迭代
+- 真实电商 API 查询
+- 真实平台价格、库存、评价和店铺校验
+- 完整 Agent 决策记录
+- 独立自然语言意图 Provider
+- 真实语音识别

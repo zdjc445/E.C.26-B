@@ -4,14 +4,22 @@
 
 服务端提供 RESTful JSON API。基础路径为 `http://localhost:8080`。
 
-当前阶段围绕聊天式 Mock Agent 闭环实现以下接口：
+当前已实现接口：
 
 ```text
-GET /api/health
-POST /api/images/upload
-POST /api/chat/sessions
-POST /api/chat/sessions/{sessionId}/messages
+GET    /api/health
+POST   /api/images/upload
+POST   /api/chat/sessions
+GET    /api/chat/sessions
+POST   /api/chat/sessions/{sessionId}/messages
+GET    /api/chat/sessions/{sessionId}/messages
+PATCH  /api/chat/sessions/{sessionId}
+DELETE /api/chat/sessions/{sessionId}
+POST   /api/recognition
+PATCH  /api/recognition/{recognitionId}/attributes
 ```
+
+当前没有独立商品搜索 API。商品推荐通过聊天消息接口返回。
 
 ## 统一响应格式
 
@@ -41,17 +49,7 @@ POST /api/chat/sessions/{sessionId}/messages
 GET /api/health
 ```
 
-响应示例：
-
-```json
-{
-  "status": "ok",
-  "app": "shopping-agent",
-  "stage": "skeleton",
-  "aiProvider": "mock",
-  "timestamp": "2026-06-06T12:00:00+08:00"
-}
-```
+返回服务状态、应用名、阶段和 AI Provider。
 
 ## 图片上传
 
@@ -79,14 +77,9 @@ POST /api/images/upload
 }
 ```
 
-约束：
+## 聊天会话
 
-- 文件保存到项目根目录 `uploads/`
-- `imageId` 使用 UUID
-- 上传元数据当前使用内存结构
-- 空文件或缺失文件返回错误响应
-
-## 创建聊天会话
+### 创建会话
 
 ```text
 POST /api/chat/sessions
@@ -103,6 +96,42 @@ POST /api/chat/sessions
     "createdAt": "ISO-8601"
   }
 }
+```
+
+### 获取会话列表
+
+```text
+GET /api/chat/sessions
+```
+
+返回会话摘要列表，按更新时间倒序。
+
+### 获取历史消息
+
+```text
+GET /api/chat/sessions/{sessionId}/messages
+```
+
+assistant 消息包含 `agentReply`，用于恢复卡片。
+
+### 重命名会话
+
+```text
+PATCH /api/chat/sessions/{sessionId}
+```
+
+请求体：
+
+```json
+{
+  "title": "白色运动鞋推荐"
+}
+```
+
+### 删除会话
+
+```text
+DELETE /api/chat/sessions/{sessionId}
 ```
 
 ## 发送聊天消息
@@ -129,7 +158,25 @@ POST /api/chat/sessions/{sessionId}/messages
 
 三者至少有一个有效内容。
 
-首轮普通消息响应：
+### replyType
+
+| replyType | 说明 |
+|----------|------|
+| clarification | 需要用户补充偏好 |
+| recognition | 图片识别结果与追问 |
+| product_recommendation | 商品列表、比价与推荐 |
+
+### cardType
+
+| cardType | 说明 |
+|----------|------|
+| clarification | 追问选项卡 |
+| recognition | 图片识别结果卡 |
+| product_list | 多平台商品列表卡 |
+| comparison | 平台比价卡 |
+| recommendation | 推荐购买卡 |
+
+### 追问响应示例
 
 ```json
 {
@@ -144,18 +191,9 @@ POST /api/chat/sessions/{sessionId}/messages
         "cardType": "clarification",
         "title": "你更看重哪一点？",
         "options": [
-          {
-            "optionId": "lowest_price",
-            "label": "价格最低"
-          },
-          {
-            "optionId": "official_store",
-            "label": "官方店铺"
-          },
-          {
-            "optionId": "fast_delivery",
-            "label": "配送更快"
-          }
+          {"optionId": "lowest_price", "label": "价格最低"},
+          {"optionId": "official_store", "label": "官方店铺"},
+          {"optionId": "fast_delivery", "label": "配送更快"}
         ]
       }
     ]
@@ -163,7 +201,7 @@ POST /api/chat/sessions/{sessionId}/messages
 }
 ```
 
-点击追问选项后的响应：
+### 商品推荐响应示例
 
 ```json
 {
@@ -171,35 +209,86 @@ POST /api/chat/sessions/{sessionId}/messages
   "message": "success",
   "data": {
     "replyId": "uuid",
-    "replyType": "recommendation",
-    "text": "根据你的偏好，我给出以下推荐。",
+    "replyType": "product_recommendation",
+    "text": "我按你的偏好整理了几个平台的选择。",
     "cards": [
+      {
+        "cardType": "product_list",
+        "title": "多平台商品结果",
+        "products": []
+      },
+      {
+        "cardType": "comparison",
+        "title": "平台比价",
+        "platformStats": {}
+      },
       {
         "cardType": "recommendation",
         "title": "推荐购买",
         "productName": "Mock 商品",
-        "platform": "Mock 平台-mock",
-        "price": 199.00,
-        "reason": "符合你选择的偏好，适合作为当前演示推荐。"
+        "platform": "京东-mock",
+        "price": 199.0,
+        "reason": "价格、店铺和匹配度综合更适合当前需求。"
       }
     ]
   }
 }
 ```
 
-## 后续迭代计划 API
+## 图片识别
+
+```text
+POST /api/recognition
+```
+
+请求体：
+
+```json
+{
+  "imageId": "uuid"
+}
+```
+
+返回结构化识别结果：
+
+- `recognitionId`
+- `imageId`
+- `category`
+- `brand`
+- `model`
+- `keywords`
+- `attributes`
+- `confidence`
+- `aiProvider`
+- `fallbackUsed`
+- `explanation`
+
+## 识别结果修正
+
+```text
+PATCH /api/recognition/{recognitionId}/attributes
+```
+
+请求体：
+
+```json
+{
+  "category": "耳机",
+  "brand": "用户修正品牌",
+  "model": "用户修正型号",
+  "attributes": {
+    "color": "黑色"
+  }
+}
+```
+
+## 后续计划 API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/auth/register` | 用户注册 |
-| POST | `/api/auth/login` | 用户登录，返回 access token |
-| POST | `/api/recognition` | 真实图片识别 |
-| POST | `/api/search-tasks` | 创建商品搜索任务 |
-| GET | `/api/search-tasks/{id}` | 查询搜索结果 |
-| POST | `/api/comparisons` | 对选定商品发起比价 |
-| POST | `/api/recommendations` | 请求完整 Agent 推荐 |
-| GET | `/api/ecommerce/status` | 查询电商 API 配置状态 |
-
-## 当前阶段状态
-
-当前阶段 API 服务于聊天式 Mock Agent 闭环。真实 AI、真实电商 API、认证和数据库能力均为后续迭代。
+| POST | `/api/auth/login` | 用户登录 |
+| POST | `/api/search-tasks` | 独立商品搜索任务 |
+| POST | `/api/comparisons` | 独立比价任务 |
+| POST | `/api/recommendations` | 完整 Agent 推荐任务 |
+| GET | `/api/ecommerce/status` | 真实电商 API 配置状态 |
