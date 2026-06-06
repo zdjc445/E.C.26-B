@@ -106,6 +106,9 @@ class ReplyCard {
   final bool? fallbackUsed;
   final String? explanation;
   final String? recognitionId;
+  // product fields
+  final List<ProductItem>? products;
+  final Map<String, dynamic>? platformStats;
 
   const ReplyCard({
     required this.cardType,
@@ -126,6 +129,8 @@ class ReplyCard {
     this.fallbackUsed,
     this.explanation,
     this.recognitionId,
+    this.products,
+    this.platformStats,
   });
 
   factory ReplyCard.fromJson(Map<String, dynamic> json) {
@@ -154,6 +159,60 @@ class ReplyCard {
       fallbackUsed: json['fallbackUsed'] as bool?,
       explanation: json['explanation'] as String?,
       recognitionId: json['recognitionId'] as String?,
+      products: (json['products'] as List?)
+          ?.map((p) => ProductItem.fromJson(p as Map<String, dynamic>))
+          .toList(),
+      platformStats: json['platformStats'] as Map<String, dynamic>?,
+    );
+  }
+}
+
+class ProductItem {
+  final String productId;
+  final String title;
+  final String platform;
+  final double price;
+  final double originalPrice;
+  final String shopName;
+  final String imageUrl;
+  final String productUrl;
+  final double rating;
+  final int sales;
+  final List<String> tags;
+  final List<String> reasons;
+  final double score;
+
+  const ProductItem({
+    required this.productId,
+    required this.title,
+    required this.platform,
+    required this.price,
+    required this.originalPrice,
+    required this.shopName,
+    required this.imageUrl,
+    required this.productUrl,
+    required this.rating,
+    required this.sales,
+    required this.tags,
+    required this.reasons,
+    required this.score,
+  });
+
+  factory ProductItem.fromJson(Map<String, dynamic> json) {
+    return ProductItem(
+      productId: json['productId'] as String,
+      title: json['title'] as String,
+      platform: json['platform'] as String,
+      price: (json['price'] as num).toDouble(),
+      originalPrice: (json['originalPrice'] as num).toDouble(),
+      shopName: json['shopName'] as String,
+      imageUrl: json['imageUrl'] as String? ?? '',
+      productUrl: json['productUrl'] as String? ?? '',
+      rating: (json['rating'] as num).toDouble(),
+      sales: json['sales'] as int,
+      tags: (json['tags'] as List).map((t) => t.toString()).toList(),
+      reasons: (json['reasons'] as List).map((r) => r.toString()).toList(),
+      score: (json['score'] as num).toDouble(),
     );
   }
 }

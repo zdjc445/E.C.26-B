@@ -498,6 +498,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         return _buildRecommendationCard(card);
       case 'recognition':
         return _buildRecognitionCard(card);
+      case 'product_list':
+        return _buildProductListCard(card);
+      case 'comparison':
+        return _buildComparisonCard(card);
       default:
         return const SizedBox.shrink();
     }
@@ -710,6 +714,150 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  // ── Product cards ──────────────────────────────────────────
+
+  Widget _buildProductListCard(ReplyCard card) {
+    final products = card.products ?? [];
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.list_alt, size: 18, color: AppColors.accent),
+            const SizedBox(width: 6),
+            Text(card.title,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          ]),
+          const SizedBox(height: 8),
+          if (products.isEmpty)
+            const Text('暂无符合条件的商品',
+                style: TextStyle(fontSize: 12, color: AppColors.inkSoft))
+          else
+            ...products.map((p) => _buildProductRow(p)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductRow(ProductItem p) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(p.title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 4),
+          Row(children: [
+            _platformBadge(p.platform),
+            const SizedBox(width: 8),
+            Text('¥${p.price.toStringAsFixed(0)}',
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.priceRed)),
+            if (p.originalPrice > p.price) ...[
+              const SizedBox(width: 4),
+              Text('¥${p.originalPrice.toStringAsFixed(0)}',
+                  style: const TextStyle(fontSize: 11, color: AppColors.inkSoft, decoration: TextDecoration.lineThrough)),
+            ],
+          ]),
+          const SizedBox(height: 2),
+          Row(children: [
+            Text(p.shopName, style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+            const SizedBox(width: 8),
+            _ratingStars(p.rating),
+            const SizedBox(width: 4),
+            Text('${p.rating}', style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+            const SizedBox(width: 8),
+            Text('已售${p.sales > 9999 ? '${(p.sales / 10000).toStringAsFixed(1)}万' : '${p.sales}'}',
+                style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+          ]),
+          if (p.tags.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Wrap(spacing: 4, children: p.tags.map((t) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(color: AppColors.accent.withAlpha(15), borderRadius: BorderRadius.circular(3)),
+              child: Text(t, style: const TextStyle(fontSize: 9, color: AppColors.accent)),
+            )).toList()),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComparisonCard(ReplyCard card) {
+    final stats = card.platformStats ?? {};
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.compare_arrows, size: 18, color: AppColors.accent),
+            const SizedBox(width: 6),
+            Text(card.title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+          ]),
+          const SizedBox(height: 8),
+          if (stats.isEmpty)
+            const Text('暂无可比价平台',
+                style: TextStyle(fontSize: 12, color: AppColors.inkSoft))
+          else
+            ...stats.entries.map((e) {
+            final s = e.value as Map<String, dynamic>;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(children: [
+                _platformBadge(s['platform'] as String? ?? e.key),
+                const Spacer(),
+                Text('最低 ¥${(s['lowestPrice'] as num?)?.toStringAsFixed(0) ?? '-'}',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.priceRed)),
+                const SizedBox(width: 8),
+                Text('${s['productCount'] ?? 0}件',
+                    style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+              ]),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _platformBadge(String platform) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.circular(4)),
+      child: Text(platform, style: const TextStyle(fontSize: 10, color: AppColors.inkSoft)),
+    );
+  }
+
+  Widget _ratingStars(double rating) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) => Icon(
+        i < rating.round() ? Icons.star : Icons.star_border,
+        size: 11, color: i < rating.round() ? AppColors.warn : AppColors.line,
+      )),
     );
   }
 
