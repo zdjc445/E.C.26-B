@@ -228,12 +228,57 @@ POST /api/chat/sessions/{sessionId}/messages
         "productName": "Mock 商品",
         "platform": "京东-mock",
         "price": 199.0,
-        "reason": "价格、店铺和匹配度综合更适合当前需求。"
+        "reason": "价格、店铺和匹配度综合更适合当前需求。",
+        "decisionScore": 86,
+        "decisionSignals": [
+          {
+            "key": "price",
+            "label": "价格",
+            "score": 90,
+            "explanation": "价格符合当前预算。"
+          }
+        ],
+        "evidence": [
+          {
+            "type": "price",
+            "content": "当前推荐价格 199.00 元。"
+          }
+        ],
+        "risks": [
+          "当前为 Mock 商品数据，不代表真实平台库存与价格。"
+        ],
+        "productAnalyses": [
+          {
+            "productId": "jd-001",
+            "platform": "京东-mock",
+            "title": "Mock 商品",
+            "rank": 1,
+            "score": 88,
+            "strengths": ["价格优惠"],
+            "weaknesses": []
+          }
+        ],
+        "intentProvider": "rule",
+        "intentFallbackUsed": false,
+        "explanationProvider": "rule",
+        "explanationFallbackUsed": false,
+        "notices": []
       }
     ]
   }
 }
 ```
+
+推荐卡新增解释字段：
+
+- `decisionScore`：综合分。
+- `decisionSignals`：决策信号，当前包含意图匹配、价格、店铺信誉、渠道可信、风险。
+- `evidence`：证据摘要。
+- `risks`：风险提示。
+- `productAnalyses`：商品胜因/不足。
+- `intentProvider`、`intentFallbackUsed`：意图解析来源与回退状态。
+- `explanationProvider`、`explanationFallbackUsed`：解释生成来源与回退状态。
+- `notices`：回退、修正等提示。
 
 ## 图片识别
 

@@ -24,6 +24,8 @@
 - Flutter 聊天首页、历史入口、个人页入口、底部输入栏
 - 拍照/相册选择、图片上传和本地预览
 - 识别结果卡片、识别修正面板
+- 规则/Ark 购物意图解析，Ark 不可用时回退规则解析
+- 推荐解释增强：综合分、决策信号、证据摘要、风险提示、商品胜因/不足
 - 多平台 Mock 商品：`京东-mock`、`拼多多-mock`、`淘宝-mock`
 - Mock 商品类别：运动鞋、耳机、吹风机
 - 商品列表卡、平台比价卡、推荐购买卡
@@ -33,9 +35,10 @@
 ## 当前边界
 
 - 真实 AI 识别需要配置 Ark 环境变量后实测；未配置或调用失败时回退 Mock。
+- Ark 购物意图解析和推荐解释改写需要配置 Ark 环境变量；未配置或调用失败时回退规则解析与规则解释。
 - 商品搜索和比价当前使用人工构造的 Mock 数据，不代表真实平台数据。
 - 真实电商 API、真实认证、Postgres 持久化、真实语音识别、收藏、价格提醒仍为后续迭代。
-- Agent 目前输出解释摘要，不输出真实模型推理链。
+- Agent 输出结构化解释摘要，不输出真实模型推理链。
 
 ## 本地启动
 
@@ -110,9 +113,9 @@ C:\flutter\flutter\bin\flutter.bat test
 
 当前记录：
 
-- 后端测试：41 tests
-- Flutter 测试：12 tests
-- Flutter analyze：无 error/warning，仅 info
+- 后端测试：53 tests，0 failures，0 errors
+- Flutter 测试：16 tests，全部通过
+- Flutter analyze：无 error/warning，17 条 info
 
 ## 文档导航
 

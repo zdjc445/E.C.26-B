@@ -2,12 +2,14 @@
 
 ## 概述
 
-当前项目已具备 Mock/Ark 图片识别路径、多平台 Mock 商品推荐和聊天式 Agent 卡片输出。AI 与 Agent 设计遵循两个原则：
+当前项目已具备 Mock/Ark 图片识别路径、规则/Ark 购物意图解析路径、规则/Ark 推荐解释路径、多平台 Mock 商品推荐和聊天式 Agent 卡片输出。AI 与 Agent 设计遵循两个原则：
 
 - 对外展示结构化结果和解释摘要，不展示真实模型推理链。
 - 外部服务不可用时保持 Mock 降级，保证演示闭环可运行。
 
 ## 当前 AI Provider
+
+### 图片识别 Provider
 
 ```text
 AiRecognitionProvider
@@ -40,6 +42,32 @@ AiRecognitionProvider
 - Ark 配置缺失或调用失败时回退 Mock。
 - 返回结果中通过 `fallbackUsed` 标记回退状态。
 
+### 购物意图解析 Provider
+
+```text
+ShoppingIntentParser
+  ├─ RuleBasedShoppingIntentParser
+  ├─ ArkShoppingIntentParser
+  └─ FallbackShoppingIntentParser
+```
+
+- 默认使用规则解析，支持预算上限、部分颜色、官方/旗舰/自营、配送、低价、好评、销量倾向。
+- `AI_PROVIDER=ark` 时优先使用 Ark 意图解析。
+- Ark 未配置、调用失败或返回需要澄清时回退规则解析。
+- 返回结果中通过 `intentProvider` 和 `intentFallbackUsed` 标记解析来源。
+
+### 推荐解释 Provider
+
+```text
+RecommendationExplainer
+  └─ ArkRecommendationExplainer
+```
+
+- 规则解释器生成综合分、决策信号、证据摘要、风险提示和商品胜因/不足。
+- `AI_PROVIDER=ark` 时，Ark 只改写面向用户的解释文本。
+- Ark 不允许改写 `productId`、平台、价格、商品名、排序和数值分数。
+- 返回结果中通过 `explanationProvider` 和 `explanationFallbackUsed` 标记解释来源。
+
 ## 配置
 
 ```powershell
@@ -71,6 +99,8 @@ MockProductSourceProvider 生成三平台商品
         ↓
 RecommendationScorer 排序
         ↓
+RecommendationExplainer / ArkRecommendationExplainer 生成解释
+        ↓
 输出 product_list + comparison + recommendation
 ```
 
@@ -86,7 +116,7 @@ RecommendationScorer 排序
 
 ## 当前 Agent 解释
 
-当前解释为轻量摘要：
+当前解释为结构化摘要：
 
 - 命中价格偏好时添加价格理由。
 - 命中官方/自营时添加渠道理由。
@@ -94,23 +124,18 @@ RecommendationScorer 排序
 - 高评分、高销量会增加评分理由。
 - 预算过滤影响最终商品集合。
 
-## 下一阶段推荐解释增强
+## 已完成推荐解释增强
 
-后续建议参考以下设计方向：
+当前推荐卡已输出以下结构化解释字段：
 
-- 决策信号：
-  - 意图匹配
-  - 价格
-  - 口碑
-  - 渠道可信
-  - 风险
-- 输出增强：
-  - 综合分
-  - 推荐理由
-  - 风险提示
-  - 证据摘要
-  - 商品胜因/不足
-  - 多商品对比矩阵
+- `decisionScore`：综合分。
+- `decisionSignals`：意图匹配、价格、店铺信誉、渠道可信、风险。
+- `evidence`：预算、颜色、价格等证据摘要。
+- `risks`：Mock 数据、配送时效等风险提示。
+- `productAnalyses`：商品胜因/不足和排序分数。
+- `intentProvider` / `intentFallbackUsed`：意图解析来源。
+- `explanationProvider` / `explanationFallbackUsed`：解释生成来源。
+- `notices`：Ark 回退和用户修正等提示。
 
 ## 自然语言筛选增强方向
 
@@ -126,12 +151,12 @@ RecommendationScorer 排序
 - 排序方式
 - 指定平台
 
-当前阶段仅实现与聊天推荐闭环相关的轻量规则解析。
+当前阶段已实现与聊天推荐闭环相关的轻量规则解析。后续增强重点是品牌、指定平台、排序方式、数值评分阈值和追加筛选条件的完整落地。
 
 ## 未完成能力
 
 - 真实电商 API 查询
 - 真实平台价格、库存、评价和店铺校验
-- 完整 Agent 决策记录
-- 独立自然语言意图 Provider
+- 完整 Agent 决策记录持久化或导出
+- 真实 Ark 图片识别批量实测记录与截图
 - 真实语音识别
