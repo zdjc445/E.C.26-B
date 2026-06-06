@@ -350,6 +350,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             child: messages.isEmpty
                 ? _buildEmpty()
                 : ListView.builder(
+                    key: const Key('chat_message_list'),
                     controller: _scrollController,
                     padding:
                         const EdgeInsets.fromLTRB(12, 12, 12, 4),
@@ -600,6 +601,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             Text(card.reason!,
                 style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
           ],
+          // Provider status
+          if (card.intentProvider != null || card.explanationProvider != null) ...[
+            const SizedBox(height: 6),
+            Row(children: [
+              if (card.intentProvider != null) ...[
+                _providerChip('意图：${card.intentProvider}',
+                    fallback: card.intentFallbackUsed == true),
+                const SizedBox(width: 6),
+              ],
+              if (card.explanationProvider != null) ...[
+                _providerChip('解释：${card.explanationProvider}',
+                    fallback: card.explanationFallbackUsed == true),
+              ],
+            ]),
+          ],
+          if (card.notices != null && card.notices!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            ...card.notices!.map((n) => Text(n,
+                style: const TextStyle(fontSize: 10, color: AppColors.warn))),
+          ],
           // Decision signals
           if (card.decisionSignals != null && card.decisionSignals!.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -690,6 +711,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (score >= 80) return AppColors.good;
     if (score >= 50) return AppColors.warn;
     return AppColors.priceRed;
+  }
+
+  Widget _providerChip(String label, {bool fallback = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: fallback ? AppColors.warn.withAlpha(20) : AppColors.accent.withAlpha(15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(label, style: TextStyle(fontSize: 10,
+            color: fallback ? AppColors.warn : AppColors.accent)),
+        if (fallback) ...[
+          const SizedBox(width: 4),
+          const Text('已回退规则处理',
+              style: TextStyle(fontSize: 9, color: AppColors.warn)),
+        ],
+      ]),
+    );
   }
 
   Widget _buildRecognitionCard(ReplyCard card) {

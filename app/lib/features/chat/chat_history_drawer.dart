@@ -74,8 +74,8 @@ class ChatHistoryDrawer extends ConsumerWidget {
                             return _SessionTile(
                               session: s,
                               isActive: isActive,
-                              onTap: () {
-                                ref
+                              onTap: () async {
+                                await ref
                                     .read(chatControllerProvider.notifier)
                                     .switchToSession(s.sessionId);
                                 onClose();
@@ -159,7 +159,7 @@ class ChatHistoryDrawer extends ConsumerWidget {
 class _SessionTile extends StatelessWidget {
   final ChatSessionSummary session;
   final bool isActive;
-  final VoidCallback onTap;
+  final Future<void> Function() onTap;
   final VoidCallback onRename;
   final VoidCallback onDelete;
 
@@ -196,7 +196,9 @@ class _SessionTile extends StatelessWidget {
           PopupMenuItem(value: 'delete', child: Text('删除')),
         ],
       ),
-      onTap: onTap,
+      onTap: () async {
+        await onTap();
+      },
     );
   }
 }

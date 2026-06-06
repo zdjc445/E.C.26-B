@@ -115,6 +115,12 @@ class ReplyCard {
   final List<RecommendationEvidence>? evidence;
   final List<String>? risks;
   final List<ProductAnalysis>? productAnalyses;
+  // provider metadata
+  final String? intentProvider;
+  final bool? intentFallbackUsed;
+  final String? explanationProvider;
+  final bool? explanationFallbackUsed;
+  final List<String>? notices;
 
   const ReplyCard({
     required this.cardType,
@@ -142,6 +148,11 @@ class ReplyCard {
     this.evidence,
     this.risks,
     this.productAnalyses,
+    this.intentProvider,
+    this.intentFallbackUsed,
+    this.explanationProvider,
+    this.explanationFallbackUsed,
+    this.notices,
   });
 
   factory ReplyCard.fromJson(Map<String, dynamic> json) {
@@ -163,8 +174,7 @@ class ReplyCard {
       keywords: (json['keywords'] as List?)
           ?.map((k) => k.toString())
           .toList(),
-      attributes:
-          json['attributes'] as Map<String, dynamic>?,
+      attributes: _stringMap(json['attributes']),
       confidence: (json['confidence'] as num?)?.toDouble(),
       aiProvider: json['aiProvider'] as String?,
       fallbackUsed: json['fallbackUsed'] as bool?,
@@ -173,7 +183,7 @@ class ReplyCard {
       products: (json['products'] as List?)
           ?.map((p) => ProductItem.fromJson(p as Map<String, dynamic>))
           .toList(),
-      platformStats: json['platformStats'] as Map<String, dynamic>?,
+      platformStats: _stringMap(json['platformStats']),
       decisionScore: json['decisionScore'] as int?,
       decisionSignals: (json['decisionSignals'] as List?)
           ?.map((s) => DecisionSignal.fromJson(s as Map<String, dynamic>))
@@ -187,8 +197,18 @@ class ReplyCard {
       productAnalyses: (json['productAnalyses'] as List?)
           ?.map((a) => ProductAnalysis.fromJson(a as Map<String, dynamic>))
           .toList(),
+      intentProvider: json['intentProvider'] as String?,
+      intentFallbackUsed: json['intentFallbackUsed'] as bool?,
+      explanationProvider: json['explanationProvider'] as String?,
+      explanationFallbackUsed: json['explanationFallbackUsed'] as bool?,
+      notices: (json['notices'] as List?)?.map((n) => n.toString()).toList(),
     );
   }
+}
+
+Map<String, dynamic>? _stringMap(Object? value) {
+  if (value == null) return null;
+  return Map<String, dynamic>.from(value as Map);
 }
 
 class DecisionSignal {

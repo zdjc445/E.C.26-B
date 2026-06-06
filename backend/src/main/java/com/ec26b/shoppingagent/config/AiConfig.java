@@ -1,6 +1,7 @@
 package com.ec26b.shoppingagent.config;
 
 import com.ec26b.shoppingagent.ai.*;
+import com.ec26b.shoppingagent.product.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -38,5 +39,31 @@ public class AiConfig {
             return new FallbackRecognitionProvider(arkProvider, mockProvider);
         }
         return mockProvider;
+    }
+
+    // ── Intent parsing ──────────────────────────────────────
+
+    @Bean
+    public ArkShoppingIntentParser arkShoppingIntentParser(ArkClient arkClient, ObjectMapper objectMapper) {
+        return new ArkShoppingIntentParser(arkClient, objectMapper);
+    }
+
+    @Bean
+    @Primary
+    public ShoppingIntentParser shoppingIntentParser(
+            @Value("${app.ai.provider:mock}") String provider,
+            RuleBasedShoppingIntentParser ruleParser,
+            ArkShoppingIntentParser arkParser) {
+        if ("ark".equalsIgnoreCase(provider)) {
+            return new FallbackShoppingIntentParser(arkParser, ruleParser);
+        }
+        return ruleParser;
+    }
+
+    // ── Explanation ─────────────────────────────────────────
+
+    @Bean
+    public ArkRecommendationExplainer arkRecommendationExplainer(ArkClient arkClient, ObjectMapper objectMapper) {
+        return new ArkRecommendationExplainer(arkClient, objectMapper);
     }
 }

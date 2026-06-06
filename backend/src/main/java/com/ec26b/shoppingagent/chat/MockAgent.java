@@ -2,6 +2,7 @@ package com.ec26b.shoppingagent.chat;
 
 import com.ec26b.shoppingagent.ai.RecognitionResult;
 import com.ec26b.shoppingagent.product.*;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -14,18 +15,24 @@ import java.util.regex.Pattern;
 public class MockAgent {
 
     private final MockProductSourceProvider productSource;
-    private final UserPreferenceParser preferenceParser;
-    private final RecommendationExplainer explainer;
+    private final ShoppingIntentParser intentParser;
+    private final RecommendationExplainer ruleExplainer;
+    private final ArkRecommendationExplainer arkExplainer;
+    private final boolean useArk;
 
     private static final Pattern SHOPPING_WORDS = Pattern.compile(
             "买|想买|想要|推荐|帮我找|找.*商品|多少钱|价格|便宜|优惠|性价比|官方|自营|旗舰|配送|物流|评价|评分|销量|预算|以内|不超过|以下");
 
     public MockAgent(MockProductSourceProvider productSource,
-                     UserPreferenceParser preferenceParser,
-                     RecommendationExplainer explainer) {
+                     ShoppingIntentParser intentParser,
+                     RecommendationExplainer ruleExplainer,
+                     ArkRecommendationExplainer arkExplainer,
+                     @Value("${app.ai.provider:mock}") String aiProvider) {
         this.productSource = productSource;
-        this.preferenceParser = preferenceParser;
-        this.explainer = explainer;
+        this.intentParser = intentParser;
+        this.ruleExplainer = ruleExplainer;
+        this.arkExplainer = arkExplainer;
+        this.useArk = "ark".equalsIgnoreCase(aiProvider);
     }
 
     public AgentReply process(ChatStore.ChatSession session, String text,
@@ -89,14 +96,6 @@ public class MockAgent {
         return text != null && !text.isBlank() && SHOPPING_WORDS.matcher(text).find();
     }
 
-    String extractKeyword(String text) {
-        if (text == null) return "运动鞋";
-        if (text.contains("运动鞋")) return "运动鞋";
-        if (text.contains("耳机")) return "耳机";
-        if (text.contains("吹风机")) return "吹风机";
-        return "运动鞋";
-    }
-
     // ── Product recommendation ───────────────────────────────
 
     private AgentReply buildProductRecommendation(List<String> prefs, String text) {
@@ -104,45 +103,60 @@ public class MockAgent {
     }
 
     private AgentReply buildProductRecommendation(List<String> prefs, String text, String category) {
-        // Parse preferences from text
-        UserPreference pref = preferenceParser.parse(text);
+        // Parse intent
+        ShoppingIntent intent = intentParser.parse(text);
         // Merge explicit option prefs
-        if (prefs != null && !prefs.isEmpty()) {
-            boolean hasLowest = prefs.contains("lowest_price");
-            boolean hasOfficial = prefs.contains("official_store");
-            boolean hasFast = prefs.contains("fast_delivery");
-            pref = new UserPreference(pref.maxPrice(), pref.color(),
-                    pref.officialStore() || hasOfficial,
-                    pref.fastDelivery() || hasFast,
-                    pref.lowestPrice() || hasLowest,
-                    pref.highRating(), pref.highSales());
+        boolean hasLowest = prefs != null && prefs.contains("lowest_price");
+        boolean hasOfficial = prefs != null && prefs.contains("official_store");
+        boolean hasFast = prefs != null && prefs.contains("fast_delivery");
+        if (hasLowest || hasOfficial || hasFast) {
+            intent = new ShoppingIntent(intent.keyword(), intent.maxPrice(), intent.color(),
+                    intent.officialStore() || hasOfficial,
+                    intent.fastDelivery() || hasFast,
+                    intent.lowestPrice() || hasLowest,
+                    intent.highRating(), intent.highSales(),
+                    intent.needsClarification(), intent.clarificationQuestion(),
+                    intent.intentProvider(), intent.intentFallbackUsed(), intent.notices());
         }
-        List<String> effectivePrefs = pref.toPreferenceIds();
+        List<String> effectivePrefs = intent.toPreferenceIds();
 
-        String keyword = category != null && !category.isBlank() ? category : extractKeyword(text);
+        // Keyword priority: recognition > intent > default
+        String keyword = RuleBasedShoppingIntentParser.resolveKeyword(category, intent.keyword());
+
         ProductSearchResult sr = productSource.search(
-                new ProductSearchQuery(keyword, effectivePrefs, pref.maxPrice()));
+                new ProductSearchQuery(keyword, effectivePrefs, intent.maxPrice()));
         List<Card> cards = new ArrayList<>();
 
         cards.add(Card.productList("多平台商品结果", sr.products()));
         cards.add(Card.comparison("平台比价", sr.platformStats()));
 
         if (sr.products().isEmpty()) {
-            String note = pref.maxPrice() != null
-                    ? "当前预算下（≤" + pref.maxPrice().intValue() + "元）暂无合适的 Mock 商品，请调整预算或偏好。"
+            String note = intent.maxPrice() != null
+                    ? "当前预算下（≤" + intent.maxPrice().intValue() + "元）暂无合适的 Mock 商品，请调整预算或偏好。"
                     : "暂无合适的 Mock 商品。";
             return new AgentReply(UUID.randomUUID().toString(), "product_recommendation", note, cards);
         }
 
         // Build explanation
-        RecommendationExplanation exp = explainer.explain(sr, pref, keyword);
+        RecommendationExplanation ruleExp = ruleExplainer.explain(sr, intent.toUserPreference(), keyword);
+        RecommendationExplanation exp;
+        if (useArk) {
+            exp = arkExplainer.explain(ruleExp, intent, sr);
+        } else {
+            exp = ruleExp;
+        }
 
         if (sr.topPick() != null) {
             ProductOffer t = sr.topPick();
+            List<String> allNotices = new ArrayList<>(intent.notices());
+            allNotices.addAll(exp.notices());
             cards.add(Card.recommendation("推荐购买", t.title(), t.platform(), t.price(),
-                    String.join("；", t.reasons().isEmpty() ? List.of("综合评分较高") : t.reasons()),
+                    exp.summaryReason(),
                     exp.decisionScore(), exp.decisionSignals(), exp.evidence(),
-                    exp.risks(), exp.productAnalyses()));
+                    exp.risks(), exp.productAnalyses(),
+                    intent.intentProvider(), intent.intentFallbackUsed(),
+                    exp.explanationProvider(), exp.explanationFallbackUsed(),
+                    allNotices));
         }
 
         return new AgentReply(UUID.randomUUID().toString(),
@@ -188,12 +202,17 @@ public class MockAgent {
             String explanation, String recognitionId,
             List<ProductOffer> products,
             Map<String, ProductSearchResult.PlatformStats> platformStats,
-            // explanation fields
             Integer decisionScore,
             List<DecisionSignal> decisionSignals,
             List<RecommendationEvidence> evidence,
             List<String> risks,
-            List<ProductAnalysis> productAnalyses) {
+            List<ProductAnalysis> productAnalyses,
+            // provider metadata
+            String intentProvider,
+            Boolean intentFallbackUsed,
+            String explanationProvider,
+            Boolean explanationFallbackUsed,
+            List<String> notices) {
 
         public static Card clarification(String title) {
             return new Card("clarification", title, null, null, null, null,
@@ -202,6 +221,7 @@ public class MockAgent {
                             new Option("fast_delivery", "配送更快")),
                     null, null, null, null, null, null,
                     0.0, null, false, null, null, null, null,
+                    null, null, null, null, null,
                     null, null, null, null, null);
         }
 
@@ -211,11 +231,15 @@ public class MockAgent {
                                           List<DecisionSignal> signals,
                                           List<RecommendationEvidence> evidence,
                                           List<String> risks,
-                                          List<ProductAnalysis> analyses) {
+                                          List<ProductAnalysis> analyses,
+                                          String intentProvider, Boolean intentFallback,
+                                          String explProvider, Boolean explFallback,
+                                          List<String> notices) {
             return new Card("recommendation", title, productName, platform, price, reason,
                     null, null, null, null, null, null, null,
                     0.0, null, false, null, null, null, null,
-                    decisionScore, signals, evidence, risks, analyses);
+                    decisionScore, signals, evidence, risks, analyses,
+                    intentProvider, intentFallback, explProvider, explFallback, notices);
         }
 
         public static Card recognition(String imageId, String category, String brand,
@@ -226,13 +250,15 @@ public class MockAgent {
             return new Card("recognition", "识别结果", null, null, null, null, null,
                     imageId, category, brand, model, keywords, attributes,
                     conf, aiProvider, fallback, explanation, recognitionId,
-                    null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null,
+                    null, null, null, null, null);
         }
 
         public static Card productList(String title, List<ProductOffer> products) {
             return new Card("product_list", title, null, null, null, null, null,
                     null, null, null, null, null, null,
                     0.0, null, false, null, null, products, null,
+                    null, null, null, null, null,
                     null, null, null, null, null);
         }
 
@@ -241,6 +267,7 @@ public class MockAgent {
             return new Card("comparison", title, null, null, null, null, null,
                     null, null, null, null, null, null,
                     0.0, null, false, null, null, null, stats,
+                    null, null, null, null, null,
                     null, null, null, null, null);
         }
     }

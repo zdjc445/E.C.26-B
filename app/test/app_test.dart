@@ -213,6 +213,11 @@ class FakeChatApi extends ChatApi {
                   title: 'Mock 运动鞋', rank: 1, score: 88,
                   strengths: ['价格低', '自营'], weaknesses: []),
             ],
+            intentProvider: 'rule',
+            intentFallbackUsed: false,
+            explanationProvider: 'rule',
+            explanationFallbackUsed: false,
+            notices: [],
           ),
         ],
       );
@@ -708,6 +713,75 @@ void main() {
       expect(find.text('Old Card'), findsOneWidget);
       // Should not crash on missing fields
       expect(find.text('综合分'), findsNothing);
+    });
+
+    testWidgets('recommendation card shows provider status', (tester) async {
+      final ov = _TestOverrides();
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), '推荐耳机');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.send));
+      await tester.pumpAndSettle();
+
+      expect(find.text('意图：rule'), findsOneWidget);
+      expect(find.text('解释：rule'), findsOneWidget);
+    });
+
+    testWidgets('history restores provider metadata', (tester) async {
+      final ov = _TestOverrides();
+      // Use minimal cards so the recommendation card is visible without scrolling
+      ov.chatApi.addHistoryMessages('hist-prov', [
+        {'messageId': 'm1', 'role': 'user', 'text': '推荐',
+         'imageIds': [], 'selectedOptionIds': [], 'createdAt': '2026-06-06T10:00:00+08:00'},
+        {'messageId': 'm2', 'role': 'assistant', 'text': '推荐结果',
+         'imageIds': [], 'selectedOptionIds': [], 'createdAt': '2026-06-06T10:00:01+08:00',
+         'agentReply': {
+           'replyId': 'rp', 'replyType': 'product_recommendation',
+           'text': '推荐', 'cards': [
+             {'cardType': 'product_list', 'title': '商品', 'products': []},
+             {'cardType': 'comparison', 'title': '比价', 'platformStats': {}},
+             {'cardType': 'recommendation', 'title': '推荐', 'productName': 'T',
+              'platform': '京东-mock', 'price': 100.0, 'reason': 'test',
+              'decisionScore': 80, 'decisionSignals': [], 'evidence': [],
+              'risks': [], 'productAnalyses': [],
+              'intentProvider': 'ark', 'intentFallbackUsed': true,
+              'explanationProvider': 'rule', 'explanationFallbackUsed': false,
+              'notices': []},
+           ],
+         }},
+      ]);
+
+      final controller = ChatController(ov.chatApi);
+      await controller.switchToSession('hist-prov');
+      expect(controller.messages, hasLength(2));
+      final restoredReply = controller.messages[1].agentReply;
+      expect(restoredReply, isNotNull);
+      final restoredCard = restoredReply!.cards[2];
+      expect(restoredCard.productName, 'T');
+      expect(restoredCard.intentProvider, 'ark');
+      expect(restoredCard.intentFallbackUsed, isTrue);
+
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.tap(find.byIcon(Icons.history));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('历史会话'));
+      await tester.pumpAndSettle();
+
+      final uiController = ProviderScope.containerOf(
+        tester.element(find.byType(ChatScreen)),
+        listen: false,
+      ).read(chatControllerProvider);
+      expect(uiController.messages, hasLength(2));
+      final uiReply = uiController.messages[1].agentReply;
+      expect(uiReply, isNotNull);
+      expect(uiReply!.cards[2].productName, 'T');
+
+      // Verify history loaded
+      expect(find.text('T'), findsOneWidget);
+      expect(find.text('test'), findsOneWidget);
+      // Provider metadata
+      expect(find.text('意图：ark'), findsOneWidget);
+      expect(find.text('已回退规则处理'), findsOneWidget);
     });
   });
 }

@@ -75,9 +75,14 @@ class ChatController extends ChangeNotifier {
 
     try {
       final rawMessages = await _api.getMessages(sessionId);
-      _messages.addAll(rawMessages.map(_fromHistoryMessage));
-    } catch (_) {
-      // keep empty if load fails
+      final restored = <ChatMessage>[];
+      for (final m in rawMessages) {
+        restored.add(_fromHistoryMessage(m));
+      }
+      _messages.addAll(restored);
+    } catch (e, st) {
+      // Keep parse failures visible instead of leaving the UI in an empty state.
+      throw Exception('switchToSession failed: $e\n$st');
     }
     notifyListeners();
   }
