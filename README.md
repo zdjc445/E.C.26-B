@@ -113,9 +113,9 @@ C:\flutter\flutter\bin\flutter.bat test
 
 当前记录：
 
-- 后端测试：57 tests，0 failures，0 errors
-- Flutter 测试：16 tests，全部通过
-- Flutter analyze：无 error/warning，17 条 info
+- 后端测试：72 tests，0 failures，0 errors
+- Flutter 测试：18 tests
+- Flutter analyze：exit 0，14 条 info
 
 ## 文档导航
 

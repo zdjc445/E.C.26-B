@@ -40,14 +40,24 @@ public class MockAgent {
         boolean hasOptions = selectedOptionIds != null && !selectedOptionIds.isEmpty();
         boolean hasImages = imageIds != null && !imageIds.isEmpty();
 
-        if (hasOptions) {
-            String lastUserText = findLastUserText(session);
-            String recCategory = findRecognitionCategory(session);
-            return buildProductRecommendation(selectedOptionIds,
-                    coalesce(text, lastUserText), recCategory);
+        if (hasOptions || hasImages) {
+            if (hasOptions) {
+                String lastUserText = findLastUserText(session);
+                String recCategory = findRecognitionCategory(session);
+                return buildProductRecommendation(selectedOptionIds,
+                        coalesce(text, lastUserText), recCategory);
+            }
+            if (hasImages) return buildRecognitionReply(imageIds);
         }
-        if (hasImages) return buildRecognitionReply(imageIds);
-        if (isShoppingIntent(text)) return buildProductRecommendation(List.of(), text);
+
+        // Multi-turn: detect refinement or new shopping intent
+        boolean isRefinement = isRefinementText(text);
+        boolean isShopping = isShoppingIntent(text);
+        if (isShopping || isRefinement) {
+            MergedContext ctx = mergeContext(session, text);
+            return buildProductRecommendation(ctx.preferenceIds(), ctx.effectiveText(),
+                    ctx.effectiveCategory(), ctx.color(), ctx.maxPrice());
+        }
         return buildClarification();
     }
 
@@ -96,13 +106,116 @@ public class MockAgent {
         return text != null && !text.isBlank() && SHOPPING_WORDS.matcher(text).find();
     }
 
+    /**
+     * Detect text that refines an existing search without being a full new shopping query.
+     * Examples: "300以内的黑色款", "120以内", "官方店铺优先", "评分高一点", "销量高一点"
+     */
+    private boolean isRefinementText(String text) {
+        if (text == null || text.isBlank()) return false;
+        String t = text.trim();
+        // Budget
+        if (t.matches(".*\\d+\\s*(元|块)?\\s*(以内|以下|不超过|内).*")) return true;
+        if (t.matches(".*不超过\\s*\\d+.*")) return true;
+        if (t.matches(".*预算\\s*\\d+.*")) return true;
+        // Color
+        if (t.contains("色") || t.contains("款")) return true;
+        // Preferences
+        if (t.contains("官方") || t.contains("自营") || t.contains("旗舰")) return true;
+        if (t.contains("评分高") || t.contains("好评")) return true;
+        if (t.contains("销量高") || t.contains("爆款")) return true;
+        if (t.contains("低价") || t.contains("便宜") || t.contains("配送快")) return true;
+        return false;
+    }
+
+    /**
+     * Merged context from session history for multi-turn filtering.
+     */
+    private record MergedContext(
+            String effectiveText,
+            String effectiveCategory,
+            String color,
+            List<String> preferenceIds,
+            Double maxPrice
+    ) {}
+
+    private MergedContext mergeContext(ChatStore.ChatSession session, String currentText) {
+        // Parse current text — get explicit keyword, pref, color
+        String currentExplicitKeyword = RuleBasedShoppingIntentParser.parseExplicitKeyword(currentText);
+        UserPreference currentPref = new UserPreferenceParser().parse(currentText);
+
+        // Scan history — latest explicit values win for maxPrice/color
+        String histKeyword = null;
+        String histRecCategory = findRecognitionCategory(session);
+        Double histMaxPrice = null;
+        String histColor = null;
+        boolean histOfficial = false, histFast = false, histLow = false, histRating = false, histSales = false;
+
+        var msgs = session.messages();
+        for (var m : msgs) {
+            if ("user".equals(m.role()) && m.text() != null && !m.text().isBlank()) {
+                String ek = RuleBasedShoppingIntentParser.parseExplicitKeyword(m.text());
+                if (ek != null) histKeyword = ek;
+                UserPreference p = new UserPreferenceParser().parse(m.text());
+                // Latest wins for maxPrice and color
+                if (p.maxPrice() != null) histMaxPrice = p.maxPrice();
+                if (p.color() != null) histColor = p.color();
+                // Accumulate booleans
+                histOfficial = histOfficial || p.officialStore();
+                histFast = histFast || p.fastDelivery();
+                histLow = histLow || p.lowestPrice();
+                histRating = histRating || p.highRating();
+                histSales = histSales || p.highSales();
+            }
+        }
+
+        // Resolve keyword: current explicit > hist explicit > hist recognition > default
+        String effectiveCategory;
+        if (currentExplicitKeyword != null) {
+            effectiveCategory = currentExplicitKeyword;
+        } else if (histKeyword != null) {
+            effectiveCategory = histKeyword;
+        } else if (RuleBasedShoppingIntentParser.isSupportedCategory(histRecCategory)) {
+            effectiveCategory = histRecCategory;
+        } else {
+            effectiveCategory = "运动鞋";
+        }
+
+        // Resolve maxPrice and color: current > hist (current overrides)
+        Double effectiveMaxPrice = currentPref.maxPrice() != null ? currentPref.maxPrice() : histMaxPrice;
+        String effectiveColor = currentPref.color() != null ? currentPref.color() : histColor;
+
+        // Accumulate booleans
+        boolean official = currentPref.officialStore() || histOfficial;
+        boolean fast = currentPref.fastDelivery() || histFast;
+        boolean low = currentPref.lowestPrice() || histLow;
+        boolean rating = currentPref.highRating() || histRating;
+        boolean sales = currentPref.highSales() || histSales;
+
+        UserPreference merged = new UserPreference(effectiveMaxPrice, effectiveColor, official, fast, low, rating, sales);
+
+        return new MergedContext(currentText, effectiveCategory, effectiveColor,
+                merged.toPreferenceIds(), effectiveMaxPrice);
+    }
+
     // ── Product recommendation ───────────────────────────────
 
     private AgentReply buildProductRecommendation(List<String> prefs, String text) {
-        return buildProductRecommendation(prefs, text, null);
+        return buildProductRecommendation(prefs, text, null, null, null);
     }
 
-    private AgentReply buildProductRecommendation(List<String> prefs, String text, String category) {
+    private AgentReply buildProductRecommendation(List<String> prefs, String text,
+                                                   String category) {
+        return buildProductRecommendation(prefs, text, category, null, null);
+    }
+
+    private AgentReply buildProductRecommendation(List<String> prefs, String text,
+                                                   String category, String overrideColor) {
+        return buildProductRecommendation(prefs, text, category, overrideColor, null);
+    }
+
+    private AgentReply buildProductRecommendation(List<String> prefs, String text,
+                                                   String category, String overrideColor,
+                                                   Double overrideMaxPrice) {
         // Parse intent
         ShoppingIntent intent = intentParser.parse(text);
         // Merge explicit option prefs
@@ -119,12 +232,14 @@ public class MockAgent {
                     intent.intentProvider(), intent.intentFallbackUsed(), intent.notices());
         }
         List<String> effectivePrefs = intent.toPreferenceIds();
+        String effectiveColor = overrideColor != null ? overrideColor : intent.color();
+        Double effectiveMaxPrice = overrideMaxPrice != null ? overrideMaxPrice : intent.maxPrice();
 
         // Keyword priority: recognition > intent > default
         String keyword = RuleBasedShoppingIntentParser.resolveKeyword(category, intent.keyword());
 
         ProductSearchResult sr = productSource.search(
-                new ProductSearchQuery(keyword, effectivePrefs, intent.maxPrice()));
+                new ProductSearchQuery(keyword, effectivePrefs, effectiveMaxPrice, effectiveColor));
         List<Card> cards = new ArrayList<>();
 
         cards.add(Card.productList("多平台商品结果", sr.products()));

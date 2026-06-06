@@ -18,12 +18,14 @@ class HealthControllerTest {
     private MockMvc mockMvc;
 
     @Test
-    void shouldReturnHealthPayload() throws Exception {
+    void shouldReturnHealthWithRealConfigValues() throws Exception {
         mockMvc.perform(get("/api/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ok"))
                 .andExpect(jsonPath("$.app").value("shopping-agent"))
-                .andExpect(jsonPath("$.stage").value("skeleton"))
-                .andExpect(jsonPath("$.aiProvider").value("mock"));
+                .andExpect(jsonPath("$.stage").value("聊天式 AI 识别与多平台 Mock 推荐阶段"))
+                .andExpect(jsonPath("$.aiProvider").value("mock"))
+                .andExpect(jsonPath("$.chatHistoryStore").value("memory"))
+                .andExpect(jsonPath("$.timestamp").isNotEmpty());
     }
 }

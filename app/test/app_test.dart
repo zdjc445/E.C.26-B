@@ -9,6 +9,7 @@ import 'package:shopping_agent_app/features/chat/chat_controller.dart';
 import 'package:shopping_agent_app/features/chat/chat_models.dart';
 import 'package:shopping_agent_app/features/chat/chat_screen.dart';
 import 'package:shopping_agent_app/features/chat/recognition_api.dart';
+import 'package:shopping_agent_app/features/profile/health_api.dart';
 import 'package:shopping_agent_app/features/profile/profile_screen.dart';
 
 /// Fake RecognitionApi for testing correction flow without real HTTP.
@@ -47,6 +48,20 @@ class FakeRecognitionApi extends RecognitionApi {
       'fallbackUsed': false,
       'explanation': '演示识别结果。',
     };
+  }
+}
+
+/// Fake HealthApi returning configurable status.
+class FakeHealthApi extends HealthApi {
+  FakeHealthApi() : super(baseUrl: 'http://test');
+  @override
+  Future<HealthStatus> fetch() async {
+    return const HealthStatus(
+      status: 'ok', app: 'shopping-agent',
+      stage: '聊天式 AI 识别与多平台 Mock 推荐阶段',
+      aiProvider: 'ark', chatHistoryStore: 'memory',
+      timestamp: '2026-06-06T10:00:00+08:00',
+    );
   }
 }
 
@@ -313,6 +328,7 @@ Widget _wrapWithRouter({_TestOverrides? overrides}) {
     overrides: [
       chatApiProvider.overrideWithValue(o.chatApi),
       recognitionApiProvider.overrideWithValue(o.recApi),
+      healthApiProvider.overrideWithValue(FakeHealthApi()),
     ],
     child: MaterialApp.router(routerConfig: router),
   );
@@ -365,6 +381,29 @@ void main() {
 
       expect(find.text('隐私与数据'), findsOneWidget);
       expect(find.text('接口状态'), findsOneWidget);
+      expect(find.text('聊天式 AI 识别与多平台 Mock 推荐阶段'), findsOneWidget);
+    });
+
+    testWidgets('displays live health status from fake API',
+        (tester) async {
+      await tester.pumpWidget(_wrapWithRouter());
+      await tester.tap(find.text('我的'));
+      await tester.pumpAndSettle();
+
+      // Scroll down to the API status section
+      final profileScrollable = find.descendant(
+        of: find.byKey(const Key('profile_list')),
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(
+        find.text('接口状态'), 200,
+        scrollable: profileScrollable,
+      );
+      await tester.pumpAndSettle();
+
+      // API status section shows fake data (ark/memory)
+      expect(find.text('ark'), findsOneWidget);
+      expect(find.text('memory'), findsOneWidget);
       expect(find.text('聊天式 AI 识别与多平台 Mock 推荐阶段'), findsOneWidget);
     });
   });

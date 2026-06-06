@@ -1,16 +1,38 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
+import 'health_api.dart';
+
+/// Provider for HealthApi.
+final healthApiProvider = Provider<HealthApi>((ref) {
+  final baseUrl = ref.watch(apiBaseUrlProvider);
+  return HealthApi(baseUrl: baseUrl);
+});
+
+/// Provider that fetches health status once.
+final healthStatusProvider = FutureProvider<HealthStatus>((ref) async {
+  try {
+    return await ref.watch(healthApiProvider).fetch();
+  } catch (_) {
+    return HealthStatus.unknown;
+  }
+});
 
 /// User profile / settings page at /me.
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final healthAsync = ref.watch(healthStatusProvider);
+    final health = healthAsync.valueOrNull ?? HealthStatus.unknown;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('我的')),
       body: ListView(
+        key: const Key('profile_list'),
         padding: const EdgeInsets.all(16),
         children: [
           // ── User info ──
@@ -163,21 +185,21 @@ class ProfileScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // ── API status ──
+          // ── API status (live from /api/health) ──
           _SectionHeader(title: '接口状态'),
           Card(
             child: Column(
-              children: const [
+              children: [
                 ListTile(
-                  leading: Icon(Icons.smart_toy_outlined),
-                  title: Text('AI Provider'),
-                  subtitle: Text('mock'),
+                  leading: const Icon(Icons.smart_toy_outlined),
+                  title: const Text('AI Provider'),
+                  subtitle: Text(health.aiProvider),
                 ),
-                Divider(height: 1),
+                const Divider(height: 1),
                 ListTile(
-                  leading: Icon(Icons.storage_outlined),
-                  title: Text('历史存储'),
-                  subtitle: Text('memory'),
+                  leading: const Icon(Icons.storage_outlined),
+                  title: const Text('历史存储'),
+                  subtitle: Text(health.chatHistoryStore),
                 ),
               ],
             ),
@@ -187,10 +209,10 @@ class ProfileScreen extends StatelessWidget {
           // ── About ──
           _SectionHeader(title: '关于项目'),
           Card(
-            child: const ListTile(
-              leading: Icon(Icons.info_outline),
-              title: Text('当前阶段'),
-              subtitle: Text('聊天式 AI 识别与多平台 Mock 推荐阶段'),
+            child: ListTile(
+              leading: const Icon(Icons.info_outlined),
+              title: const Text('当前阶段'),
+              subtitle: Text(health.stage),
             ),
           ),
           const SizedBox(height: 24),
