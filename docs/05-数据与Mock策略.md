@@ -19,7 +19,7 @@
 - 官方/自营款（支持 official_store 偏好）
 - 高评分款（支持 highRating 偏好）
 - 高销量款（支持 highSales 偏好）
-- 不同颜色（为后续颜色筛选提供数据基础）
+- 不同颜色（支持颜色筛选）
 - 有明显短板的商品（rating < 4.5 或非官方渠道，供推荐解释生成不足分析）
 
 价格分布覆盖低/中/高三档，预算筛选有层次。
@@ -51,6 +51,8 @@
 - `score`
 
 ### 推荐评分
+
+`MockProductSourceProvider` 先生成当前品类下三平台商品，再按预算和颜色过滤结果；颜色过滤匹配商品 `title` 或 `tags`。
 
 `RecommendationScorer` 根据以下规则生成分数和理由：
 

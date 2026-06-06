@@ -25,6 +25,7 @@
 - 拍照/相册选择、图片上传和本地预览
 - 识别结果卡片、识别修正面板
 - 规则/Ark 购物意图解析，Ark 不可用时回退规则解析
+- 多轮自然语言追加筛选：从历史文本和识别卡继承品类，合并预算、颜色和偏好
 - 推荐解释增强：综合分、决策信号、证据摘要、风险提示、商品胜因/不足
 - 多平台 Mock 商品：`京东-mock`、`拼多多-mock`、`淘宝-mock`
 - Mock 商品类别：运动鞋、耳机、吹风机
@@ -114,7 +115,7 @@ C:\flutter\flutter\bin\flutter.bat test
 当前记录：
 
 - 后端测试：72 tests，0 failures，0 errors
-- Flutter 测试：18 tests
+- Flutter 测试：18 tests，全部通过
 - Flutter analyze：exit 0，14 条 info
 
 ## 文档导航

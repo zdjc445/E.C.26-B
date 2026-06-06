@@ -2,7 +2,7 @@
 
 ## 概述
 
-当前项目已具备 Mock/Ark 图片识别路径、规则/Ark 购物意图解析路径、规则/Ark 推荐解释路径、多平台 Mock 商品推荐和聊天式 Agent 卡片输出。AI 与 Agent 设计遵循两个原则：
+当前项目已具备 Mock/Ark 图片识别路径、规则/Ark 购物意图解析路径、规则/Ark 推荐解释路径、多轮自然语言追加筛选、多平台 Mock 商品推荐和聊天式 Agent 卡片输出。AI 与 Agent 设计遵循两个原则：
 
 - 对外展示结构化结果和解释摘要，不展示真实模型推理链。
 - 外部服务不可用时保持 Mock 降级，保证演示闭环可运行。
@@ -92,10 +92,13 @@ $env:ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
 MockAgent 读取会话上下文
         ↓
 图片：生成 recognition + clarification
-文字购物意图：生成 product_recommendation
-选项：继承最近用户文本预算和最近识别 category
+文字购物意图：解析品类、预算、颜色和偏好，生成 product_recommendation
+追加筛选：合并当前文本、历史文本和识别卡 category
+选项：继承最近用户文本预算和最近识别 category，并合并选项偏好
         ↓
 MockProductSourceProvider 生成三平台商品
+        ↓
+按预算和颜色过滤
         ↓
 RecommendationScorer 排序
         ↓
@@ -123,6 +126,19 @@ RecommendationExplainer / ArkRecommendationExplainer 生成解释
 - 命中配送偏好时添加物流理由。
 - 高评分、高销量会增加评分理由。
 - 预算过滤影响最终商品集合。
+- 颜色过滤会收窄商品集合，并进入证据摘要。
+
+## 多轮上下文合并
+
+当前 Agent 会在同一会话中合并用户后续追加的短句筛选条件，例如 `只看300以内的黑色款`、`120以内`、`官方店铺优先`。
+
+合并规则：
+
+- 品类优先级：当前文本明确品类 > 历史文本明确品类 > 历史识别卡 category > 默认运动鞋。
+- `maxPrice` 和 `color` 使用最近一次明确值，当前文本可覆盖历史值。
+- `official_store`、`fast_delivery`、`lowest_price`、高评分和高销量偏好跨轮累积。
+- `ProductSearchQuery` 当前包含 `keyword`、`preferences`、`maxPrice`、`color`。
+- `MockProductSourceProvider` 在预算过滤后进行颜色过滤，颜色匹配商品 `title` 或 `tags`。
 
 ## 已完成推荐解释增强
 
@@ -139,19 +155,25 @@ RecommendationExplainer / ArkRecommendationExplainer 生成解释
 
 ## 自然语言筛选增强方向
 
-后续可增强规则或 AI 解析能力，将自然语言转为筛选条件：
+当前已落地轻量自然语言筛选闭环：
 
-- 预算上限 / 下限
+- 预算上限
 - 颜色
+- 官方店铺 / 自营
+- 配送更快
+- 低价倾向
+- 高评分倾向
+- 高销量倾向
+- 追加筛选条件
+
+后续可继续增强规则或 AI 解析能力，将更多自然语言转为筛选条件：
+
 - 品牌
-- 类别
 - 最低评分
-- 官方店铺
-- 自营
 - 排序方式
 - 指定平台
 
-当前阶段已实现与聊天推荐闭环相关的轻量规则解析。后续增强重点是品牌、指定平台、排序方式、数值评分阈值和追加筛选条件的完整落地。
+当前阶段已实现与聊天推荐闭环相关的轻量规则解析和上下文合并。后续增强重点是品牌、指定平台、排序方式、数值评分阈值和筛选状态展示。
 
 ## 未完成能力
 
