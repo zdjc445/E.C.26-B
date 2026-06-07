@@ -4,39 +4,29 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 /**
- * Routing provider that prefers {@link RealEcommerceProvider} when enabled, and
- * falls back to {@link MockProductSourceProvider} on empty / failed responses.
+ * Primary product source for the current delivery.
  *
  * <p>Marked {@code @Primary} so any consumer asking for a {@link ProductSourceProvider}
- * gets this composite. Direct {@code MockProductSourceProvider} consumers (e.g. tests)
- * still receive the mock implementation by type.
+ * gets deterministic mock data. Real ecommerce calls are intentionally outside
+ * the current delivery scope.
  */
 @Primary
 @Component
 public class CompositeProductSourceProvider implements ProductSourceProvider {
 
-    private final RealEcommerceProvider real;
     private final MockProductSourceProvider mock;
 
-    public CompositeProductSourceProvider(RealEcommerceProvider real,
-                                          MockProductSourceProvider mock) {
-        this.real = real;
+    public CompositeProductSourceProvider(MockProductSourceProvider mock) {
         this.mock = mock;
     }
 
     @Override
     public ProductSearchResult search(ProductSearchQuery query) {
-        if (real.enabled()) {
-            ProductSearchResult result = real.search(query);
-            if (result != null && !result.products().isEmpty()) {
-                return result;
-            }
-        }
         return mock.search(query);
     }
 
     @Override
     public String sourceName() {
-        return real.enabled() ? "real+mock-fallback" : "mock";
+        return "mock";
     }
 }

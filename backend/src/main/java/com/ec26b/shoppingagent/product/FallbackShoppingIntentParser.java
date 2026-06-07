@@ -33,6 +33,7 @@ public class FallbackShoppingIntentParser implements ShoppingIntentParser {
             return new ShoppingIntent(fb.keyword(), fb.maxPrice(), fb.color(),
                     fb.officialStore(), fb.fastDelivery(), fb.lowestPrice(),
                     fb.highRating(), fb.highSales(),
+                    fb.brand(), fb.platforms(), fb.sortBy(), fb.minRating(),
                     fb.needsClarification(), fb.clarificationQuestion(),
                     fb.intentProvider(), true,
                     List.of("Ark 意图解析不可用，已回退规则解析。"));

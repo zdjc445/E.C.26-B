@@ -77,10 +77,14 @@ class ArkIntegrationTests {
         ArkShoppingIntentParser arkParser = new ArkShoppingIntentParser(dummyClient, objectMapper);
         FallbackShoppingIntentParser fallback = new FallbackShoppingIntentParser(arkParser, ruleParser);
 
-        ShoppingIntent intent = fallback.parse("我想买200以内的运动鞋");
+        ShoppingIntent intent = fallback.parse("只看京东索尼评分4.8以上的耳机，300以内，价格从低到高");
         assertTrue(intent.intentFallbackUsed(), "should fallback to rule when Ark not configured");
-        assertEquals("运动鞋", intent.keyword());
-        assertEquals(200.0, intent.maxPrice());
+        assertEquals("耳机", intent.keyword());
+        assertEquals(300.0, intent.maxPrice());
+        assertEquals("索尼", intent.brand());
+        assertEquals(List.of("京东-mock"), intent.platforms());
+        assertEquals("price_asc", intent.sortBy());
+        assertEquals(4.8, intent.minRating());
         assertFalse(intent.notices().isEmpty(), "should have fallback notice");
     }
 

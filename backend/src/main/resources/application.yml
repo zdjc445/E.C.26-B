@@ -25,10 +25,6 @@ app:
     enabled: ${AUTH_ENABLED:false}
     jwt-secret: ${AUTH_JWT_SECRET:dev-only-256bit-secret-please-change-me-12345678}
     jwt-ttl-minutes: ${AUTH_JWT_TTL_MINUTES:1440}
-  ecommerce:
-    real-provider-enabled: ${ECOMMERCE_REAL_PROVIDER_ENABLED:false}
-    real-provider-base-url: ${ECOMMERCE_REAL_PROVIDER_BASE_URL:}
-    real-provider-api-key: ${ECOMMERCE_REAL_PROVIDER_API_KEY:}
   voice:
     provider: ${VOICE_PROVIDER:mock}
     transcript-fallback: ${VOICE_FALLBACK_TEXT:推荐运动鞋}

@@ -355,4 +355,4 @@ PATCH /api/recognition/{recognitionId}/attributes
 | POST | `/api/search-tasks` | 独立商品搜索任务 |
 | POST | `/api/comparisons` | 独立比价任务 |
 | POST | `/api/recommendations` | 完整 Agent 推荐任务 |
-| GET | `/api/ecommerce/status` | 真实电商 API 配置状态 |
+| GET | `/api/ecommerce/status` | 固定 Mock 商品源状态 |
