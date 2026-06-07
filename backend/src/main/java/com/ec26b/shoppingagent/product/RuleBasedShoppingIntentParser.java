@@ -2,17 +2,12 @@ package com.ec26b.shoppingagent.product;
 
 import org.springframework.stereotype.Component;
 
-import java.util.List;
-
 /**
  * Rule-based intent parser — wraps keyword extraction + preference parsing.
- * No AI, pure regex and keyword matching.
+ * No AI, uses taxonomy retrieval + preference parsing.
  */
 @Component
 public class RuleBasedShoppingIntentParser implements ShoppingIntentParser {
-
-    private static final List<String> SUPPORTED_CATEGORIES =
-            List.of("运动鞋", "耳机", "吹风机", "背包", "智能手表");
 
     private final UserPreferenceParser preferenceParser;
 
@@ -36,14 +31,14 @@ public class RuleBasedShoppingIntentParser implements ShoppingIntentParser {
     }
 
     public static boolean isSupportedCategory(String category) {
-        return category != null && SUPPORTED_CATEGORIES.contains(category);
+        return CategoryResolver.defaultResolver().isSupportedCategory(category);
     }
 
     public static String resolveKeyword(String recognitionCategory, String parsedKeyword) {
-        if (isSupportedCategory(recognitionCategory)) return recognitionCategory;
-        String normalizedRecognitionCategory = parseExplicitKeyword(recognitionCategory);
+        String normalizedRecognitionCategory = CategoryResolver.defaultResolver().resolveName(recognitionCategory);
         if (normalizedRecognitionCategory != null) return normalizedRecognitionCategory;
-        if (isSupportedCategory(parsedKeyword)) return parsedKeyword;
+        String normalizedParsedKeyword = CategoryResolver.defaultResolver().resolveName(parsedKeyword);
+        if (normalizedParsedKeyword != null) return normalizedParsedKeyword;
         return "运动鞋";
     }
 
@@ -52,13 +47,7 @@ public class RuleBasedShoppingIntentParser implements ShoppingIntentParser {
      * or null if no supported category is found. Never returns a default.
      */
     public static String parseExplicitKeyword(String text) {
-        if (text == null) return null;
-        if (text.contains("运动鞋")) return "运动鞋";
-        if (text.contains("耳机")) return "耳机";
-        if (text.contains("吹风机")) return "吹风机";
-        if (text.contains("背包") || text.contains("书包") || text.contains("双肩包")) return "背包";
-        if (text.contains("智能手表") || text.contains("手表")) return "智能手表";
-        return null;
+        return CategoryResolver.defaultResolver().resolveName(text);
     }
 
     static String extractKeyword(String text) {

@@ -64,6 +64,8 @@ class ArkIntegrationTests {
                 RuleBasedShoppingIntentParser.resolveKeyword("头戴式蓝牙耳机", "运动鞋"));
         assertEquals("吹风机",
                 RuleBasedShoppingIntentParser.resolveKeyword("吹风机", "耳机"));
+        assertEquals("耳机",
+                RuleBasedShoppingIntentParser.resolveKeyword("未知商品", "真无线蓝牙耳机"));
         // unsupported recognition → fallback to parsed
         assertEquals("吹风机",
                 RuleBasedShoppingIntentParser.resolveKeyword("手机", "吹风机"));

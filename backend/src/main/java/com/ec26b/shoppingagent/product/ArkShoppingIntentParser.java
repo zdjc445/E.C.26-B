@@ -12,7 +12,6 @@ public class ArkShoppingIntentParser implements ShoppingIntentParser {
 
     private final ArkClient arkClient;
     private final ObjectMapper objectMapper;
-    private static final List<String> SUPPORTED = List.of("运动鞋", "耳机", "吹风机", "背包", "智能手表");
     private static final List<String> SUPPORTED_PLATFORMS = List.of("京东-mock", "拼多多-mock", "淘宝-mock");
     private static final List<String> SUPPORTED_SORT = List.of(
             "recommended", "price_asc", "price_desc", "sales_desc", "rating_desc");
@@ -24,10 +23,11 @@ public class ArkShoppingIntentParser implements ShoppingIntentParser {
 
     @Override
     public ShoppingIntent parse(String text) {
+        String categoryNames = String.join("/", CategoryResolver.defaultResolver().supportedCategoryNames());
         List<Map<String, Object>> messages = List.of(
                 Map.of("role", "system", "content",
                         "你是电商购物意图解析器。只输出 JSON。字段固定为：" +
-                        "keyword(只能是 运动鞋/耳机/吹风机/背包/智能手表 之一)，" +
+                        "keyword(只能是 " + categoryNames + " 之一)，" +
                         "maxPrice(数字)，color(字符串)，" +
                         "officialStore(bool)，fastDelivery(bool)，lowestPrice(bool)，" +
                         "highRating(bool)，highSales(bool)，" +
@@ -41,8 +41,8 @@ public class ArkShoppingIntentParser implements ShoppingIntentParser {
         );
         JsonNode json = arkClient.chatJson(messages);
 
-        String keyword = json.path("keyword").asText("");
-        if (!SUPPORTED.contains(keyword)) keyword = RuleBasedShoppingIntentParser.extractKeyword(text);
+        String keyword = CategoryResolver.defaultResolver().resolveName(json.path("keyword").asText(""));
+        if (keyword == null) keyword = RuleBasedShoppingIntentParser.extractKeyword(text);
 
         Double maxPrice = json.path("maxPrice").isNumber() ? json.path("maxPrice").asDouble() : null;
         String color = json.path("color").isNull() ? null : json.path("color").asText(null);

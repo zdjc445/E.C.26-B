@@ -29,7 +29,7 @@ public class ArkRecognitionProvider implements AiRecognitionProvider {
         List<Map<String, Object>> messages = List.of(
                 Map.of(
                         "role", "system",
-                        "content", "你是电商拍照识物助手。只输出 JSON，不要输出 Markdown。字段固定为 category, brand, model, keywords, attributes, confidence, explanation。confidence 为 0 到 1。attributes 是对象，优先包含 color、style、scenario、keySpecs。"
+                        "content", "你是电商拍照识物助手。只输出 JSON，不要输出 Markdown。字段固定为 category, brand, model, keywords, attributes, confidence, explanation。category 优先输出标准品类之一：运动鞋、耳机、吹风机、背包、智能手表。若图片是细分商品，把细分名称写入 attributes.subCategory，例如 头戴式蓝牙耳机。confidence 为 0 到 1。attributes 是对象，优先包含 color、style、scenario、keySpecs。"
                 ),
                 Map.of(
                         "role", "user",

@@ -26,6 +26,7 @@ public class MockAgent {
 
     private static final Pattern SHOPPING_WORDS = Pattern.compile(
             "买|想买|想要|推荐|帮我找|找.*商品|多少钱|价格|便宜|优惠|性价比|官方|自营|旗舰|配送|物流|评价|评分|销量|预算|以内|不超过|以下");
+    private static final Set<String> DEFAULT_PLATFORM_SET = Set.of("京东-mock", "拼多多-mock", "淘宝-mock");
 
     public MockAgent(MockProductSourceProvider productSource,
                      ShoppingIntentParser intentParser,
@@ -148,7 +149,7 @@ public class MockAgent {
     ) {}
 
     private MergedContext mergeContext(ChatStore.ChatSession session, String currentText) {
-        String currentExplicitKeyword = RuleBasedShoppingIntentParser.parseExplicitKeyword(currentText);
+        String currentExplicitKeyword = CategoryResolver.defaultResolver().resolveName(currentText);
         UserPreference currentPref = preferenceParser.parse(currentText);
 
         String histKeyword = null;
@@ -164,7 +165,7 @@ public class MockAgent {
         var msgs = session.messages();
         for (var m : msgs) {
             if ("user".equals(m.role()) && m.text() != null && !m.text().isBlank()) {
-                String ek = RuleBasedShoppingIntentParser.parseExplicitKeyword(m.text());
+                String ek = CategoryResolver.defaultResolver().resolveName(m.text());
                 if (ek != null) histKeyword = ek;
                 UserPreference p = preferenceParser.parse(m.text());
                 if (p.maxPrice() != null) histMaxPrice = p.maxPrice();
@@ -182,13 +183,11 @@ public class MockAgent {
         }
 
         String effectiveCategory;
-        String normalizedRecognitionCategory = RuleBasedShoppingIntentParser.parseExplicitKeyword(histRecCategory);
+        String normalizedRecognitionCategory = CategoryResolver.defaultResolver().resolveName(histRecCategory);
         if (currentExplicitKeyword != null) {
             effectiveCategory = currentExplicitKeyword;
         } else if (histKeyword != null) {
             effectiveCategory = histKeyword;
-        } else if (RuleBasedShoppingIntentParser.isSupportedCategory(histRecCategory)) {
-            effectiveCategory = histRecCategory;
         } else if (normalizedRecognitionCategory != null) {
             effectiveCategory = normalizedRecognitionCategory;
         } else {
@@ -321,7 +320,7 @@ public class MockAgent {
         if (intent.keyword() != null && !intent.keyword().isBlank()) {
             parts.add("品类：" + intent.keyword());
         }
-        if (intent.maxPrice() != null) {
+        if (isMeaningfulMaxPrice(intent.maxPrice())) {
             parts.add("预算≤" + formatNumber(intent.maxPrice()) + "元");
         }
         if (intent.color() != null && !intent.color().isBlank()) {
@@ -330,30 +329,45 @@ public class MockAgent {
         if (intent.brand() != null && !intent.brand().isBlank()) {
             parts.add("品牌：" + intent.brand());
         }
-        if (intent.platforms() != null && !intent.platforms().isEmpty()) {
+        if (intent.platforms() != null && !intent.platforms().isEmpty()
+                && !isDefaultPlatformSelection(intent.platforms())) {
             List<String> labels = new ArrayList<>();
             for (String platform : intent.platforms()) {
                 labels.add(platformLabel(platform));
             }
             parts.add("平台：" + String.join("、", labels));
         }
-        if (intent.minRating() != null) {
+        boolean hasMeaningfulMinRating = isMeaningfulMinRating(intent.minRating());
+        if (hasMeaningfulMinRating) {
             parts.add("评分≥" + formatNumber(intent.minRating()));
         }
         String sort = sortLabel(intent.sortBy());
-        if (sort != null) {
+        if (sort != null && !"recommended".equals(intent.sortBy())) {
             parts.add("排序：" + sort);
         }
         List<String> preferenceLabels = new ArrayList<>();
         if (intent.officialStore()) preferenceLabels.add("官方/自营");
         if (intent.fastDelivery()) preferenceLabels.add("配送更快");
         if (intent.lowestPrice() && !"price_asc".equals(intent.sortBy())) preferenceLabels.add("低价优先");
-        if (intent.highRating()) preferenceLabels.add("高评分");
+        if (intent.highRating() && !hasMeaningfulMinRating) preferenceLabels.add("高评分");
         if (intent.highSales()) preferenceLabels.add("高销量");
         if (!preferenceLabels.isEmpty()) {
             parts.add("偏好：" + String.join("、", preferenceLabels));
         }
         return parts;
+    }
+
+    private boolean isDefaultPlatformSelection(List<String> platforms) {
+        return platforms.size() == DEFAULT_PLATFORM_SET.size()
+                && Set.copyOf(platforms).equals(DEFAULT_PLATFORM_SET);
+    }
+
+    private boolean isMeaningfulMaxPrice(Double maxPrice) {
+        return maxPrice != null && maxPrice > 0.0 && maxPrice < 9999.0;
+    }
+
+    private boolean isMeaningfulMinRating(Double minRating) {
+        return minRating != null && minRating > 0.0;
     }
 
     private String platformLabel(String platform) {
@@ -416,8 +430,9 @@ public class MockAgent {
         options.add(new Option("official_store", "只看官方旗舰店"));
         options.add(new Option("fast_delivery", "配送更快"));
 
-        if (RuleBasedShoppingIntentParser.isSupportedCategory(category)) {
-            switch (category) {
+        String normalizedCategory = CategoryResolver.defaultResolver().resolveName(category);
+        if (normalizedCategory != null) {
+            switch (normalizedCategory) {
                 case "运动鞋" -> {
                     options.add(new Option("style_similar", "相似风格推荐"));
                     options.add(new Option("filter_color", "筛选颜色/品牌/尺码"));
