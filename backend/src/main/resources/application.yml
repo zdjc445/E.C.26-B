@@ -21,6 +21,17 @@ app:
       api-key: ${ARK_API_KEY:}
       endpoint-id: ${ARK_ENDPOINT_ID:}
       base-url: ${ARK_BASE_URL:https://ark.cn-beijing.volces.com/api/v3}
+  auth:
+    enabled: ${AUTH_ENABLED:false}
+    jwt-secret: ${AUTH_JWT_SECRET:dev-only-256bit-secret-please-change-me-12345678}
+    jwt-ttl-minutes: ${AUTH_JWT_TTL_MINUTES:1440}
+  ecommerce:
+    real-provider-enabled: ${ECOMMERCE_REAL_PROVIDER_ENABLED:false}
+    real-provider-base-url: ${ECOMMERCE_REAL_PROVIDER_BASE_URL:}
+    real-provider-api-key: ${ECOMMERCE_REAL_PROVIDER_API_KEY:}
+  voice:
+    provider: ${VOICE_PROVIDER:mock}
+    transcript-fallback: ${VOICE_FALLBACK_TEXT:推荐运动鞋}
 
 chat:
   history-store: ${CHAT_HISTORY_STORE:memory}
@@ -29,3 +40,24 @@ logging:
   level:
     root: INFO
     org.springframework: INFO
+
+---
+spring:
+  config:
+    activate:
+      on-profile: postgres
+  autoconfigure:
+    exclude: []
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/shopping_agent}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+chat:
+  history-store: postgres
+app:
+  persistence:
+    enabled: true
