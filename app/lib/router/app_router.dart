@@ -1,13 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../features/chat/chat_screen.dart';
-import '../features/profile/profile_screen.dart';
+import '../features/alerts/price_alerts_screen.dart';
 import '../features/auth/login_placeholder.dart';
 import '../features/camera/camera_placeholder.dart';
-import '../features/recognition/recognition_placeholder.dart';
-import '../features/search/search_placeholder.dart';
+import '../features/chat/chat_screen.dart';
 import '../features/comparison/comparison_placeholder.dart';
+import '../features/favorites/favorites_screen.dart';
+import '../features/profile/profile_screen.dart';
+import '../features/recognition/recognition_placeholder.dart';
 import '../features/recommendation/recommendation_placeholder.dart';
+import '../features/search/search_placeholder.dart';
 
 /// Central router.
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -25,6 +27,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/me',
         builder: (context, state) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: '/favorites',
+        builder: (context, state) => const FavoritesScreen(),
+      ),
+      GoRoute(
+        path: '/price-alerts',
+        builder: (context, state) => const PriceAlertsScreen(),
       ),
       GoRoute(
         path: '/camera',
