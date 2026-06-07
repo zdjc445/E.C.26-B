@@ -2,15 +2,15 @@
 
 本项目是面向 C 端消费者的聊天式购物 Agent。用户进入 APP 后，可以在首页对话框中输入购物需求、添加商品图片，Agent 通过识别、追问、比价和推荐卡片辅助用户完成购买决策。
 
-**当前阶段：聊天式 AI 识别与多平台 Mock 推荐阶段。**
+**当前阶段：聊天式 AI 识别 + 多平台 Mock 推荐 + 7 维度自然语言筛选 + 动态建议卡。**
 
 ## 技术栈
 
 - **客户端：** Flutter Android
-- **服务端：** Java + Spring Boot
+- **服务端：** Java 21 + Spring Boot 3.4
 - **构建工具：** Maven / Flutter CLI
-- **交互形态：** 聊天首页 + 图片识别 + 追问卡片 + 商品列表卡 + 比价卡 + 推荐卡
-- **AI Provider：** Mock / Ark，Ark 不可用时回退 Mock
+- **交互形态：** 聊天首页 + 图片识别 + 动态建议卡 + 商品列表卡 + 比价卡 + 推荐卡
+- **AI Provider：** Mock / Ark，Ark 不可用时自动回退 Mock
 
 ## 当前已实现能力
 
@@ -25,11 +25,14 @@
 - 拍照/相册选择、图片上传和本地预览
 - 识别结果卡片、识别修正面板
 - 规则/Ark 购物意图解析，Ark 不可用时回退规则解析
-- 多轮自然语言追加筛选：从历史文本和识别卡继承品类，合并预算、颜色和偏好
+- 多轮自然语言追加筛选：品类、预算、颜色、品牌、平台、排序、最低评分跨轮合并
 - 推荐解释增强：综合分、决策信号、证据摘要、风险提示、商品胜因/不足
 - 多平台 Mock 商品：`京东-mock`、`拼多多-mock`、`淘宝-mock`
-- Mock 商品类别：运动鞋、耳机、吹风机
-- 商品列表卡、平台比价卡、推荐购买卡
+- 5 个 Mock 品类：运动鞋、耳机、吹风机、背包、智能手表（共 60 个商品，11 个品牌）
+- 商品卡显示品牌徽章、偏好命中徽章、价格走势 sparkline
+- 平台比价卡显示最低价 + 均价 + 平台亮点
+- 推荐购买卡显示综合分、五维决策信号、证据摘要、风险提示、商品对比
+- 动态建议卡：根据识别 category 生成差异化的 6 个建议入口
 - 超预算时的空商品和空比价占位
 - 历史会话恢复完整 `agentReply` 卡片
 
@@ -114,9 +117,22 @@ C:\flutter\flutter\bin\flutter.bat test
 
 当前记录：
 
-- 后端测试：72 tests，0 failures，0 errors
-- Flutter 测试：18 tests，全部通过
-- Flutter analyze：exit 0，14 条 info
+- 后端测试：124 tests，0 failures，0 errors
+- Flutter analyze：0 error / 0 warning，14 条 info
+- Flutter test：23 widget tests，全部通过
+
+## 自然语言筛选示例
+
+| 输入 | 命中字段 |
+|------|----------|
+| `300以内的耳机` | maxPrice=300, keyword=耳机 |
+| `耐克的运动鞋` | brand=耐克, keyword=运动鞋 |
+| `只看京东的耳机` | platforms=[京东-mock], keyword=耳机 |
+| `按价格从低到高排序` | sortBy=price_asc |
+| `销量优先` | sortBy=sales_desc |
+| `4.8分以上` | minRating=4.8 |
+| `推荐耳机` → `只看300以内的黑色款` | 多轮合并 keyword=耳机, maxPrice=300, color=黑色 |
+| `戴森吹风机便宜一点` | brand=戴森, keyword=吹风机, lowestPrice=true |
 
 ## 文档导航
 
@@ -132,6 +148,10 @@ C:\flutter\flutter\bin\flutter.bat test
 | [docs/06-AI与Agent设计草案.md](docs/06-AI与Agent设计草案.md) | AI 与 Agent 设计草案 |
 | [docs/07-测试与验收计划.md](docs/07-测试与验收计划.md) | 测试与验收计划 |
 | [docs/08-后续迭代清单.md](docs/08-后续迭代清单.md) | 后续迭代清单 |
+| [docs/09-演示脚本.md](docs/09-演示脚本.md) | 演示脚本与最小验证用例集 |
+| [docs/10-AI使用总结.md](docs/10-AI使用总结.md) | AI 编排、Prompt 设计与 AI Coding 心得 |
+| [docs/11-项目分工说明.md](docs/11-项目分工说明.md) | 团队成员模块责任划分 |
+| [docs/12-答辩材料.md](docs/12-答辩材料.md) | 30 分钟答辩速查与问答口径 |
 
 ## 工程结构
 

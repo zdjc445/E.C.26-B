@@ -170,36 +170,33 @@ POST /api/chat/sessions/{sessionId}/messages
 
 | cardType | 说明 |
 |----------|------|
-| clarification | 追问选项卡 |
+| clarification | 动态建议卡 |
 | recognition | 图片识别结果卡 |
 | product_list | 多平台商品列表卡 |
 | comparison | 平台比价卡 |
 | recommendation | 推荐购买卡 |
 
-### 追问响应示例
+### 动态建议卡的 options
 
-```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "replyId": "uuid",
-    "replyType": "clarification",
-    "text": "我已经收到你的需求。你更看重哪一点？",
-    "cards": [
-      {
-        "cardType": "clarification",
-        "title": "你更看重哪一点？",
-        "options": [
-          {"optionId": "lowest_price", "label": "价格最低"},
-          {"optionId": "official_store", "label": "官方店铺"},
-          {"optionId": "fast_delivery", "label": "配送更快"}
-        ]
-      }
-    ]
-  }
-}
-```
+依赖识别 category（运动鞋 / 耳机 / 吹风机 / 背包 / 智能手表）动态生成：
+
+| optionId | 说明 |
+|----------|------|
+| lowest_price | 查看同款低价 |
+| official_store | 只看官方旗舰店 |
+| fast_delivery | 配送更快 |
+| style_similar | 相似风格推荐（运动鞋） |
+| filter_color | 筛选颜色/品牌/尺码（运动鞋） |
+| noise_cancel | 降噪款优先（耳机） |
+| high_rating | 好评率优先（耳机） |
+| high_power | 大功率优先（吹风机） |
+| portable | 便携折叠款（吹风机） |
+| large_capacity | 大容量款（背包） |
+| business | 商务款（背包） |
+| long_battery | 长续航款（智能手表） |
+| sports | 运动款（智能手表） |
+| filter_same_brand | 只看 {品牌}（识别到品牌时） |
+| price_history | 查看历史价格走势 |
 
 ### 商品推荐响应示例
 
@@ -215,46 +212,71 @@ POST /api/chat/sessions/{sessionId}/messages
       {
         "cardType": "product_list",
         "title": "多平台商品结果",
-        "products": []
+        "filterSummary": ["品类：耳机", "预算≤300元", "颜色：黑色", "品牌：索尼"],
+        "products": [
+          {
+            "productId": "jd-101",
+            "title": "索尼蓝牙降噪耳机 黑色 高音质",
+            "platform": "京东-mock",
+            "price": 299.0,
+            "originalPrice": 499.0,
+            "shopName": "索尼京东自营",
+            "imageUrl": "",
+            "productUrl": "",
+            "rating": 4.9,
+            "sales": 23000,
+            "tags": ["自营", "降噪"],
+            "reasons": ["价格优惠", "官方/自营渠道"],
+            "score": 7.5,
+            "brand": "索尼",
+            "priceHistory": [499.0, 459.0, 379.0, 309.0, 299.0],
+            "matchedPreferences": ["low_price", "official_store", "high_rating", "budget_match"]
+          }
+        ]
       },
       {
         "cardType": "comparison",
         "title": "平台比价",
-        "platformStats": {}
+        "platformStats": {
+          "京东-mock": {
+            "platform": "京东-mock",
+            "lowestPrice": 199.0,
+            "averagePrice": 259.0,
+            "productCount": 4,
+            "highlight": "自营保障，物流快"
+          }
+        }
       },
       {
         "cardType": "recommendation",
         "title": "推荐购买",
-        "productName": "Mock 商品",
+        "productName": "索尼蓝牙降噪耳机",
         "platform": "京东-mock",
-        "price": 199.0,
+        "price": 299.0,
         "reason": "价格、店铺和匹配度综合更适合当前需求。",
         "decisionScore": 86,
         "decisionSignals": [
-          {
-            "key": "price",
-            "label": "价格",
-            "score": 90,
-            "explanation": "价格符合当前预算。"
-          }
+          {"key": "match", "label": "意图匹配", "score": 85, "explanation": "与关键词「耳机」相关度高。"},
+          {"key": "price", "label": "价格", "score": 92, "explanation": "价格符合预算范围。"},
+          {"key": "reputation", "label": "店铺信誉", "score": 78, "explanation": "评分较高。"},
+          {"key": "channel", "label": "渠道可信", "score": 80, "explanation": "平台与店铺类型评估。"},
+          {"key": "risk", "label": "风险", "score": 40, "explanation": "Mock 数据不可作为真实购物参考。"}
         ],
         "evidence": [
-          {
-            "type": "price",
-            "content": "当前推荐价格 199.00 元。"
-          }
+          {"type": "price", "content": "你设置了预算上限 300 元。"},
+          {"type": "brand", "content": "你指定了品牌「索尼」。"}
         ],
         "risks": [
           "当前为 Mock 商品数据，不代表真实平台库存与价格。"
         ],
         "productAnalyses": [
           {
-            "productId": "jd-001",
+            "productId": "jd-101",
             "platform": "京东-mock",
-            "title": "Mock 商品",
+            "title": "索尼蓝牙降噪耳机",
             "rank": 1,
             "score": 88,
-            "strengths": ["价格优惠"],
+            "strengths": ["价格优惠", "官方/自营渠道"],
             "weaknesses": []
           }
         ],
@@ -269,16 +291,13 @@ POST /api/chat/sessions/{sessionId}/messages
 }
 ```
 
-推荐卡新增解释字段：
+`product_list.filterSummary` 为当前生效筛选条件摘要。前端用于展示 `当前条件：...`，字段缺失或为空数组时不展示该行。
 
-- `decisionScore`：综合分。
-- `decisionSignals`：决策信号，当前包含意图匹配、价格、店铺信誉、渠道可信、风险。
-- `evidence`：证据摘要。
-- `risks`：风险提示。
-- `productAnalyses`：商品胜因/不足。
-- `intentProvider`、`intentFallbackUsed`：意图解析来源与回退状态。
-- `explanationProvider`、`explanationFallbackUsed`：解释生成来源与回退状态。
-- `notices`：回退、修正等提示。
+新增字段：
+
+- 商品卡：`brand`、`priceHistory`、`matchedPreferences`
+- 比价卡 PlatformStats：`averagePrice`
+- 推荐卡：`decisionScore`、`decisionSignals`、`evidence`、`risks`、`productAnalyses`、`intentProvider`、`intentFallbackUsed`、`explanationProvider`、`explanationFallbackUsed`、`notices`
 
 ## 图片识别
 
