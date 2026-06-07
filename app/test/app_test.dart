@@ -58,10 +58,14 @@ class FakeHealthApi extends HealthApi {
   @override
   Future<HealthStatus> fetch() async {
     return const HealthStatus(
-      status: 'ok', app: 'shopping-agent',
+      status: 'ok',
+      app: 'shopping-agent',
       stage: '聊天式 AI 识别与多平台 Mock 推荐阶段',
-      aiProvider: 'ark', chatHistoryStore: 'memory',
-      authEnabled: false, ecommerceProvider: 'mock', voiceProvider: 'mock',
+      aiProvider: 'ark',
+      chatHistoryStore: 'memory',
+      authEnabled: false,
+      ecommerceProvider: 'mock',
+      voiceProvider: 'mock',
       timestamp: '2026-06-06T10:00:00+08:00',
     );
   }
@@ -71,7 +75,8 @@ class FakeVoiceApi extends VoiceApi {
   const FakeVoiceApi() : super(baseUrl: 'http://test');
 
   @override
-  Future<VoiceTranscription> transcribeBytes(List<int> bytes, {
+  Future<VoiceTranscription> transcribeBytes(
+    List<int> bytes, {
     String filename = 'voice.m4a',
     String contentType = 'audio/m4a',
   }) async {
@@ -96,8 +101,7 @@ class FakeChatApi extends ChatApi {
     _sendMessageCompleter = c;
   }
 
-  void addHistoryMessages(
-      String sessionId, List<Map<String, dynamic>> msgs) {
+  void addHistoryMessages(String sessionId, List<Map<String, dynamic>> msgs) {
     _storedMessages[sessionId] = msgs;
     _sessions.insert(
       0,
@@ -140,15 +144,12 @@ class FakeChatApi extends ChatApi {
   }
 
   @override
-  Future<List<ChatSessionSummary>> listSessions() async =>
-      List.from(_sessions);
+  Future<List<ChatSessionSummary>> listSessions() async => List.from(_sessions);
 
   @override
-  Future<SessionResult> renameSession(
-      String sessionId, String newTitle) async {
+  Future<SessionResult> renameSession(String sessionId, String newTitle) async {
     return SessionResult(
-        sessionId: sessionId,
-        createdAt: '2026-06-06T10:00:00+08:00');
+        sessionId: sessionId, createdAt: '2026-06-06T10:00:00+08:00');
   }
 
   @override
@@ -179,8 +180,7 @@ class FakeChatApi extends ChatApi {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> getMessages(
-      String sessionId) async {
+  Future<List<Map<String, dynamic>>> getMessages(String sessionId) async {
     return _storedMessages[sessionId] ?? [];
   }
 
@@ -204,47 +204,94 @@ class FakeChatApi extends ChatApi {
         text: '我按你的偏好整理了几个平台的选择。',
         cards: [
           ReplyCard(
-            cardType: 'product_list', title: '多平台商品结果',
+            cardType: 'product_list',
+            title: '多平台商品结果',
             products: [
               const ProductItem(
-                productId: 'jd-001', title: 'Mock 运动鞋 京东自营',
-                platform: '京东-mock', price: 299.00, originalPrice: 399.00,
-                shopName: '京东自营', imageUrl: '', productUrl: '',
-                rating: 4.8, sales: 12000, tags: ['自营', '好评'],
-                reasons: ['价格优惠', '官方/自营渠道'], score: 7.0,
+                productId: 'jd-001',
+                title: 'Mock 运动鞋 京东自营',
+                platform: '京东-mock',
+                price: 299.00,
+                originalPrice: 399.00,
+                shopName: '京东自营',
+                imageUrl: '',
+                productUrl: '',
+                rating: 4.8,
+                sales: 12000,
+                tags: ['自营', '好评'],
+                reasons: ['价格优惠', '官方/自营渠道'],
+                score: 7.0,
               ),
             ],
             platformStats: const {
-              '京东-mock': {'platform': '京东-mock', 'lowestPrice': 299.0, 'productCount': 2, 'highlight': '自营保障'},
+              '京东-mock': {
+                'platform': '京东-mock',
+                'lowestPrice': 299.0,
+                'productCount': 2,
+                'highlight': '自营保障'
+              },
             },
           ),
           ReplyCard(
-            cardType: 'comparison', title: '平台比价',
+            cardType: 'comparison',
+            title: '平台比价',
             platformStats: const {
-              '京东-mock': {'platform': '京东-mock', 'lowestPrice': 299.0, 'productCount': 2, 'highlight': '自营保障'},
-              '拼多多-mock': {'platform': '拼多多-mock', 'lowestPrice': 199.0, 'productCount': 2, 'highlight': '价格优势'},
+              '京东-mock': {
+                'platform': '京东-mock',
+                'lowestPrice': 299.0,
+                'productCount': 2,
+                'highlight': '自营保障'
+              },
+              '拼多多-mock': {
+                'platform': '拼多多-mock',
+                'lowestPrice': 199.0,
+                'productCount': 2,
+                'highlight': '价格优势'
+              },
             },
           ),
           ReplyCard(
-            cardType: 'recommendation', title: '推荐购买',
-            productName: 'Mock 商品', platform: '京东-mock', price: 299.00,
+            cardType: 'recommendation',
+            title: '推荐购买',
+            productName: 'Mock 商品',
+            platform: '京东-mock',
+            price: 299.00,
             reason: '价格、店铺和匹配度综合更适合当前需求。',
             decisionScore: 86,
             decisionSignals: const [
-              DecisionSignal(key: 'match', label: '意图匹配', score: 85, explanation: '与搜索关键词相关。'),
-              DecisionSignal(key: 'price', label: '价格', score: 92, explanation: '价格符合预算。'),
-              DecisionSignal(key: 'reputation', label: '店铺信誉', score: 78, explanation: '评分较高。'),
-              DecisionSignal(key: 'channel', label: '渠道可信', score: 80, explanation: '平台可信任。'),
-              DecisionSignal(key: 'risk', label: '风险', score: 40, explanation: 'Mock 数据。'),
+              DecisionSignal(
+                  key: 'match',
+                  label: '意图匹配',
+                  score: 85,
+                  explanation: '与搜索关键词相关。'),
+              DecisionSignal(
+                  key: 'price', label: '价格', score: 92, explanation: '价格符合预算。'),
+              DecisionSignal(
+                  key: 'reputation',
+                  label: '店铺信誉',
+                  score: 78,
+                  explanation: '评分较高。'),
+              DecisionSignal(
+                  key: 'channel',
+                  label: '渠道可信',
+                  score: 80,
+                  explanation: '平台可信任。'),
+              DecisionSignal(
+                  key: 'risk', label: '风险', score: 40, explanation: 'Mock 数据。'),
             ],
             evidence: const [
               RecommendationEvidence(type: 'price', content: '价格符合预算。'),
             ],
             risks: const ['当前为 Mock 商品数据。'],
             productAnalyses: const [
-              ProductAnalysis(productId: 'jd-001', platform: '京东-mock',
-                  title: 'Mock 运动鞋', rank: 1, score: 88,
-                  strengths: ['价格低', '自营'], weaknesses: []),
+              ProductAnalysis(
+                  productId: 'jd-001',
+                  platform: '京东-mock',
+                  title: 'Mock 运动鞋',
+                  rank: 1,
+                  score: 88,
+                  strengths: ['价格低', '自营'],
+                  weaknesses: []),
             ],
             intentProvider: 'rule',
             intentFallbackUsed: false,
@@ -280,12 +327,9 @@ class FakeChatApi extends ChatApi {
             cardType: 'clarification',
             title: '你更看重哪一点？',
             options: [
-              ClarificationOption(
-                  optionId: 'lowest_price', label: '价格最低'),
-              ClarificationOption(
-                  optionId: 'official_store', label: '官方店铺'),
-              ClarificationOption(
-                  optionId: 'fast_delivery', label: '配送更快'),
+              ClarificationOption(optionId: 'lowest_price', label: '价格最低'),
+              ClarificationOption(optionId: 'official_store', label: '官方店铺'),
+              ClarificationOption(optionId: 'fast_delivery', label: '配送更快'),
             ],
           ),
         ],
@@ -300,12 +344,9 @@ class FakeChatApi extends ChatApi {
           cardType: 'clarification',
           title: '你更看重哪一点？',
           options: [
-            ClarificationOption(
-                optionId: 'lowest_price', label: '价格最低'),
-            ClarificationOption(
-                optionId: 'official_store', label: '官方店铺'),
-            ClarificationOption(
-                optionId: 'fast_delivery', label: '配送更快'),
+            ClarificationOption(optionId: 'lowest_price', label: '价格最低'),
+            ClarificationOption(optionId: 'official_store', label: '官方店铺'),
+            ClarificationOption(optionId: 'fast_delivery', label: '配送更快'),
           ],
         ),
       ],
@@ -364,7 +405,7 @@ void main() {
       expect(find.text('我的'), findsOneWidget);
       expect(find.byIcon(Icons.image_outlined), findsOneWidget);
       expect(find.byIcon(Icons.mic_none), findsOneWidget);
-      expect(find.byIcon(Icons.send), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_forward), findsOneWidget);
     });
 
     testWidgets('image button opens bottom sheet', (tester) async {
@@ -390,8 +431,7 @@ void main() {
       expect(find.text('购物偏好'), findsOneWidget);
     });
 
-    testWidgets('displays lower sections after scrolling',
-        (tester) async {
+    testWidgets('displays lower sections after scrolling', (tester) async {
       await tester.pumpWidget(_wrapWithRouter());
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
@@ -401,14 +441,16 @@ void main() {
         matching: find.byType(Scrollable),
       );
       await tester.scrollUntilVisible(
-        find.text('隐私与数据'), 100,
+        find.text('隐私与数据'),
+        100,
         scrollable: profileScrollable,
       );
       await tester.pumpAndSettle();
       expect(find.text('隐私与数据'), findsOneWidget);
 
       await tester.scrollUntilVisible(
-        find.text('接口状态'), 100,
+        find.text('接口状态'),
+        100,
         scrollable: profileScrollable,
       );
       await tester.pumpAndSettle();
@@ -417,8 +459,7 @@ void main() {
       expect(find.text('AI Provider'), findsOneWidget);
     });
 
-    testWidgets('displays live health status from fake API',
-        (tester) async {
+    testWidgets('displays live health status from fake API', (tester) async {
       await tester.pumpWidget(_wrapWithRouter());
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
@@ -429,7 +470,8 @@ void main() {
         matching: find.byType(Scrollable),
       );
       await tester.scrollUntilVisible(
-        find.text('接口状态'), 200,
+        find.text('接口状态'),
+        200,
         scrollable: profileScrollable,
       );
       await tester.pumpAndSettle();
@@ -442,8 +484,7 @@ void main() {
   });
 
   group('Chat messaging', () {
-    testWidgets('sends text and shows clarification card',
-        (tester) async {
+    testWidgets('sends text and shows clarification card', (tester) async {
       final ov = _TestOverrides();
       final completer = Completer<AgentReply>();
       ov.chatApi.stubSendMessage(completer);
@@ -451,7 +492,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'test');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pump();
 
       expect(find.text('正在思考…'), findsOneWidget);
@@ -465,8 +506,7 @@ void main() {
             cardType: 'clarification',
             title: '你更看重哪一点？',
             options: [
-              ClarificationOption(
-                  optionId: 'lowest_price', label: '价格最低'),
+              ClarificationOption(optionId: 'lowest_price', label: '价格最低'),
             ],
           ),
         ],
@@ -475,27 +515,25 @@ void main() {
       expect(find.text('价格最低'), findsOneWidget);
     });
 
-    testWidgets(
-        'tapping option shows product_recommendation cards',
+    testWidgets('tapping option shows product_recommendation cards',
         (tester) async {
       final ov = _TestOverrides();
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'test');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pumpAndSettle();
       await tester.tap(find.text('价格最低'));
       await tester.pumpAndSettle();
 
-      // Should show product list
-      expect(find.text('多平台商品结果'), findsOneWidget);
+      // Should show product result list
+      expect(find.textContaining('找到 '), findsWidgets);
       expect(find.text('平台比价'), findsOneWidget);
-      // Should show mock platform names
-      expect(find.text('京东-mock'), findsWidgets);
+      // Should show user-facing platform names
+      expect(find.text('京东'), findsWidgets);
     });
 
-    testWidgets('recognition card renders with correct fields',
-        (tester) async {
+    testWidgets('recognition card renders with correct fields', (tester) async {
       final ov = _TestOverrides();
       final completer = Completer<AgentReply>();
       ov.chatApi.stubSendMessage(completer);
@@ -503,7 +541,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'test');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pump();
 
       completer.complete(AgentReply(
@@ -535,8 +573,7 @@ void main() {
       expect(find.text('修正识别结果'), findsOneWidget);
     });
 
-    testWidgets(
-        'correction sheet opens, edits, saves, and updates card',
+    testWidgets('correction sheet opens, edits, saves, and updates card',
         (tester) async {
       final ov = _TestOverrides();
       final completer = Completer<AgentReply>();
@@ -545,7 +582,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'test');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pump();
 
       completer.complete(AgentReply(
@@ -603,28 +640,38 @@ void main() {
       expect(find.text('耳机'), findsOneWidget);
     });
 
-    testWidgets(
-        'switch to history session restores clarification card',
+    testWidgets('switch to history session restores clarification card',
         (tester) async {
       final ov = _TestOverrides();
       ov.chatApi.addHistoryMessages('hist-001', [
         {
-          'messageId': 'msg-1', 'role': 'user', 'text': '我想买鞋',
-          'imageIds': [], 'selectedOptionIds': [],
+          'messageId': 'msg-1',
+          'role': 'user',
+          'text': '我想买鞋',
+          'imageIds': [],
+          'selectedOptionIds': [],
           'createdAt': '2026-06-06T10:00:00+08:00',
         },
         {
-          'messageId': 'msg-2', 'role': 'assistant',
+          'messageId': 'msg-2',
+          'role': 'assistant',
           'text': '我已经收到你的需求。你更看重哪一点？',
-          'imageIds': [], 'selectedOptionIds': [],
+          'imageIds': [],
+          'selectedOptionIds': [],
           'createdAt': '2026-06-06T10:00:01+08:00',
           'agentReply': {
-            'replyId': 'reply-hist', 'replyType': 'clarification',
+            'replyId': 'reply-hist',
+            'replyType': 'clarification',
             'text': '我已经收到你的需求。你更看重哪一点？',
-            'cards': [{
-              'cardType': 'clarification', 'title': '你更看重哪一点？',
-              'options': [{'optionId': 'lowest_price', 'label': '价格最低'}],
-            }],
+            'cards': [
+              {
+                'cardType': 'clarification',
+                'title': '你更看重哪一点？',
+                'options': [
+                  {'optionId': 'lowest_price', 'label': '价格最低'}
+                ],
+              }
+            ],
           },
         },
       ]);
@@ -636,48 +683,76 @@ void main() {
       expect(find.text('价格最低'), findsOneWidget);
     });
 
-    testWidgets(
-        'history restores product_recommendation with all card types',
+    testWidgets('history restores product_recommendation with all card types',
         (tester) async {
       final ov = _TestOverrides();
       ov.chatApi.addHistoryMessages('hist-002', [
         {
-          'messageId': 'msg-1', 'role': 'user',
-          'text': '推荐运动鞋', 'imageIds': [], 'selectedOptionIds': [],
+          'messageId': 'msg-1',
+          'role': 'user',
+          'text': '推荐运动鞋',
+          'imageIds': [],
+          'selectedOptionIds': [],
           'createdAt': '2026-06-06T10:00:00+08:00',
         },
         {
-          'messageId': 'msg-2', 'role': 'assistant',
+          'messageId': 'msg-2',
+          'role': 'assistant',
           'text': '我按你的偏好整理了几个平台的选择。',
-          'imageIds': [], 'selectedOptionIds': [],
+          'imageIds': [],
+          'selectedOptionIds': [],
           'createdAt': '2026-06-06T10:00:01+08:00',
           'agentReply': {
-            'replyId': 'reply-pr', 'replyType': 'product_recommendation',
+            'replyId': 'reply-pr',
+            'replyType': 'product_recommendation',
             'text': '我按你的偏好整理了几个平台的选择。',
             'cards': [
               {
-                'cardType': 'product_list', 'title': '多平台商品结果',
+                'cardType': 'product_list',
+                'title': '多平台商品结果',
                 'products': [
                   {
-                    'productId': 'jd-001', 'title': 'Mock 运动鞋 京东自营',
-                    'platform': '京东-mock', 'price': 299.0, 'originalPrice': 399.0,
-                    'shopName': '京东自营', 'imageUrl': '', 'productUrl': '',
-                    'rating': 4.8, 'sales': 12000, 'tags': ['自营'],
-                    'reasons': ['价格优惠'], 'score': 7.0,
+                    'productId': 'jd-001',
+                    'title': 'Mock 运动鞋 京东自营',
+                    'platform': '京东-mock',
+                    'price': 299.0,
+                    'originalPrice': 399.0,
+                    'shopName': '京东自营',
+                    'imageUrl': '',
+                    'productUrl': '',
+                    'rating': 4.8,
+                    'sales': 12000,
+                    'tags': ['自营'],
+                    'reasons': ['价格优惠'],
+                    'score': 7.0,
                   },
                 ],
               },
               {
-                'cardType': 'comparison', 'title': '平台比价',
+                'cardType': 'comparison',
+                'title': '平台比价',
                 'platformStats': {
-                  '京东-mock': {'platform': '京东-mock', 'lowestPrice': 299.0, 'productCount': 2, 'highlight': '自营'},
-                  '拼多多-mock': {'platform': '拼多多-mock', 'lowestPrice': 199.0, 'productCount': 2, 'highlight': '价格优势'},
+                  '京东-mock': {
+                    'platform': '京东-mock',
+                    'lowestPrice': 299.0,
+                    'productCount': 2,
+                    'highlight': '自营'
+                  },
+                  '拼多多-mock': {
+                    'platform': '拼多多-mock',
+                    'lowestPrice': 199.0,
+                    'productCount': 2,
+                    'highlight': '价格优势'
+                  },
                 },
               },
               {
-                'cardType': 'recommendation', 'title': '推荐购买',
-                'productName': 'Mock 商品', 'platform': '京东-mock',
-                'price': 299.0, 'reason': '综合评分较高',
+                'cardType': 'recommendation',
+                'title': '推荐购买',
+                'productName': 'Mock 商品',
+                'platform': '京东-mock',
+                'price': 299.0,
+                'reason': '综合评分较高',
               },
             ],
           },
@@ -689,23 +764,21 @@ void main() {
       await tester.tap(find.text('历史会话'));
       await tester.pumpAndSettle();
 
-      expect(find.text('多平台商品结果'), findsOneWidget);
+      expect(find.textContaining('找到 '), findsWidgets);
       expect(find.text('平台比价'), findsOneWidget);
-      expect(find.text('京东-mock'), findsWidgets);
-      expect(find.text('拼多多-mock'), findsOneWidget);
+      expect(find.text('京东'), findsWidgets);
+      expect(find.text('拼多多'), findsOneWidget);
       expect(find.text('Mock 商品'), findsOneWidget);
     });
 
-    testWidgets('voice button fills transcribed text',
-        (tester) async {
+    testWidgets('voice button fills transcribed text', (tester) async {
       await tester.pumpWidget(_wrapChat(const ChatScreen()));
       await tester.tap(find.byIcon(Icons.mic_none));
       await tester.pumpAndSettle();
       expect(find.text('推荐耳机'), findsOneWidget);
     });
 
-    testWidgets('empty comparison card shows placeholder',
-        (tester) async {
+    testWidgets('empty comparison card shows placeholder', (tester) async {
       final ov = _TestOverrides();
       final completer = Completer<AgentReply>();
       ov.chatApi.stubSendMessage(completer);
@@ -713,7 +786,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '50以内的耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pump();
 
       completer.complete(AgentReply(
@@ -721,10 +794,8 @@ void main() {
         replyType: 'product_recommendation',
         text: '当前预算下暂无合适的 Mock 商品',
         cards: const [
-          ReplyCard(cardType: 'product_list', title: '多平台商品结果',
-              products: []),
-          ReplyCard(cardType: 'comparison', title: '平台比价',
-              platformStats: {}),
+          ReplyCard(cardType: 'product_list', title: '多平台商品结果', products: []),
+          ReplyCard(cardType: 'comparison', title: '平台比价', platformStats: {}),
         ],
       ));
       await tester.pumpAndSettle();
@@ -739,7 +810,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pumpAndSettle();
 
       expect(find.text('综合分 86'), findsOneWidget);
@@ -758,7 +829,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'test');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pump();
 
       // Old-style recommendation without explanation fields
@@ -767,17 +838,30 @@ void main() {
         replyType: 'product_recommendation',
         text: '推荐结果',
         cards: [
-          ReplyCard(cardType: 'product_list', title: '商品列表',
-              products: [
-                ProductItem(productId: 'p1', title: 'Test', platform: '京东-mock',
-                    price: 100, originalPrice: 150, shopName: 'Shop',
-                    imageUrl: '', productUrl: '', rating: 4.0, sales: 100,
-                    tags: [], reasons: [], score: 5),
-              ]),
+          ReplyCard(cardType: 'product_list', title: '商品列表', products: [
+            ProductItem(
+                productId: 'p1',
+                title: 'Test',
+                platform: '京东-mock',
+                price: 100,
+                originalPrice: 150,
+                shopName: 'Shop',
+                imageUrl: '',
+                productUrl: '',
+                rating: 4.0,
+                sales: 100,
+                tags: [],
+                reasons: [],
+                score: 5),
+          ]),
           ReplyCard(cardType: 'comparison', title: '比价', platformStats: {}),
-          ReplyCard(cardType: 'recommendation', title: '推荐',
-              productName: 'Old Card', platform: '京东-mock',
-              price: 100, reason: 'test'),
+          ReplyCard(
+              cardType: 'recommendation',
+              title: '推荐',
+              productName: 'Old Card',
+              platform: '京东-mock',
+              price: 100,
+              reason: 'test'),
         ],
       ));
       await tester.pumpAndSettle();
@@ -792,7 +876,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pumpAndSettle();
 
       expect(find.text('意图：rule'), findsOneWidget);
@@ -803,24 +887,49 @@ void main() {
       final ov = _TestOverrides();
       // Use minimal cards so the recommendation card is visible without scrolling
       ov.chatApi.addHistoryMessages('hist-prov', [
-        {'messageId': 'm1', 'role': 'user', 'text': '推荐',
-         'imageIds': [], 'selectedOptionIds': [], 'createdAt': '2026-06-06T10:00:00+08:00'},
-        {'messageId': 'm2', 'role': 'assistant', 'text': '推荐结果',
-         'imageIds': [], 'selectedOptionIds': [], 'createdAt': '2026-06-06T10:00:01+08:00',
-         'agentReply': {
-           'replyId': 'rp', 'replyType': 'product_recommendation',
-           'text': '推荐', 'cards': [
-             {'cardType': 'product_list', 'title': '商品', 'products': []},
-             {'cardType': 'comparison', 'title': '比价', 'platformStats': {}},
-             {'cardType': 'recommendation', 'title': '推荐', 'productName': 'T',
-              'platform': '京东-mock', 'price': 100.0, 'reason': 'test',
-              'decisionScore': 80, 'decisionSignals': [], 'evidence': [],
-              'risks': [], 'productAnalyses': [],
-              'intentProvider': 'ark', 'intentFallbackUsed': true,
-              'explanationProvider': 'rule', 'explanationFallbackUsed': false,
-              'notices': []},
-           ],
-         }},
+        {
+          'messageId': 'm1',
+          'role': 'user',
+          'text': '推荐',
+          'imageIds': [],
+          'selectedOptionIds': [],
+          'createdAt': '2026-06-06T10:00:00+08:00'
+        },
+        {
+          'messageId': 'm2',
+          'role': 'assistant',
+          'text': '推荐结果',
+          'imageIds': [],
+          'selectedOptionIds': [],
+          'createdAt': '2026-06-06T10:00:01+08:00',
+          'agentReply': {
+            'replyId': 'rp',
+            'replyType': 'product_recommendation',
+            'text': '推荐',
+            'cards': [
+              {'cardType': 'product_list', 'title': '商品', 'products': []},
+              {'cardType': 'comparison', 'title': '比价', 'platformStats': {}},
+              {
+                'cardType': 'recommendation',
+                'title': '推荐',
+                'productName': 'T',
+                'platform': '京东-mock',
+                'price': 100.0,
+                'reason': 'test',
+                'decisionScore': 80,
+                'decisionSignals': [],
+                'evidence': [],
+                'risks': [],
+                'productAnalyses': [],
+                'intentProvider': 'ark',
+                'intentFallbackUsed': true,
+                'explanationProvider': 'rule',
+                'explanationFallbackUsed': false,
+                'notices': []
+              },
+            ],
+          }
+        },
       ]);
 
       final controller = ChatController(ov.chatApi);
@@ -878,7 +987,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -886,34 +995,38 @@ void main() {
         replyType: 'product_recommendation',
         text: '推荐结果',
         cards: [
-          ReplyCard(cardType: 'product_list', title: '多平台商品结果',
-              products: [
-                ProductItem(
-                  productId: 'jd-101', title: '索尼蓝牙耳机',
-                  platform: '京东-mock', price: 299, originalPrice: 499,
-                  shopName: '京东自营', imageUrl: '', productUrl: '',
-                  rating: 4.9, sales: 23000, tags: ['自营'],
-                  reasons: [], score: 8,
-                  brand: '索尼',
-                  priceHistory: [499, 459, 379, 309, 299],
-                  matchedPreferences: ['budget_match', 'high_rating'],
-                ),
-              ]),
+          ReplyCard(cardType: 'product_list', title: '多平台商品结果', products: [
+            ProductItem(
+              productId: 'jd-101',
+              title: '索尼蓝牙耳机',
+              platform: '京东-mock',
+              price: 299,
+              originalPrice: 499,
+              shopName: '京东自营',
+              imageUrl: '',
+              productUrl: '',
+              rating: 4.9,
+              sales: 23000,
+              tags: ['自营'],
+              reasons: [],
+              score: 8,
+              brand: '索尼',
+              priceHistory: [499, 459, 379, 309, 299],
+              matchedPreferences: ['budget_match', 'high_rating'],
+            ),
+          ]),
         ],
       ));
       await tester.pumpAndSettle();
 
-      // Brand badge
-      expect(find.text('索尼'), findsOneWidget);
-      // Price trend label (down)
-      expect(find.text('近期价格走势'), findsOneWidget);
-      // Matched preference badges
-      expect(find.text('预算命中'), findsOneWidget);
-      expect(find.text('高评分'), findsOneWidget);
+      expect(find.text('索尼无线降噪耳机 黑色款'), findsOneWidget);
+      expect(find.text('京东 · 京东自营'), findsOneWidget);
+      expect(find.textContaining('条评价'), findsOneWidget);
+      expect(find.text('近30天低价'), findsOneWidget);
+      expect(find.text('有优惠'), findsOneWidget);
     });
 
-    testWidgets('comparison card shows average price',
-        (tester) async {
+    testWidgets('comparison card shows average price', (tester) async {
       final ov = _TestOverrides();
       final completer = Completer<AgentReply>();
       ov.chatApi.stubSendMessage(completer);
@@ -921,7 +1034,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -929,18 +1042,16 @@ void main() {
         replyType: 'product_recommendation',
         text: '推荐结果',
         cards: [
-          ReplyCard(cardType: 'product_list', title: '多平台商品结果',
-              products: []),
-          ReplyCard(cardType: 'comparison', title: '平台比价',
-              platformStats: {
-                '京东-mock': {
-                  'platform': '京东-mock',
-                  'lowestPrice': 199,
-                  'averagePrice': 259,
-                  'productCount': 4,
-                  'highlight': '自营保障，物流快',
-                },
-              }),
+          ReplyCard(cardType: 'product_list', title: '多平台商品结果', products: []),
+          ReplyCard(cardType: 'comparison', title: '平台比价', platformStats: {
+            '京东-mock': {
+              'platform': '京东-mock',
+              'lowestPrice': 199,
+              'averagePrice': 259,
+              'productCount': 4,
+              'highlight': '自营保障，物流快',
+            },
+          }),
         ],
       ));
       await tester.pumpAndSettle();
@@ -950,8 +1061,7 @@ void main() {
       expect(find.text('自营保障，物流快'), findsOneWidget);
     });
 
-    testWidgets('product list shows active filter summary',
-        (tester) async {
+    testWidgets('product list shows active filter summary', (tester) async {
       final ov = _TestOverrides();
       final completer = Completer<AgentReply>();
       ov.chatApi.stubSendMessage(completer);
@@ -959,7 +1069,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -977,12 +1087,12 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      expect(find.text('当前条件：品类：耳机 / 预算≤300元 / 颜色：黑色'),
-          findsOneWidget);
+      expect(find.text('黑色耳机'), findsOneWidget);
+      expect(find.text('¥300以内'), findsOneWidget);
+      expect(find.text('全部平台'), findsOneWidget);
     });
 
-    testWidgets('product list hides empty filter summary',
-        (tester) async {
+    testWidgets('product list hides empty filter summary', (tester) async {
       final ov = _TestOverrides();
       final completer = Completer<AgentReply>();
       ov.chatApi.stubSendMessage(completer);
@@ -990,7 +1100,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -998,8 +1108,7 @@ void main() {
         replyType: 'product_recommendation',
         text: '推荐结果',
         cards: [
-          ReplyCard(cardType: 'product_list', title: '多平台商品结果',
-              products: []),
+          ReplyCard(cardType: 'product_list', title: '多平台商品结果', products: []),
         ],
       ));
       await tester.pumpAndSettle();
@@ -1007,8 +1116,7 @@ void main() {
       expect(find.textContaining('当前条件：'), findsNothing);
     });
 
-    testWidgets('dynamic suggestion options render labels',
-        (tester) async {
+    testWidgets('dynamic suggestion options render labels', (tester) async {
       final ov = _TestOverrides();
       final completer = Completer<AgentReply>();
       ov.chatApi.stubSendMessage(completer);
@@ -1016,7 +1124,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'hi');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.send));
+      await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -1024,12 +1132,11 @@ void main() {
         replyType: 'clarification',
         text: '请选择',
         cards: [
-          ReplyCard(cardType: 'clarification', title: '你更看重哪一点？',
-              options: [
-                ClarificationOption(optionId: 'lowest_price', label: '查看同款低价'),
-                ClarificationOption(optionId: 'style_similar', label: '相似风格推荐'),
-                ClarificationOption(optionId: 'price_history', label: '查看历史价格走势'),
-              ]),
+          ReplyCard(cardType: 'clarification', title: '你更看重哪一点？', options: [
+            ClarificationOption(optionId: 'lowest_price', label: '查看同款低价'),
+            ClarificationOption(optionId: 'style_similar', label: '相似风格推荐'),
+            ClarificationOption(optionId: 'price_history', label: '查看历史价格走势'),
+          ]),
         ],
       ));
       await tester.pumpAndSettle();

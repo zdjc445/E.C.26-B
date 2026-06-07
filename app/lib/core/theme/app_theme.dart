@@ -29,8 +29,8 @@ ThemeData buildAppTheme() {
 
   return ThemeData(
     useMaterial3: true,
-    fontFamily: 'Microsoft YaHei',
-    fontFamilyFallback: const ['Bahnschrift', 'Segoe UI', 'Arial'],
+    fontFamily: 'AppSans',
+    fontFamilyFallback: const ['Roboto', 'Arial', 'sans-serif'],
     colorScheme: colorScheme,
     scaffoldBackgroundColor: _background,
     appBarTheme: const AppBarTheme(
@@ -58,8 +58,7 @@ ThemeData buildAppTheme() {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: _panel,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(6),
         borderSide: const BorderSide(color: _line),
@@ -78,8 +77,7 @@ ThemeData buildAppTheme() {
         backgroundColor: _accent,
         foregroundColor: Colors.white,
         minimumSize: const Size.fromHeight(38),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       ),
     ),
     bottomNavigationBarTheme: const BottomNavigationBarThemeData(
@@ -87,8 +85,7 @@ ThemeData buildAppTheme() {
       selectedItemColor: _accent,
       unselectedItemColor: _inkSoft,
       type: BottomNavigationBarType.fixed,
-      selectedLabelStyle:
-          TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      selectedLabelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
       unselectedLabelStyle: TextStyle(
         fontSize: 12,
         fontWeight: FontWeight.w400,
