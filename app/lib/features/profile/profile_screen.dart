@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
+import '../auth/auth_controller.dart';
+import '../ecommerce/ecommerce_api.dart';
 import 'health_api.dart';
 
 /// Provider for HealthApi.
@@ -10,12 +13,23 @@ final healthApiProvider = Provider<HealthApi>((ref) {
   return HealthApi(baseUrl: baseUrl);
 });
 
-/// Provider that fetches health status once.
 final healthStatusProvider = FutureProvider<HealthStatus>((ref) async {
   try {
     return await ref.watch(healthApiProvider).fetch();
   } catch (_) {
     return HealthStatus.unknown;
+  }
+});
+
+final ecommerceApiProvider = Provider<EcommerceApi>((ref) {
+  return EcommerceApi(baseUrl: ref.watch(apiBaseUrlProvider));
+});
+
+final ecommerceStatusProvider = FutureProvider<EcommerceStatus>((ref) async {
+  try {
+    return await ref.watch(ecommerceApiProvider).status();
+  } catch (_) {
+    return EcommerceStatus.unknown;
   }
 });
 
@@ -27,6 +41,9 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final healthAsync = ref.watch(healthStatusProvider);
     final health = healthAsync.valueOrNull ?? HealthStatus.unknown;
+    final ecomAsync = ref.watch(ecommerceStatusProvider);
+    final ecom = ecomAsync.valueOrNull ?? EcommerceStatus.unknown;
+    final auth = ref.watch(authControllerProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -48,24 +65,71 @@ class ProfileScreen extends ConsumerWidget {
                       color: AppColors.accent.withAlpha(20),
                       borderRadius: BorderRadius.circular(24),
                     ),
-                    child: const Icon(Icons.person,
-                        color: AppColors.accent, size: 28),
+                    child: Icon(
+                      auth.isAuthenticated ? Icons.verified_user : Icons.person,
+                      color: AppColors.accent, size: 28),
                   ),
                   const SizedBox(width: 12),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('演示用户',
-                          style: TextStyle(
-                              fontSize: 16, fontWeight: FontWeight.w600)),
-                      SizedBox(height: 4),
-                      Text('未接入真实登录',
-                          style: TextStyle(
-                              fontSize: 13, color: AppColors.inkSoft)),
-                    ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(auth.currentUser.displayName,
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 4),
+                        Text(
+                            auth.isAuthenticated
+                                ? '@${auth.currentUser.username} · JWT 已登录'
+                                : (auth.currentUser.authEnabled
+                                    ? '未登录，请先登录'
+                                    : '后端认证未启用 · 使用演示用户'),
+                            style: const TextStyle(
+                                fontSize: 13, color: AppColors.inkSoft)),
+                      ],
+                    ),
                   ),
+                  if (auth.isAuthenticated)
+                    TextButton(
+                      onPressed: () {
+                        ref.read(authControllerProvider.notifier).logout();
+                      },
+                      child: const Text('登出'),
+                    )
+                  else
+                    TextButton(
+                      onPressed: () => context.go('/login'),
+                      child: const Text('登录'),
+                    ),
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // ── Quick entries ──
+          _SectionHeader(title: '我的'),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.favorite_border),
+                  title: const Text('我的收藏'),
+                  subtitle: const Text('查看长按推荐卡保存的商品'),
+                  trailing: const Icon(Icons.chevron_right,
+                      color: AppColors.inkSoft),
+                  onTap: () => context.push('/favorites'),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.notifications_outlined),
+                  title: const Text('价格提醒'),
+                  subtitle: const Text('达到目标价时触发，支持立即检测'),
+                  trailing: const Icon(Icons.chevron_right,
+                      color: AppColors.inkSoft),
+                  onTap: () => context.push('/price-alerts'),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
@@ -81,8 +145,7 @@ class ProfileScreen extends ConsumerWidget {
                   value: true,
                   onChanged: (_) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('偏好设置功能即将上线')),
+                      const SnackBar(content: Text('偏好已保存在会话内（演示用）')),
                     );
                   },
                 ),
@@ -93,8 +156,7 @@ class ProfileScreen extends ConsumerWidget {
                   value: false,
                   onChanged: (_) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('偏好设置功能即将上线')),
+                      const SnackBar(content: Text('偏好已保存在会话内（演示用）')),
                     );
                   },
                 ),
@@ -105,43 +167,7 @@ class ProfileScreen extends ConsumerWidget {
                   value: false,
                   onChanged: (_) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('偏好设置功能即将上线')),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // ── Notifications & price alerts ──
-          _SectionHeader(title: '通知与价格提醒'),
-          Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.notifications_outlined),
-                  title: const Text('价格提醒'),
-                  subtitle: const Text('占位'),
-                  trailing: const Icon(Icons.chevron_right,
-                      color: AppColors.inkSoft),
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('价格提醒功能即将上线')),
-                    );
-                  },
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.recommend_outlined),
-                  title: const Text('推荐通知'),
-                  subtitle: const Text('占位'),
-                  trailing: const Icon(Icons.chevron_right,
-                      color: AppColors.inkSoft),
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('推荐通知功能即将上线')),
+                      const SnackBar(content: Text('偏好已保存在会话内（演示用）')),
                     );
                   },
                 ),
@@ -185,7 +211,7 @@ class ProfileScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 12),
 
-          // ── API status (live from /api/health) ──
+          // ── API status ──
           _SectionHeader(title: '接口状态'),
           Card(
             child: Column(
@@ -200,6 +226,26 @@ class ProfileScreen extends ConsumerWidget {
                   leading: const Icon(Icons.storage_outlined),
                   title: const Text('历史存储'),
                   subtitle: Text(health.chatHistoryStore),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.shopping_bag_outlined),
+                  title: const Text('电商 Provider'),
+                  subtitle: Text(
+                      '${ecom.activeProvider} · real ${ecom.realProviderActive ? "ON" : "OFF"}'),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.lock_outline),
+                  title: const Text('认证模式'),
+                  subtitle:
+                      Text(health.authEnabled ? '启用 JWT' : '演示模式（authEnabled=false）'),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.mic_outlined),
+                  title: const Text('语音 Provider'),
+                  subtitle: Text(health.voiceProvider),
                 ),
               ],
             ),

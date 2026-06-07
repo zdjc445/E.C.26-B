@@ -7,6 +7,9 @@ class HealthStatus {
   final String stage;
   final String aiProvider;
   final String chatHistoryStore;
+  final bool authEnabled;
+  final String ecommerceProvider;
+  final String voiceProvider;
   final String timestamp;
 
   const HealthStatus({
@@ -15,6 +18,9 @@ class HealthStatus {
     required this.stage,
     required this.aiProvider,
     required this.chatHistoryStore,
+    required this.authEnabled,
+    required this.ecommerceProvider,
+    required this.voiceProvider,
     required this.timestamp,
   });
 
@@ -25,6 +31,9 @@ class HealthStatus {
       stage: json['stage'] as String? ?? 'unknown',
       aiProvider: json['aiProvider'] as String? ?? 'unknown',
       chatHistoryStore: json['chatHistoryStore'] as String? ?? 'unknown',
+      authEnabled: json['authEnabled'] as bool? ?? false,
+      ecommerceProvider: json['ecommerceProvider'] as String? ?? 'mock',
+      voiceProvider: json['voiceProvider'] as String? ?? 'mock',
       timestamp: json['timestamp'] as String? ?? '',
     );
   }
@@ -35,6 +44,9 @@ class HealthStatus {
     stage: 'unknown',
     aiProvider: 'unknown',
     chatHistoryStore: 'unknown',
+    authEnabled: false,
+    ecommerceProvider: 'unknown',
+    voiceProvider: 'unknown',
     timestamp: '',
   );
 }

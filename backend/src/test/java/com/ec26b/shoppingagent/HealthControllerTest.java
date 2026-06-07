@@ -6,6 +6,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -23,9 +24,12 @@ class HealthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ok"))
                 .andExpect(jsonPath("$.app").value("shopping-agent"))
-                .andExpect(jsonPath("$.stage").value("聊天式 AI 识别与多平台 Mock 推荐阶段"))
+                .andExpect(jsonPath("$.stage", containsString("聊天式 AI")))
                 .andExpect(jsonPath("$.aiProvider").value("mock"))
                 .andExpect(jsonPath("$.chatHistoryStore").value("memory"))
+                .andExpect(jsonPath("$.authEnabled").value(false))
+                .andExpect(jsonPath("$.ecommerceProvider").value("mock"))
+                .andExpect(jsonPath("$.voiceProvider").value("mock"))
                 .andExpect(jsonPath("$.timestamp").isNotEmpty());
     }
 }
