@@ -9,6 +9,8 @@ import 'package:shopping_agent_app/features/chat/chat_controller.dart';
 import 'package:shopping_agent_app/features/chat/chat_models.dart';
 import 'package:shopping_agent_app/features/chat/chat_screen.dart';
 import 'package:shopping_agent_app/features/chat/recognition_api.dart';
+import 'package:shopping_agent_app/features/favorites/favorite_api.dart';
+import 'package:shopping_agent_app/features/favorites/favorite_models.dart';
 import 'package:shopping_agent_app/features/profile/health_api.dart';
 import 'package:shopping_agent_app/features/profile/profile_screen.dart';
 import 'package:shopping_agent_app/features/voice/voice_api.dart';
@@ -84,6 +86,35 @@ class FakeVoiceApi extends VoiceApi {
       text: '推荐耳机',
       provider: 'mock',
       fallbackUsed: false,
+    );
+  }
+}
+
+class FakeFavoriteApi extends FavoriteApi {
+  FakeFavoriteApi() : super(baseUrl: 'http://test');
+
+  final List<Map<String, dynamic>> addedPayloads = [];
+  bool failAdd = false;
+
+  @override
+  Future<FavoriteItem> add(Map<String, dynamic> payload,
+      {String? token}) async {
+    if (failAdd) {
+      throw Exception('收藏接口失败');
+    }
+    final saved = Map<String, dynamic>.from(payload);
+    addedPayloads.add(saved);
+    return FavoriteItem(
+      id: addedPayloads.length,
+      productId: saved['productId'] as String,
+      title: saved['title'] as String,
+      platform: saved['platform'] as String? ?? '',
+      price: (saved['price'] as num?)?.toDouble() ?? 0,
+      shopName: saved['shopName'] as String?,
+      brand: saved['brand'] as String?,
+      imageUrl: saved['imageUrl'] as String?,
+      productUrl: saved['productUrl'] as String?,
+      createdAt: '2026-06-07T10:00:00+08:00',
     );
   }
 }
@@ -357,10 +388,12 @@ class FakeChatApi extends ChatApi {
 class _TestOverrides {
   final FakeChatApi chatApi;
   final FakeRecognitionApi recApi;
+  final FakeFavoriteApi favoriteApi;
 
   _TestOverrides()
       : chatApi = FakeChatApi(),
-        recApi = FakeRecognitionApi();
+        recApi = FakeRecognitionApi(),
+        favoriteApi = FakeFavoriteApi();
 }
 
 Widget _wrapChat(Widget child, {_TestOverrides? overrides}) {
@@ -369,6 +402,7 @@ Widget _wrapChat(Widget child, {_TestOverrides? overrides}) {
     overrides: [
       chatApiProvider.overrideWithValue(o.chatApi),
       recognitionApiProvider.overrideWithValue(o.recApi),
+      favoriteApiInChatProvider.overrideWithValue(o.favoriteApi),
       voiceApiProvider.overrideWithValue(const FakeVoiceApi()),
     ],
     child: MaterialApp(home: child),
@@ -388,6 +422,7 @@ Widget _wrapWithRouter({_TestOverrides? overrides}) {
     overrides: [
       chatApiProvider.overrideWithValue(o.chatApi),
       recognitionApiProvider.overrideWithValue(o.recApi),
+      favoriteApiInChatProvider.overrideWithValue(o.favoriteApi),
       healthApiProvider.overrideWithValue(FakeHealthApi()),
       voiceApiProvider.overrideWithValue(const FakeVoiceApi()),
     ],
@@ -567,10 +602,13 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      // Use findsWidgets for potentially duplicated text
-      expect(find.text('Mock 品牌'), findsOneWidget);
-      expect(find.text('Mock 型号'), findsOneWidget);
-      expect(find.text('修正识别结果'), findsOneWidget);
+      expect(find.text('识别到：运动鞋'), findsOneWidget);
+      expect(find.text('置信度 82%'), findsOneWidget);
+      expect(find.text('来源：mock'), findsOneWidget);
+      expect(find.text('可修正字段'), findsOneWidget);
+      expect(find.text('品牌：Mock 品牌'), findsOneWidget);
+      expect(find.text('型号：Mock 型号'), findsOneWidget);
+      expect(find.text('修正'), findsOneWidget);
     });
 
     testWidgets('correction sheet opens, edits, saves, and updates card',
@@ -609,7 +647,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap correction button
-      await tester.tap(find.text('修正识别结果'));
+      await tester.tap(find.text('修正'));
       await tester.pumpAndSettle();
 
       // Edit category
@@ -636,8 +674,114 @@ void main() {
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
-      // Card should show updated category
-      expect(find.text('耳机'), findsOneWidget);
+      // Card should show updated category in the redesigned recognition card.
+      expect(find.text('识别到：耳机'), findsOneWidget);
+      expect(find.text('类别：耳机'), findsOneWidget);
+    });
+
+    testWidgets('recognition card shows uploaded image thumbnail',
+        (tester) async {
+      final ov = _TestOverrides();
+      final imageFile =
+          File('android/app/src/main/res/mipmap-mdpi/ic_launcher.png');
+      expect(imageFile.existsSync(), isTrue);
+      ov.chatApi.addHistoryMessages('hist-image', [
+        {
+          'messageId': 'msg-img-user',
+          'role': 'user',
+          'text': null,
+          'imageIds': ['test-image-id'],
+          'imagePaths': [imageFile.path],
+          'selectedOptionIds': [],
+          'createdAt': '2026-06-06T10:00:00+08:00',
+        },
+        {
+          'messageId': 'msg-img-assistant',
+          'role': 'assistant',
+          'text': '识别结果',
+          'imageIds': [],
+          'selectedOptionIds': [],
+          'agentReply': {
+            'replyId': 'reply-rec-image',
+            'replyType': 'recognition',
+            'text': '识别结果',
+            'cards': [
+              {
+                'cardType': 'recognition',
+                'title': '识别结果',
+                'imageId': 'test-image-id',
+                'category': '运动鞋',
+                'brand': 'Mock 品牌',
+                'model': 'Mock 型号',
+                'keywords': ['运动鞋', '白色'],
+                'attributes': {'color': '白色'},
+                'confidence': 0.82,
+                'aiProvider': 'mock',
+                'fallbackUsed': false,
+                'explanation': '演示识别结果。',
+                'recognitionId': 'rec-test-001',
+              },
+            ],
+          },
+          'createdAt': '2026-06-06T10:00:01+08:00',
+        },
+      ]);
+
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      final container =
+          ProviderScope.containerOf(tester.element(find.byType(ChatScreen)));
+      await container
+          .read(chatControllerProvider.notifier)
+          .switchToSession('hist-image');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.byKey(const Key('recognition_image_thumb')), findsOneWidget);
+      expect(find.text('识别到：运动鞋'), findsOneWidget);
+      expect(find.text('置信度 82%'), findsOneWidget);
+      expect(find.text('来源：mock'), findsOneWidget);
+      expect(find.text('可修正字段'), findsOneWidget);
+    });
+
+    testWidgets('recognition editable field chip opens correction sheet',
+        (tester) async {
+      final ov = _TestOverrides();
+      final completer = Completer<AgentReply>();
+      ov.chatApi.stubSendMessage(completer);
+
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), 'test');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.pump();
+
+      completer.complete(const AgentReply(
+        replyId: 'reply-rec-chip',
+        replyType: 'recognition',
+        text: '识别结果',
+        cards: [
+          ReplyCard(
+            cardType: 'recognition',
+            title: '识别结果',
+            category: '运动鞋',
+            brand: 'Mock 品牌',
+            model: 'Mock 型号',
+            attributes: {'color': '白色'},
+            confidence: 0.82,
+            aiProvider: 'mock',
+            fallbackUsed: false,
+            explanation: '',
+            recognitionId: 'rec-test-001',
+          ),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('颜色：白色'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(TextField, '商品类别'), findsOneWidget);
+      expect(find.text('保存'), findsOneWidget);
     });
 
     testWidgets('switch to history session restores clarification card',
@@ -1024,6 +1168,110 @@ void main() {
       expect(find.textContaining('条评价'), findsOneWidget);
       expect(find.text('近30天低价'), findsOneWidget);
       expect(find.text('有优惠'), findsOneWidget);
+    });
+
+    testWidgets('product row favorite updates state and avoids duplicate add',
+        (tester) async {
+      final ov = _TestOverrides();
+      final completer = Completer<AgentReply>();
+      ov.chatApi.stubSendMessage(completer);
+
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), '推荐耳机');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.pump();
+
+      completer.complete(const AgentReply(
+        replyId: 'reply-fav-row',
+        replyType: 'product_recommendation',
+        text: '推荐结果',
+        cards: [
+          ReplyCard(cardType: 'product_list', title: '多平台商品结果', products: [
+            ProductItem(
+              productId: 'jd-101',
+              title: '索尼蓝牙耳机',
+              platform: '京东-mock',
+              price: 299,
+              originalPrice: 499,
+              shopName: '京东自营',
+              imageUrl: '',
+              productUrl: '',
+              rating: 4.9,
+              sales: 23000,
+              tags: ['自营'],
+              reasons: [],
+              score: 8,
+              brand: '索尼',
+            ),
+          ]),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('favorite_jd-101')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('已收藏'), findsOneWidget);
+      expect(find.text('已收藏，可在「我的收藏」查看'), findsOneWidget);
+      expect(ov.favoriteApi.addedPayloads, hasLength(1));
+      expect(ov.favoriteApi.addedPayloads.single['productId'], 'jd-101');
+      expect(ov.favoriteApi.addedPayloads.single['platform'], '京东-mock');
+      expect(ov.favoriteApi.addedPayloads.single['brand'], '索尼');
+
+      await tester.tap(find.byKey(const Key('favorite_jd-101')));
+      await tester.pumpAndSettle();
+
+      expect(ov.favoriteApi.addedPayloads, hasLength(1));
+    });
+
+    testWidgets('product row go button shows platform jump notice',
+        (tester) async {
+      final ov = _TestOverrides();
+      final completer = Completer<AgentReply>();
+      ov.chatApi.stubSendMessage(completer);
+
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), '推荐耳机');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.pump();
+
+      completer.complete(const AgentReply(
+        replyId: 'reply-go-row',
+        replyType: 'product_recommendation',
+        text: '推荐结果',
+        cards: [
+          ReplyCard(cardType: 'product_list', title: '多平台商品结果', products: [
+            ProductItem(
+              productId: 'jd-101',
+              title: '索尼蓝牙耳机',
+              platform: '京东-mock',
+              price: 299,
+              originalPrice: 499,
+              shopName: '京东自营',
+              imageUrl: '',
+              productUrl: '',
+              rating: 4.9,
+              sales: 23000,
+              tags: ['自营'],
+              reasons: [],
+              score: 8,
+              brand: '索尼',
+            ),
+          ]),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('go_jd-101')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('即将跳转到京东'), findsOneWidget);
+      expect(find.text('京东 · 京东自营'), findsWidgets);
+      expect(find.text('¥299'), findsWidgets);
+      expect(find.textContaining('当前演示使用 Mock 商品数据'), findsOneWidget);
+      expect(find.text('知道了'), findsOneWidget);
     });
 
     testWidgets('comparison card shows average price', (tester) async {

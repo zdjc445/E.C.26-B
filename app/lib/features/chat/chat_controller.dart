@@ -19,8 +19,7 @@ final recognitionApiProvider = Provider<RecognitionApi>((ref) {
 });
 
 /// Provider for chat state notifier.
-final chatControllerProvider =
-    ChangeNotifierProvider<ChatController>((ref) {
+final chatControllerProvider = ChangeNotifierProvider<ChatController>((ref) {
   return ChatController(ref.watch(chatApiProvider));
 });
 
@@ -281,8 +280,7 @@ class ChatController extends ChangeNotifier {
             confidence: card.confidence,
             aiProvider: card.aiProvider,
             fallbackUsed: card.fallbackUsed,
-            explanation: updated['explanation'] as String? ??
-                card.explanation,
+            explanation: updated['explanation'] as String? ?? card.explanation,
             recognitionId: card.recognitionId,
           );
           final newReply = AgentReply(
@@ -305,6 +303,8 @@ class ChatController extends ChangeNotifier {
     final text = m['text'] as String?;
     final imageIds =
         (m['imageIds'] as List?)?.map((e) => e.toString()).toList() ?? [];
+    final imagePaths =
+        (m['imagePaths'] as List?)?.map((e) => e.toString()).toList() ?? [];
     // Restore agentReply if present (for assistant messages)
     AgentReply? agentReply;
     if (m['agentReply'] != null) {
@@ -315,6 +315,7 @@ class ChatController extends ChangeNotifier {
       role: role,
       text: text,
       imageIds: imageIds,
+      imagePaths: imagePaths,
       agentReply: agentReply,
     );
   }

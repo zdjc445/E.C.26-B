@@ -38,6 +38,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _scrollController = ScrollController();
   final _picker = ImagePicker();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final Set<String> _favoriteProductIds = <String>{};
   File? _pendingImage;
   String? _uploadedImageId;
   bool _imageUploadFailed = false;
@@ -195,6 +196,89 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         messenger.showSnackBar(SnackBar(content: Text('收藏失败：$e')));
       }
     }
+  }
+
+  Future<void> _addProductToFavorites(ProductItem product) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (_favoriteProductIds.contains(product.productId)) {
+      messenger.showSnackBar(const SnackBar(content: Text('已收藏')));
+      return;
+    }
+
+    final payload = <String, dynamic>{
+      'productId': product.productId,
+      'title': _displayProductTitle(product),
+      'platform': product.platform,
+      'price': product.price,
+      'shopName': product.shopName,
+      'brand': product.brand,
+      'imageUrl': product.imageUrl,
+      'productUrl': product.productUrl,
+    };
+    try {
+      final token = ref.read(authControllerProvider).session?.token;
+      await ref.read(favoriteApiInChatProvider).add(payload, token: token);
+      if (!mounted) return;
+      setState(() {
+        _favoriteProductIds.add(product.productId);
+      });
+      messenger.showSnackBar(
+        const SnackBar(content: Text('已收藏，可在「我的收藏」查看')),
+      );
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('收藏失败：$e')));
+      }
+    }
+  }
+
+  void _showProductJumpSheet(ProductItem product) {
+    final platform = _platformLabel(product.platform);
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('即将跳转到$platform',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 12),
+              Text(_displayProductTitle(product),
+                  style: const TextStyle(
+                      fontSize: 14, height: 1.35, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Text(_shopLine(product),
+                  style:
+                      const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
+              const SizedBox(height: 4),
+              Text('¥${product.price.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.priceRed)),
+              const SizedBox(height: 12),
+              Text(
+                '当前演示使用 Mock 商品数据，不会打开真实电商页面。正式接入后将跳转到$platform商品详情页。',
+                style: const TextStyle(
+                    fontSize: 13, height: 1.45, color: AppColors.inkSoft),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('知道了'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _setPriceAlert(ReplyCard card) async {
@@ -964,6 +1048,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildRecognitionCard(ReplyCard card) {
+    final imagePath = _recognitionImagePath(card.imageId);
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
@@ -977,71 +1062,182 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.image_search, size: 18, color: AppColors.accent),
-              const SizedBox(width: 6),
-              Text(card.title,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600)),
+              _recognitionThumb(imagePath),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('识别到：${card.category ?? "未知商品"}',
+                        style: const TextStyle(
+                            fontSize: 15,
+                            height: 1.3,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _recognitionInfoBadge(_confidenceText(card)),
+                        _recognitionInfoBadge('来源：${card.aiProvider ?? "未知"}'),
+                      ],
+                    ),
+                    if (card.fallbackUsed == true) ...[
+                      const SizedBox(height: 6),
+                      const Text('已回退到 Mock 识别',
+                          style:
+                              TextStyle(fontSize: 11, color: AppColors.warn)),
+                    ],
+                  ],
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          if (card.category != null) _recognitionRow('类别', card.category!),
-          if (card.brand != null) _recognitionRow('品牌', card.brand!),
-          if (card.model != null) _recognitionRow('型号', card.model!),
-          if (card.keywords != null && card.keywords!.isNotEmpty)
-            _recognitionRow('关键词', card.keywords!.join('、')),
-          if (card.attributes != null && card.attributes!.isNotEmpty)
-            _recognitionRow(
-                '属性',
-                card.attributes!.entries
-                    .map((e) => '${e.key}: ${e.value}')
-                    .join('；')),
-          if (card.confidence != null)
-            _recognitionRow(
-                '置信度', '${(card.confidence! * 100).toStringAsFixed(0)}%'),
-          if (card.aiProvider != null)
-            _recognitionRow('AI Provider', card.aiProvider!),
-          if (card.fallbackUsed == true)
-            const Text('已回退到 Mock 识别',
-                style: TextStyle(fontSize: 11, color: AppColors.warn)),
           if (card.explanation != null && card.explanation!.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(top: 10),
               child: Text(card.explanation!,
                   style:
                       const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
             ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: () => _openCorrectionSheet(card),
-              icon: const Icon(Icons.edit, size: 14),
-              label: const Text('修正识别结果', style: TextStyle(fontSize: 12)),
-            ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Text('可修正字段',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.inkSoft,
+                      fontWeight: FontWeight.w600)),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: () => _openCorrectionSheet(card),
+                icon: const Icon(Icons.edit, size: 14),
+                label: const Text('修正', style: TextStyle(fontSize: 12)),
+                style: TextButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  minimumSize: const Size(0, 28),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _recognitionEditableFields(card)
+                .map((field) => _recognitionFieldChip(
+                      field.key,
+                      field.value,
+                      card,
+                    ))
+                .toList(),
           ),
         ],
       ),
     );
   }
 
-  Widget _recognitionRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 64,
-            child: Text('$label：',
-                style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
-          ),
-          Expanded(
-            child: Text(value, style: const TextStyle(fontSize: 12)),
-          ),
-        ],
+  String? _recognitionImagePath(String? imageId) {
+    if (imageId == null || imageId.isEmpty) return null;
+    final messages = ref.watch(chatControllerProvider).messages;
+    for (final msg in messages) {
+      for (var i = 0; i < msg.imageIds.length; i++) {
+        if (msg.imageIds[i] == imageId && i < msg.imagePaths.length) {
+          return msg.imagePaths[i];
+        }
+      }
+    }
+    return null;
+  }
+
+  Widget _recognitionThumb(String? imagePath) {
+    if (imagePath != null && File(imagePath).existsSync()) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.file(
+          File(imagePath),
+          key: const Key('recognition_image_thumb'),
+          width: 82,
+          height: 82,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _recognitionThumbPlaceholder(),
+        ),
+      );
+    }
+    return _recognitionThumbPlaceholder();
+  }
+
+  Widget _recognitionThumbPlaceholder() {
+    return Container(
+      key: const Key('recognition_image_placeholder'),
+      width: 82,
+      height: 82,
+      decoration: BoxDecoration(
+        color: AppColors.panelSoft,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.line),
       ),
+      child: const Center(
+        child: Icon(Icons.image_search, size: 28, color: AppColors.inkSoft),
+      ),
+    );
+  }
+
+  Widget _recognitionInfoBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.panelSoft,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Text(label,
+          style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+    );
+  }
+
+  String _confidenceText(ReplyCard card) {
+    if (card.confidence == null) return '置信度 --';
+    return '置信度 ${(card.confidence! * 100).toStringAsFixed(0)}%';
+  }
+
+  List<MapEntry<String, String>> _recognitionEditableFields(ReplyCard card) {
+    final fields = <MapEntry<String, String>>[
+      MapEntry('类别', card.category ?? '未识别'),
+      MapEntry('品牌', card.brand ?? '未识别'),
+      MapEntry('型号', card.model ?? '未识别'),
+    ];
+    final attrs = card.attributes ?? {};
+    const attrLabels = <String, String>{
+      'color': '颜色',
+      'style': '风格',
+      'scenario': '场景',
+      'keySpecs': '规格',
+      'subCategory': '细分品类',
+    };
+    for (final entry in attrLabels.entries) {
+      final value = attrs[entry.key];
+      if (value != null && value.toString().trim().isNotEmpty) {
+        fields.add(MapEntry(entry.value, value.toString()));
+      }
+    }
+    return fields;
+  }
+
+  Widget _recognitionFieldChip(
+      String label, String value, ReplyCard recognitionCard) {
+    return ActionChip(
+      onPressed: () => _openCorrectionSheet(recognitionCard),
+      label: Text('$label：$value', style: const TextStyle(fontSize: 12)),
+      backgroundColor: AppColors.panelSoft,
+      side: const BorderSide(color: AppColors.line),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 
@@ -1086,6 +1282,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildProductRow(ProductItem p) {
+    final isFavorite = _favoriteProductIds.contains(p.productId);
     return Container(
       margin: const EdgeInsets.only(bottom: 1),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
@@ -1154,7 +1351,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 Row(
                   children: [
                     TextButton(
-                      onPressed: () {},
+                      key: Key('go_${p.productId}'),
+                      onPressed: () => _showProductJumpSheet(p),
                       style: TextButton.styleFrom(
                         padding: EdgeInsets.zero,
                         minimumSize: const Size(48, 28),
@@ -1162,6 +1360,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         foregroundColor: AppColors.accent,
                       ),
                       child: const Text('去看看', style: TextStyle(fontSize: 12)),
+                    ),
+                    const SizedBox(width: 12),
+                    TextButton.icon(
+                      key: Key('favorite_${p.productId}'),
+                      onPressed: () => _addProductToFavorites(p),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(58, 28),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        foregroundColor:
+                            isFavorite ? AppColors.priceRed : AppColors.inkSoft,
+                      ),
+                      icon: Icon(
+                        isFavorite ? Icons.favorite : Icons.favorite_border,
+                        size: 14,
+                      ),
+                      label: Text(isFavorite ? '已收藏' : '收藏',
+                          style: const TextStyle(fontSize: 12)),
                     ),
                     const SizedBox(width: 12),
                     TextButton(
