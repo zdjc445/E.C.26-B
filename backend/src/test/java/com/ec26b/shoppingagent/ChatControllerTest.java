@@ -83,6 +83,21 @@ class ChatControllerTest {
     }
 
     @Test
+    void shouldExposeCategoryInFilterSummary() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sessionId = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sessionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐耳机"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_list"))
+                .andExpect(jsonPath("$.data.cards[0].filterSummary", hasItem("品类：耳机")));
+    }
+
+    @Test
     void shouldApplyBudgetFromDirectText() throws Exception {
         var result = mockMvc.perform(post("/api/chat/sessions"))
                 .andExpect(status().isOk())
@@ -398,6 +413,10 @@ class ChatControllerTest {
                 List.of(), List.of());
 
         assertEquals("product_recommendation", reply.replyType());
+        var filterSummary = reply.cards().get(0).filterSummary();
+        assertTrue(filterSummary.contains("品类：耳机"));
+        assertTrue(filterSummary.contains("预算≤300元"));
+        assertTrue(filterSummary.contains("颜色：黑色"));
         var products = reply.cards().get(0).products();
         assertTrue(products.size() > 0, "should have matching products");
         for (var p : products) {
@@ -618,6 +637,8 @@ class ChatControllerTest {
                         .content(objectMapper.writeValueAsString(body2)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
+                .andExpect(jsonPath("$.data.cards[0].filterSummary",
+                        hasItems("品类：耳机", "预算≤300元", "颜色：黑色")))
                 .andExpect(jsonPath("$.data.cards[0].products[*].title",
                         everyItem(containsString("耳机"))))
                 .andExpect(jsonPath("$.data.cards[0].products[*].price",
@@ -801,7 +822,206 @@ class ChatControllerTest {
                         .content(objectMapper.writeValueAsString(body2)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.cards[0].cardType").value("product_list"))
+                .andExpect(jsonPath("$.data.cards[0].filterSummary",
+                        hasItems("品类：耳机", "预算≤30元", "颜色：黑色")))
                 .andExpect(jsonPath("$.data.cards[1].cardType").value("comparison"))
                 .andExpect(jsonPath("$.data.cards.length()").value(2));
+    }
+
+    // ── Brand, platform, sort, minRating natural-language filtering ──
+
+    @Test
+    void shouldFilterByBrandInNaturalLanguage() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        var body = Map.of("text", "我想买耐克的运动鞋");
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
+                .andExpect(jsonPath("$.data.cards[0].products[*].title",
+                        everyItem(containsString("耐克"))));
+    }
+
+    @Test
+    void shouldFilterByPlatformInNaturalLanguage() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        var body = Map.of("text", "只看京东的耳机");
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[0].products[*].platform",
+                        everyItem(is("京东-mock"))));
+    }
+
+    @Test
+    void shouldSortByPriceAscInNaturalLanguage() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        var body = Map.of("text", "耳机按价格从低到高");
+        var resp = mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk()).andReturn();
+        var json = objectMapper.readTree(resp.getResponse().getContentAsString());
+        var products = json.at("/data/cards/0/products");
+        double prev = -1;
+        for (var p : products) {
+            double price = p.path("price").asDouble();
+            assertTrue(price >= prev, "products should be sorted ascending by price");
+            prev = price;
+        }
+    }
+
+    @Test
+    void shouldFilterByMinRatingInNaturalLanguage() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        var body = Map.of("text", "评分4.8以上的耳机");
+        var resp = mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk()).andReturn();
+        var json = objectMapper.readTree(resp.getResponse().getContentAsString());
+        for (var p : json.at("/data/cards/0/products")) {
+            assertTrue(p.path("rating").asDouble() >= 4.8);
+        }
+    }
+
+    @Test
+    void shouldExposeBrandPlatformAndRatingInFilterSummary() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        var body = Map.of("text", "只看京东索尼评分4.8以上的耳机");
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[0].filterSummary",
+                        hasItems("品类：耳机", "品牌：索尼", "平台：京东", "评分≥4.8")));
+    }
+
+    @Test
+    void shouldExposePriceHistoryAndMatchedPreferences() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        var body = Map.of("text", "300以内的耳机，便宜一点");
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[0].products[0].priceHistory").isArray())
+                .andExpect(jsonPath("$.data.cards[0].products[0].matchedPreferences").isArray());
+    }
+
+    @Test
+    void shouldExposePlatformAveragePrice() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐运动鞋"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[1].platformStats.京东-mock.averagePrice").isNumber())
+                .andExpect(jsonPath("$.data.cards[1].platformStats.京东-mock.lowestPrice").isNumber());
+    }
+
+    @Test
+    void shouldDynamicallySuggestForRecognitionCategory() throws Exception {
+        var sessionResult = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(sessionResult.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+
+        var file = new org.springframework.mock.web.MockMultipartFile(
+                "file", "shoe.jpg", "image/jpeg", "test-image-bytes".getBytes());
+        var upResult = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .multipart("/api/images/upload").file(file))
+                .andExpect(status().isOk()).andReturn();
+        String imageId = objectMapper.readTree(upResult.getResponse().getContentAsString())
+                .get("data").get("imageId").asText();
+
+        // Image with category=运动鞋 (mock provider default)
+        var imgBody = Map.of("imageIds", List.of(imageId));
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(imgBody)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[1].cardType").value("clarification"))
+                .andExpect(jsonPath("$.data.cards[1].options[*].optionId",
+                        hasItem("lowest_price")))
+                .andExpect(jsonPath("$.data.cards[1].options[*].optionId",
+                        hasItem("style_similar")))
+                .andExpect(jsonPath("$.data.cards[1].options[*].optionId",
+                        hasItem("price_history")));
+    }
+
+    @Test
+    void shouldRecommendBackpackCategoryViaText() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐背包"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[0].products.length()").value(12));
+    }
+
+    @Test
+    void shouldRecommendSmartwatchCategoryViaText() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐智能手表"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[0].products.length()").value(12))
+                .andExpect(jsonPath("$.data.cards[0].products[*].title",
+                        everyItem(containsString("手表"))));
+    }
+
+    @Test
+    void shouldInheritPlatformFilterAcrossTurns() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+
+        // Turn 1: 只看京东的耳机
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("text", "只看京东的耳机"))))
+                .andExpect(status().isOk());
+
+        // Turn 2: 300以内 — should still only show JD
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("text", "300以内"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[0].products[*].platform",
+                        everyItem(is("京东-mock"))))
+                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                        everyItem(lessThanOrEqualTo(300.0))));
     }
 }

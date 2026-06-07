@@ -3,10 +3,27 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
+import '../alerts/price_alert_api.dart';
+import '../auth/auth_controller.dart';
+import '../favorites/favorite_api.dart';
+import '../voice/voice_api.dart';
 import 'chat_controller.dart';
 import 'chat_history_drawer.dart';
 import 'chat_models.dart';
+
+final favoriteApiInChatProvider = Provider<FavoriteApi>((ref) {
+  return FavoriteApi(baseUrl: ref.watch(apiBaseUrlProvider));
+});
+
+final priceAlertApiInChatProvider = Provider<PriceAlertApi>((ref) {
+  return PriceAlertApi(baseUrl: ref.watch(apiBaseUrlProvider));
+});
+
+final voiceApiProvider = Provider<VoiceApi>((ref) {
+  return VoiceApi(baseUrl: ref.watch(apiBaseUrlProvider));
+});
 
 /// Chat-style shopping agent home screen.
 class ChatScreen extends ConsumerStatefulWidget {
@@ -130,13 +147,115 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  void _onVoiceTap() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('语音输入功能即将上线'),
-        duration: Duration(seconds: 2),
-      ),
+  /// Demo voice flow: synthesizes a tiny audio buffer and round-trips the
+  /// `/api/voice/transcribe` endpoint. Real microphone capture can plug in by
+  /// providing real bytes here (e.g. via the `record` plugin).
+  Future<void> _onVoiceTap() async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(
+      content: Text('正在向语音服务发送演示音频…'),
+      duration: Duration(seconds: 1),
+    ));
+    try {
+      final api = ref.read(voiceApiProvider);
+      final result = await api.transcribeBytes(
+          List<int>.generate(64, (i) => i % 256));
+      if (!mounted) return;
+      _textController.text = result.text;
+      messenger.showSnackBar(SnackBar(
+        content: Text('语音转写（${result.provider}${result.fallbackUsed ? "·fallback" : ""}）：${result.text}'),
+        duration: const Duration(seconds: 2),
+      ));
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('语音转写失败：$e')));
+      }
+    }
+  }
+
+  Future<void> _addToFavorites(ReplyCard card) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final productId = card.productName != null ? card.productName! : 'unknown';
+    final payload = <String, dynamic>{
+      'productId': productId,
+      'title': card.productName ?? '推荐商品',
+      'platform': card.platform ?? '',
+      'price': card.price ?? 0,
+      'shopName': null,
+      'brand': null,
+    };
+    try {
+      final token = ref.read(authControllerProvider).session?.token;
+      await ref.read(favoriteApiInChatProvider).add(payload, token: token);
+      if (mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('已加入收藏')));
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('收藏失败：$e')));
+      }
+    }
+  }
+
+  Future<void> _setPriceAlert(ReplyCard card) async {
+    if (card.price == null) return;
+    final controller = TextEditingController(
+        text: (card.price! * 0.9).round().toString());
+    final result = await showDialog<double>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('设置价格提醒'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('当 ${card.productName ?? "该商品"} 价格 ≤ 以下数值时触发：'),
+              const SizedBox(height: 8),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(prefixText: '¥ '),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final v = double.tryParse(controller.text);
+                Navigator.of(ctx).pop(v);
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
     );
+    if (result == null || result <= 0) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final token = ref.read(authControllerProvider).session?.token;
+      await ref.read(priceAlertApiInChatProvider).create({
+        'productId': card.productName ?? 'unknown',
+        'title': card.productName ?? '推荐商品',
+        'platform': card.platform ?? '',
+        'targetPrice': result,
+        'note': '从推荐卡创建',
+      }, token: token);
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(
+          content: Text('已设置价格提醒：¥${result.toStringAsFixed(0)}'),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('设置失败：$e')));
+      }
+    }
   }
 
   void _openCorrectionSheet(ReplyCard recognitionCard) {
@@ -601,6 +720,31 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             Text(card.reason!,
                 style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
           ],
+          // Quick actions: favorite / price alert
+          if (card.productName != null) ...[
+            const SizedBox(height: 8),
+            Row(children: [
+              OutlinedButton.icon(
+                onPressed: () => _addToFavorites(card),
+                icon: const Icon(Icons.favorite_border, size: 14),
+                label: const Text('收藏', style: TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  minimumSize: const Size(0, 28),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () => _setPriceAlert(card),
+                icon: const Icon(Icons.notifications_outlined, size: 14),
+                label: const Text('价格提醒', style: TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  minimumSize: const Size(0, 28),
+                ),
+              ),
+            ]),
+          ],
           // Provider status
           if (card.intentProvider != null || card.explanationProvider != null) ...[
             const SizedBox(height: 6),
@@ -776,8 +920,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           if (card.confidence != null)
             _recognitionRow(
                 '置信度',
-                (card.confidence! * 100).toStringAsFixed(0) +
-                    '%'),
+                '${(card.confidence! * 100).toStringAsFixed(0)}%'),
           if (card.aiProvider != null)
             _recognitionRow('AI Provider', card.aiProvider!),
           if (card.fallbackUsed == true)
@@ -852,6 +995,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             Text(card.title,
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
           ]),
+          if (card.filterSummary.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('当前条件：${card.filterSummary.join(' / ')}',
+                style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
+          ],
           const SizedBox(height: 8),
           if (products.isEmpty)
             const Text('暂无符合条件的商品',
@@ -879,6 +1027,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           const SizedBox(height: 4),
           Row(children: [
             _platformBadge(p.platform),
+            if (p.brand != null && p.brand!.isNotEmpty) ...[
+              const SizedBox(width: 4),
+              _brandBadge(p.brand!),
+            ],
             const SizedBox(width: 8),
             Text('¥${p.price.toStringAsFixed(0)}',
                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.priceRed)),
@@ -899,6 +1051,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             Text('已售${p.sales > 9999 ? '${(p.sales / 10000).toStringAsFixed(1)}万' : '${p.sales}'}',
                 style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
           ]),
+          if (p.matchedPreferences.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Wrap(spacing: 4, runSpacing: 4,
+                children: p.matchedPreferences.map(_matchBadge).toList()),
+          ],
           if (p.tags.isNotEmpty) ...[
             const SizedBox(height: 4),
             Wrap(spacing: 4, children: p.tags.map((t) => Container(
@@ -907,9 +1064,88 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               child: Text(t, style: const TextStyle(fontSize: 9, color: AppColors.accent)),
             )).toList()),
           ],
+          if (p.priceHistory.length >= 2) ...[
+            const SizedBox(height: 6),
+            Row(children: [
+              const Icon(Icons.show_chart, size: 12, color: AppColors.inkSoft),
+              const SizedBox(width: 4),
+              const Text('近期价格走势',
+                  style: TextStyle(fontSize: 10, color: AppColors.inkSoft)),
+              const SizedBox(width: 6),
+              SizedBox(
+                width: 90,
+                height: 18,
+                child: CustomPaint(painter: _PriceSparkline(p.priceHistory)),
+              ),
+              const SizedBox(width: 6),
+              Text(_priceTrendLabel(p.priceHistory),
+                  style: TextStyle(fontSize: 10,
+                      color: _priceTrendColor(p.priceHistory))),
+            ]),
+          ],
         ],
       ),
     );
+  }
+
+  Widget _brandBadge(String brand) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.good.withAlpha(20),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(brand,
+          style: const TextStyle(fontSize: 10, color: AppColors.good,
+              fontWeight: FontWeight.w600)),
+    );
+  }
+
+  Widget _matchBadge(String key) {
+    final label = switch (key) {
+      'low_price' => '低价命中',
+      'official_store' => '官方/自营',
+      'fast_delivery' => '物流快',
+      'high_rating' => '高评分',
+      'high_sales' => '高销量',
+      'budget_match' => '预算命中',
+      'brand_match' => '品牌命中',
+      'min_rating_met' => '评分门槛达标',
+      _ => key,
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.good.withAlpha(15),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: AppColors.good.withAlpha(40), width: 0.6),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.check, size: 9, color: AppColors.good),
+        const SizedBox(width: 2),
+        Text(label, style: const TextStyle(fontSize: 9, color: AppColors.good)),
+      ]),
+    );
+  }
+
+  String _priceTrendLabel(List<double> hist) {
+    final first = hist.first;
+    final last = hist.last;
+    if (last < first) {
+      final pct = ((first - last) / first * 100).toStringAsFixed(0);
+      return '↓ $pct%';
+    }
+    if (last > first) {
+      final pct = ((last - first) / first * 100).toStringAsFixed(0);
+      return '↑ $pct%';
+    }
+    return '持平';
+  }
+
+  Color _priceTrendColor(List<double> hist) {
+    if (hist.last < hist.first) return AppColors.good;
+    if (hist.last > hist.first) return AppColors.priceRed;
+    return AppColors.inkSoft;
   }
 
   Widget _buildComparisonCard(ReplyCard card) {
@@ -938,17 +1174,37 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           else
             ...stats.entries.map((e) {
             final s = e.value as Map<String, dynamic>;
+            final lowest = (s['lowestPrice'] as num?)?.toStringAsFixed(0) ?? '-';
+            final avg = (s['averagePrice'] as num?)?.toStringAsFixed(0);
+            final highlight = s['highlight'] as String?;
             return Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: Row(children: [
-                _platformBadge(s['platform'] as String? ?? e.key),
-                const Spacer(),
-                Text('最低 ¥${(s['lowestPrice'] as num?)?.toStringAsFixed(0) ?? '-'}',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.priceRed)),
-                const SizedBox(width: 8),
-                Text('${s['productCount'] ?? 0}件',
-                    style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
-              ]),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    _platformBadge(s['platform'] as String? ?? e.key),
+                    const Spacer(),
+                    Text('最低 ¥$lowest',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                            color: AppColors.priceRed)),
+                    if (avg != null) ...[
+                      const SizedBox(width: 8),
+                      Text('均价 ¥$avg',
+                          style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+                    ],
+                    const SizedBox(width: 8),
+                    Text('${s['productCount'] ?? 0}件',
+                        style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+                  ]),
+                  if (highlight != null && highlight.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, left: 2),
+                      child: Text(highlight,
+                          style: const TextStyle(fontSize: 10, color: AppColors.inkSoft)),
+                    ),
+                ],
+              ),
             );
           }),
         ],
@@ -1107,4 +1363,38 @@ class _AttrRow {
   final TextEditingController valueCtrl;
 
   _AttrRow({required this.keyCtrl, required this.valueCtrl});
+}
+
+class _PriceSparkline extends CustomPainter {
+  final List<double> values;
+
+  _PriceSparkline(this.values);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (values.length < 2) return;
+    final paint = Paint()
+      ..color = AppColors.accent
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke
+      ..isAntiAlias = true;
+    final min = values.reduce((a, b) => a < b ? a : b);
+    final max = values.reduce((a, b) => a > b ? a : b);
+    final range = (max - min).abs() < 0.0001 ? 1.0 : (max - min);
+    final dx = size.width / (values.length - 1);
+    final path = Path();
+    for (var i = 0; i < values.length; i++) {
+      final x = i * dx;
+      final y = size.height - ((values[i] - min) / range) * size.height;
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

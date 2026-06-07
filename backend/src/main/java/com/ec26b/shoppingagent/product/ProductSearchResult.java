@@ -12,7 +12,12 @@ public record ProductSearchResult(
     public record PlatformStats(
             String platform,
             double lowestPrice,
+            double averagePrice,
             int productCount,
             String highlight
-    ) {}
+    ) {
+        public PlatformStats(String platform, double lowestPrice, int productCount, String highlight) {
+            this(platform, lowestPrice, lowestPrice, productCount, highlight);
+        }
+    }
 }

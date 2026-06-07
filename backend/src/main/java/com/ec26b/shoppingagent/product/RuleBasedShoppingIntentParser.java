@@ -12,7 +12,7 @@ import java.util.List;
 public class RuleBasedShoppingIntentParser implements ShoppingIntentParser {
 
     private static final List<String> SUPPORTED_CATEGORIES =
-            List.of("运动鞋", "耳机", "吹风机");
+            List.of("运动鞋", "耳机", "吹风机", "背包", "智能手表");
 
     private final UserPreferenceParser preferenceParser;
 
@@ -54,14 +54,13 @@ public class RuleBasedShoppingIntentParser implements ShoppingIntentParser {
         if (text.contains("运动鞋")) return "运动鞋";
         if (text.contains("耳机")) return "耳机";
         if (text.contains("吹风机")) return "吹风机";
+        if (text.contains("背包") || text.contains("书包") || text.contains("双肩包")) return "背包";
+        if (text.contains("智能手表") || text.contains("手表")) return "智能手表";
         return null;
     }
 
     static String extractKeyword(String text) {
-        if (text == null) return "运动鞋";
-        if (text.contains("运动鞋")) return "运动鞋";
-        if (text.contains("耳机")) return "耳机";
-        if (text.contains("吹风机")) return "吹风机";
-        return "运动鞋";
+        String explicit = parseExplicitKeyword(text);
+        return explicit != null ? explicit : "运动鞋";
     }
 }

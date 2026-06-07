@@ -239,9 +239,21 @@ class ChatController extends ChangeNotifier {
 
   String _optionLabel(String optionId) {
     return switch (optionId) {
-      'lowest_price' => '价格最低',
-      'official_store' => '官方店铺',
+      'lowest_price' => '查看同款低价',
+      'official_store' => '只看官方旗舰店',
       'fast_delivery' => '配送更快',
+      'style_similar' => '相似风格推荐',
+      'filter_color' => '筛选颜色/品牌/尺码',
+      'noise_cancel' => '降噪款优先',
+      'high_rating' => '好评率优先',
+      'high_power' => '大功率优先',
+      'portable' => '便携折叠款',
+      'large_capacity' => '大容量款',
+      'business' => '商务款',
+      'long_battery' => '长续航款',
+      'sports' => '运动款',
+      'filter_same_brand' => '只看该品牌',
+      'price_history' => '查看历史价格走势',
       _ => optionId,
     };
   }

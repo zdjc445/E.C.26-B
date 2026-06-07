@@ -109,6 +109,7 @@ class ReplyCard {
   // product fields
   final List<ProductItem>? products;
   final Map<String, dynamic>? platformStats;
+  final List<String> filterSummary;
   // explanation fields
   final int? decisionScore;
   final List<DecisionSignal>? decisionSignals;
@@ -143,6 +144,7 @@ class ReplyCard {
     this.recognitionId,
     this.products,
     this.platformStats,
+    this.filterSummary = const [],
     this.decisionScore,
     this.decisionSignals,
     this.evidence,
@@ -184,6 +186,10 @@ class ReplyCard {
           ?.map((p) => ProductItem.fromJson(p as Map<String, dynamic>))
           .toList(),
       platformStats: _stringMap(json['platformStats']),
+      filterSummary: (json['filterSummary'] as List?)
+              ?.map((v) => v.toString())
+              .toList() ??
+          const [],
       decisionScore: json['decisionScore'] as int?,
       decisionSignals: (json['decisionSignals'] as List?)
           ?.map((s) => DecisionSignal.fromJson(s as Map<String, dynamic>))
@@ -294,6 +300,9 @@ class ProductItem {
   final List<String> tags;
   final List<String> reasons;
   final double score;
+  final String? brand;
+  final List<double> priceHistory;
+  final List<String> matchedPreferences;
 
   const ProductItem({
     required this.productId,
@@ -309,6 +318,9 @@ class ProductItem {
     required this.tags,
     required this.reasons,
     required this.score,
+    this.brand,
+    this.priceHistory = const [],
+    this.matchedPreferences = const [],
   });
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {
@@ -326,6 +338,15 @@ class ProductItem {
       tags: (json['tags'] as List).map((t) => t.toString()).toList(),
       reasons: (json['reasons'] as List).map((r) => r.toString()).toList(),
       score: (json['score'] as num).toDouble(),
+      brand: json['brand'] as String?,
+      priceHistory: (json['priceHistory'] as List?)
+              ?.map((v) => (v as num).toDouble())
+              .toList() ??
+          const [],
+      matchedPreferences: (json['matchedPreferences'] as List?)
+              ?.map((v) => v.toString())
+              .toList() ??
+          const [],
     );
   }
 }

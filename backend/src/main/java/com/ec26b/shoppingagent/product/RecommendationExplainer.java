@@ -56,6 +56,29 @@ public class RecommendationExplainer {
             evidence.add(new RecommendationEvidence("color",
                     "你偏好「" + pref.color() + "」颜色。"));
         }
+        if (pref.brand() != null) {
+            evidence.add(new RecommendationEvidence("brand",
+                    "你指定了品牌「" + pref.brand() + "」。"));
+        }
+        if (pref.platforms() != null && !pref.platforms().isEmpty()) {
+            evidence.add(new RecommendationEvidence("platform",
+                    "你只看以下平台：" + String.join("、", pref.platforms()) + "。"));
+        }
+        if (pref.minRating() != null) {
+            evidence.add(new RecommendationEvidence("rating",
+                    "你要求评分 ≥ " + pref.minRating() + " 星。"));
+        }
+        if (pref.sortBy() != null) {
+            String sortLabel = switch (pref.sortBy()) {
+                case "price_asc" -> "价格从低到高";
+                case "price_desc" -> "价格从高到低";
+                case "sales_desc" -> "销量优先";
+                case "rating_desc" -> "好评率优先";
+                default -> "综合推荐";
+            };
+            evidence.add(new RecommendationEvidence("sort",
+                    "按「" + sortLabel + "」排序。"));
+        }
         ProductOffer top = result.topPick();
         if (top != null) {
             String priceEvidence = pref.maxPrice() != null
