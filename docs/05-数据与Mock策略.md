@@ -58,6 +58,20 @@
 - `priceHistory`（新增，5 点近期价格走势）
 - `matchedPreferences`（新增，由 `RecommendationScorer` 评分时填充）
 
+### 轻量品类 taxonomy
+
+`mock-data/category-taxonomy.json` 维护当前标准品类、别名和属性 schema。后端 `CategoryResolver` 在文本解析、Ark 识别结果、多轮上下文合并和动态建议卡生成前统一做品类归一。
+
+当前归一示例：
+
+- `头戴式蓝牙耳机` / `真无线蓝牙耳机` → `耳机`
+- `跑鞋` → `运动鞋`
+- `电吹风` → `吹风机`
+- `双肩包` → `背包`
+- `运动手表` → `智能手表`
+
+这是轻量 taxonomy 检索实现。真实上线时可替换为 RAG：将标准品类、别名和属性 schema 建索引，先检索 TopK，再让 AI 在受限集合内选择标准品类。
+
 ### 推荐评分
 
 `MockProductSourceProvider` 先生成当前品类下三平台商品，再按预算、颜色、品牌、平台、最低评分依次过滤，最后按 sortBy 排序。
@@ -106,12 +120,13 @@
 mock-data/
 ├── README.md
 ├── chat-agent-scenarios.json
+├── category-taxonomy.json
 ├── recognition-samples.json
 ├── products.json
 └── platform-products.json
 ```
 
-这些文件用于说明和演示，不作为当前后端运行时的唯一数据来源。
+其中 `category-taxonomy.json` 会被后端 `CategoryResolver` 读取用于品类归一；其他文件主要用于说明和演示，不作为当前后端运行时的唯一商品数据来源。
 
 ## 图片识别数据
 
@@ -140,4 +155,4 @@ mock-data/
 - 不包含爬取数据。
 - 不包含真实密钥、Token 或个人信息。
 - 不把 Mock 数据描述为真实平台数据。
-- 真实平台接口接入后，Mock 数据仍作为演示模式和降级数据。
+- 真实平台接口不在当前交付范围；商品数据固定使用 Mock。

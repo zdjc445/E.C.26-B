@@ -25,6 +25,7 @@
 - 拍照/相册选择、图片上传和本地预览
 - 识别结果卡片、识别修正面板
 - 规则/Ark 购物意图解析，Ark 不可用时回退规则解析
+- 轻量 taxonomy 检索归一：把 `头戴式蓝牙耳机`、`真无线蓝牙耳机` 等细分词归一为标准品类
 - 多轮自然语言追加筛选：品类、预算、颜色、品牌、平台、排序、最低评分跨轮合并
 - 推荐解释增强：综合分、决策信号、证据摘要、风险提示、商品胜因/不足
 - 多平台 Mock 商品：`京东-mock`、`拼多多-mock`、`淘宝-mock`
@@ -117,8 +118,8 @@ C:\flutter\flutter\bin\flutter.bat test
 
 当前记录：
 
-- 后端测试：124 tests，0 failures，0 errors
-- Flutter analyze：0 error / 0 warning，14 条 info
+- 后端测试：134 tests，0 failures，0 errors
+- Flutter analyze：0 error / 0 warning，28 条 info
 - Flutter test：23 widget tests，全部通过
 
 ## 自然语言筛选示例

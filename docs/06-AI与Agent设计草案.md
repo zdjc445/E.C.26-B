@@ -37,6 +37,7 @@ AiRecognitionProvider
   - `attributes`
   - `confidence`
   - `explanation`
+- Prompt 要求 `category` 优先输出标准品类；细分词进入 `attributes.subCategory`。后端仍通过 `CategoryResolver` 做最终归一。
 - 包含 `normalizeContentType` 把错误声明的 `application/octet-stream` 通过头字节修正为 `image/jpeg` 或 `image/png`。
 
 ### FallbackRecognitionProvider
@@ -99,6 +100,8 @@ MockAgent 读取会话上下文
 追加筛选：合并当前文本、历史文本和识别卡 category，跨轮累积偏好
 选项：继承最近文本预算 + 最近识别 category，并合并选项偏好
         ↓
+CategoryResolver 通过 mock-data/category-taxonomy.json 归一标准品类
+        ↓
 MockProductSourceProvider 生成 5 品类 × 3 平台 × 4 商品
         ↓
 按预算、颜色、品牌、平台、最低评分过滤；按 sortBy 排序
@@ -140,11 +143,25 @@ product_list 携带 filterSummary，前端显式展示当前生效条件
 
 合并规则：
 
-- **品类：** 当前文本明确品类 > 历史文本明确品类 > 历史识别卡 category > 默认运动鞋。
+- **品类：** 当前文本明确品类 > 历史文本明确品类 > 历史识别卡 category > 默认运动鞋；所有入口先经过 `CategoryResolver` 归一为标准品类。
 - **数值字段（maxPrice/color/brand/平台/排序/最低评分）：** 使用最近一次明确值，当前文本可覆盖历史值。
 - **偏好布尔（officialStore/fastDelivery/lowestPrice/highRating/highSales）：** 跨轮累积。
 - `ProductSearchQuery` 当前包含 `keyword`、`preferences`、`maxPrice`、`color`、`brand`、`platforms`、`sortBy`、`minRating`。
 - `MockProductSourceProvider` 在预算过滤后依次进行颜色、品牌、平台、最低评分过滤，最后按 sortBy 排序。
+
+## 品类归一与 RAG 扩展
+
+`CategoryResolver` 当前使用本地 taxonomy JSON 做轻量检索，维护标准品类、别名和属性 schema。它覆盖规则文本解析、Ark 文本意图解析、Ark 图片识别 category、多轮上下文和动态建议卡。
+
+当前示例：
+
+- `头戴式蓝牙耳机` / `真无线蓝牙耳机` → `耳机`
+- `跑鞋` → `运动鞋`
+- `电吹风` → `吹风机`
+- `双肩包` → `背包`
+- `运动手表` → `智能手表`
+
+真实上线时可把本地 taxonomy 检索替换为 RAG：标准品类、别名和属性 schema 建索引，先召回 TopK，再由 AI 在受限集合中选择标准 `categoryId`。
 
 ## 已完成推荐解释增强
 
