@@ -182,12 +182,15 @@ public class MockAgent {
         }
 
         String effectiveCategory;
+        String normalizedRecognitionCategory = RuleBasedShoppingIntentParser.parseExplicitKeyword(histRecCategory);
         if (currentExplicitKeyword != null) {
             effectiveCategory = currentExplicitKeyword;
         } else if (histKeyword != null) {
             effectiveCategory = histKeyword;
         } else if (RuleBasedShoppingIntentParser.isSupportedCategory(histRecCategory)) {
             effectiveCategory = histRecCategory;
+        } else if (normalizedRecognitionCategory != null) {
+            effectiveCategory = normalizedRecognitionCategory;
         } else {
             effectiveCategory = "运动鞋";
         }

@@ -41,6 +41,8 @@ public class RuleBasedShoppingIntentParser implements ShoppingIntentParser {
 
     public static String resolveKeyword(String recognitionCategory, String parsedKeyword) {
         if (isSupportedCategory(recognitionCategory)) return recognitionCategory;
+        String normalizedRecognitionCategory = parseExplicitKeyword(recognitionCategory);
+        if (normalizedRecognitionCategory != null) return normalizedRecognitionCategory;
         if (isSupportedCategory(parsedKeyword)) return parsedKeyword;
         return "运动鞋";
     }

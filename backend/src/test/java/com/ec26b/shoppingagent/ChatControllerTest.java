@@ -393,10 +393,10 @@ class ChatControllerTest {
 
     @Test
     void shouldRefineRecognitionCategoryWithBudgetAndColor() {
-        // Build a session with a recognition card whose category="耳机"
+        // Build a session with an Ark-style fine-grained recognition category.
         var session = chatStore.createSession();
         var recCard = MockAgent.Card.recognition(
-                "img-001", "耳机", "Mock 品牌", "Mock 型号",
+                "img-001", "头戴式蓝牙耳机", "Mock 品牌", "Mock 型号",
                 List.of("耳机", "蓝牙"), Map.of("color", "黑色"),
                 0.85, "mock", false, "演示识别结果。", "rec-test-003");
         var agentReply = new MockAgent.AgentReply(

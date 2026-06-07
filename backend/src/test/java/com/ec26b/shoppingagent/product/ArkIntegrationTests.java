@@ -60,6 +60,8 @@ class ArkIntegrationTests {
     void resolveKeywordShouldPrioritizeRecognitionCategory() {
         assertEquals("耳机",
                 RuleBasedShoppingIntentParser.resolveKeyword("耳机", "运动鞋"));
+        assertEquals("耳机",
+                RuleBasedShoppingIntentParser.resolveKeyword("头戴式蓝牙耳机", "运动鞋"));
         assertEquals("吹风机",
                 RuleBasedShoppingIntentParser.resolveKeyword("吹风机", "耳机"));
         // unsupported recognition → fallback to parsed
