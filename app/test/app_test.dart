@@ -7,7 +7,10 @@ import 'package:go_router/go_router.dart';
 import 'package:shopping_agent_app/features/chat/chat_api.dart';
 import 'package:shopping_agent_app/features/chat/chat_controller.dart';
 import 'package:shopping_agent_app/features/chat/chat_models.dart';
+import 'package:shopping_agent_app/features/alerts/price_alert_api.dart';
+import 'package:shopping_agent_app/features/alerts/price_alert_models.dart';
 import 'package:shopping_agent_app/features/chat/chat_screen.dart';
+import 'package:shopping_agent_app/features/chat/chat_providers.dart';
 import 'package:shopping_agent_app/features/chat/recognition_api.dart';
 import 'package:shopping_agent_app/features/favorites/favorite_api.dart';
 import 'package:shopping_agent_app/features/favorites/favorite_models.dart';
@@ -114,6 +117,32 @@ class FakeFavoriteApi extends FavoriteApi {
       brand: saved['brand'] as String?,
       imageUrl: saved['imageUrl'] as String?,
       productUrl: saved['productUrl'] as String?,
+      createdAt: '2026-06-07T10:00:00+08:00',
+    );
+  }
+}
+
+class FakePriceAlertApi extends PriceAlertApi {
+  FakePriceAlertApi() : super(baseUrl: 'http://test');
+
+  final List<Map<String, dynamic>> createdPayloads = [];
+  bool failCreate = false;
+
+  @override
+  Future<PriceAlertItem> create(Map<String, dynamic> payload,
+      {String? token}) async {
+    if (failCreate) {
+      throw Exception('创建提醒失败');
+    }
+    createdPayloads.add(Map<String, dynamic>.from(payload));
+    return PriceAlertItem(
+      id: createdPayloads.length,
+      productId: payload['productId'] as String,
+      title: payload['title'] as String,
+      platform: payload['platform'] as String? ?? '',
+      targetPrice: (payload['targetPrice'] as num).toDouble(),
+      triggered: false,
+      note: payload['note'] as String?,
       createdAt: '2026-06-07T10:00:00+08:00',
     );
   }
@@ -232,103 +261,145 @@ class FakeChatApi extends ChatApi {
       return AgentReply(
         replyId: 'reply-002',
         replyType: 'product_recommendation',
-        text: '我按你的偏好整理了几个平台的选择。',
+        text: '找到 5 组匹配商品，你更看重哪一点？',
         cards: [
-          ReplyCard(
-            cardType: 'product_list',
-            title: '多平台商品结果',
-            products: [
-              const ProductItem(
-                productId: 'jd-001',
-                title: 'Mock 运动鞋 京东自营',
-                platform: '京东-mock',
-                price: 299.00,
+          const ReplyCard(
+            cardType: 'product_group_list',
+            title: '匹配商品',
+            filterSummary: ['品类：运动鞋', '全部平台'],
+            groups: [
+              ProductGroup(
+                groupId: 'jd-001',
+                sameItemKey: null,
+                displayTitle: '耐克品牌运动鞋 轻便透气',
+                category: '运动鞋',
+                brand: '耐克',
+                thumbnailUrl: '',
+                bestPrice: 199.00,
                 originalPrice: 399.00,
-                shopName: '京东自营',
-                imageUrl: '',
-                productUrl: '',
-                rating: 4.8,
-                sales: 12000,
-                tags: ['自营', '好评'],
-                reasons: ['价格优惠', '官方/自营渠道'],
-                score: 7.0,
+                priceRange: PriceRange(min: 199.00, max: 299.00),
+                platformCount: 2,
+                platforms: [
+                  PlatformOfferSummary(
+                    productId: 'jd-001',
+                    platform: '京东-mock',
+                    price: 299.00,
+                    originalPrice: 399.00,
+                    shopName: '耐克京东自营',
+                    productUrl: '',
+                    rating: 4.8,
+                    sales: 12000,
+                    tags: ['自营', '透气'],
+                    reasons: ['价格优惠'],
+                  ),
+                  PlatformOfferSummary(
+                    productId: 'pdd-001',
+                    platform: '拼多多-mock',
+                    price: 199.00,
+                    originalPrice: 299.00,
+                    shopName: '品牌专营店',
+                    productUrl: '',
+                    rating: 4.5,
+                    sales: 58000,
+                    tags: ['爆款', '透气'],
+                    reasons: ['高销量'],
+                  ),
+                ],
+                highlights: ['最低 ¥199', '2 个平台有售', '高销量'],
+                matchLevel: 'strict',
+              ),
+              ProductGroup(
+                groupId: 'jd-002',
+                sameItemKey: null,
+                displayTitle: '阿迪达斯官方旗舰减震训练运动鞋',
+                category: '运动鞋',
+                brand: '阿迪达斯',
+                thumbnailUrl: '',
+                bestPrice: 329.00,
+                originalPrice: 499.00,
+                priceRange: PriceRange(min: 329.00, max: 389.00),
+                platformCount: 2,
+                platforms: [
+                  PlatformOfferSummary(
+                    productId: 'jd-002',
+                    platform: '京东-mock',
+                    price: 389.00,
+                    originalPrice: 499.00,
+                    shopName: '阿迪达斯官方旗舰店',
+                    productUrl: '',
+                    rating: 4.9,
+                    sales: 8500,
+                    tags: ['官方', '减震'],
+                    reasons: ['高评分'],
+                  ),
+                  PlatformOfferSummary(
+                    productId: 'tb-003',
+                    platform: '淘宝-mock',
+                    price: 329.00,
+                    originalPrice: 429.00,
+                    shopName: '阿迪达斯品牌官方店',
+                    productUrl: '',
+                    rating: 4.8,
+                    sales: 22000,
+                    tags: ['官方', '减震'],
+                    reasons: ['性价比'],
+                  ),
+                ],
+                highlights: ['最低 ¥329', '2 个平台有售', '高评分'],
+                matchLevel: 'strict',
+              ),
+              ProductGroup(
+                groupId: 'lining-running-shoe',
+                sameItemKey: 'lining-running-shoe',
+                displayTitle: '李宁透气网面跑步运动鞋',
+                category: '运动鞋',
+                brand: '李宁',
+                thumbnailUrl: '',
+                bestPrice: 169.00,
+                originalPrice: 299.00,
+                priceRange: PriceRange(min: 169.00, max: 219.00),
+                platformCount: 2,
+                platforms: [
+                  PlatformOfferSummary(
+                    productId: 'jd-004',
+                    platform: '京东-mock',
+                    price: 219.00,
+                    originalPrice: 299.00,
+                    shopName: '李宁品牌专营店',
+                    productUrl: '',
+                    rating: 4.4,
+                    sales: 18000,
+                    tags: ['透气', '跑步'],
+                    reasons: [],
+                  ),
+                  PlatformOfferSummary(
+                    productId: 'pdd-003',
+                    platform: '拼多多-mock',
+                    price: 169.00,
+                    originalPrice: 249.00,
+                    shopName: '李宁品牌折扣店',
+                    productUrl: '',
+                    rating: 4.2,
+                    sales: 78000,
+                    tags: ['性价比', '跑步', '透气'],
+                    reasons: ['高销量'],
+                  ),
+                ],
+                highlights: ['最低 ¥169', '2 个平台有售', '有优惠'],
+                matchLevel: 'strict',
               ),
             ],
-            platformStats: const {
-              '京东-mock': {
-                'platform': '京东-mock',
-                'lowestPrice': 299.0,
-                'productCount': 2,
-                'highlight': '自营保障'
-              },
-            },
           ),
-          ReplyCard(
-            cardType: 'comparison',
-            title: '平台比价',
-            platformStats: const {
-              '京东-mock': {
-                'platform': '京东-mock',
-                'lowestPrice': 299.0,
-                'productCount': 2,
-                'highlight': '自营保障'
-              },
-              '拼多多-mock': {
-                'platform': '拼多多-mock',
-                'lowestPrice': 199.0,
-                'productCount': 2,
-                'highlight': '价格优势'
-              },
-            },
-          ),
-          ReplyCard(
-            cardType: 'recommendation',
-            title: '推荐购买',
-            productName: 'Mock 商品',
-            platform: '京东-mock',
-            price: 299.00,
-            reason: '价格、店铺和匹配度综合更适合当前需求。',
-            decisionScore: 86,
-            decisionSignals: const [
-              DecisionSignal(
-                  key: 'match',
-                  label: '意图匹配',
-                  score: 85,
-                  explanation: '与搜索关键词相关。'),
-              DecisionSignal(
-                  key: 'price', label: '价格', score: 92, explanation: '价格符合预算。'),
-              DecisionSignal(
-                  key: 'reputation',
-                  label: '店铺信誉',
-                  score: 78,
-                  explanation: '评分较高。'),
-              DecisionSignal(
-                  key: 'channel',
-                  label: '渠道可信',
-                  score: 80,
-                  explanation: '平台可信任。'),
-              DecisionSignal(
-                  key: 'risk', label: '风险', score: 40, explanation: 'Mock 数据。'),
+          const ReplyCard(
+            cardType: 'clarification',
+            title: '你更想看哪类「运动鞋」推荐？',
+            options: [
+              ClarificationOption(optionId: 'lowest_price', label: '查看同款低价'),
+              ClarificationOption(optionId: 'official_store', label: '只看官方旗舰店'),
+              ClarificationOption(optionId: 'fast_delivery', label: '配送更快'),
+              ClarificationOption(optionId: 'style_similar', label: '相似风格推荐'),
+              ClarificationOption(optionId: 'price_history', label: '查看历史价格走势'),
             ],
-            evidence: const [
-              RecommendationEvidence(type: 'price', content: '价格符合预算。'),
-            ],
-            risks: const ['当前为 Mock 商品数据。'],
-            productAnalyses: const [
-              ProductAnalysis(
-                  productId: 'jd-001',
-                  platform: '京东-mock',
-                  title: 'Mock 运动鞋',
-                  rank: 1,
-                  score: 88,
-                  strengths: ['价格低', '自营'],
-                  weaknesses: []),
-            ],
-            intentProvider: 'rule',
-            intentFallbackUsed: false,
-            explanationProvider: 'rule',
-            explanationFallbackUsed: false,
-            notices: [],
           ),
         ],
       );
@@ -355,6 +426,52 @@ class FakeChatApi extends ChatApi {
             recognitionId: 'rec-test-001',
           ),
           ReplyCard(
+            cardType: 'product_group_list',
+            title: '匹配商品',
+            filterSummary: ['品类：运动鞋'],
+            groups: [
+              ProductGroup(
+                groupId: 'jd-001',
+                displayTitle: '耐克品牌运动鞋 轻便透气',
+                category: '运动鞋',
+                brand: '耐克',
+                thumbnailUrl: '',
+                bestPrice: 199.00,
+                originalPrice: 399.00,
+                priceRange: PriceRange(min: 199.00, max: 299.00),
+                platformCount: 2,
+                platforms: [
+                  PlatformOfferSummary(
+                    productId: 'jd-001',
+                    platform: '京东-mock',
+                    price: 299.00,
+                    originalPrice: 399.00,
+                    shopName: '耐克京东自营',
+                    productUrl: '',
+                    rating: 4.8,
+                    sales: 12000,
+                    tags: ['自营'],
+                    reasons: [],
+                  ),
+                  PlatformOfferSummary(
+                    productId: 'pdd-001',
+                    platform: '拼多多-mock',
+                    price: 199.00,
+                    originalPrice: 299.00,
+                    shopName: '品牌专营店',
+                    productUrl: '',
+                    rating: 4.5,
+                    sales: 58000,
+                    tags: ['爆款'],
+                    reasons: [],
+                  ),
+                ],
+                highlights: ['最低 ¥199', '2 个平台有售'],
+                matchLevel: 'strict',
+              ),
+            ],
+          ),
+          ReplyCard(
             cardType: 'clarification',
             title: '你更看重哪一点？',
             options: [
@@ -371,6 +488,13 @@ class FakeChatApi extends ChatApi {
       replyType: 'clarification',
       text: '我已经收到你的需求。你更看重哪一点？',
       cards: [
+        ReplyCard(
+          cardType: 'product_group_list',
+          title: '匹配商品',
+          filterSummary: ['品类：运动鞋'],
+          groups: [],
+          emptyReason: '请输入你想要的商品关键词以开始搜索。',
+        ),
         ReplyCard(
           cardType: 'clarification',
           title: '你更看重哪一点？',
@@ -389,11 +513,13 @@ class _TestOverrides {
   final FakeChatApi chatApi;
   final FakeRecognitionApi recApi;
   final FakeFavoriteApi favoriteApi;
+  final FakePriceAlertApi priceAlertApi;
 
   _TestOverrides()
       : chatApi = FakeChatApi(),
         recApi = FakeRecognitionApi(),
-        favoriteApi = FakeFavoriteApi();
+        favoriteApi = FakeFavoriteApi(),
+        priceAlertApi = FakePriceAlertApi();
 }
 
 Widget _wrapChat(Widget child, {_TestOverrides? overrides}) {
@@ -403,6 +529,7 @@ Widget _wrapChat(Widget child, {_TestOverrides? overrides}) {
       chatApiProvider.overrideWithValue(o.chatApi),
       recognitionApiProvider.overrideWithValue(o.recApi),
       favoriteApiInChatProvider.overrideWithValue(o.favoriteApi),
+      priceAlertApiInChatProvider.overrideWithValue(o.priceAlertApi),
       voiceApiProvider.overrideWithValue(const FakeVoiceApi()),
     ],
     child: MaterialApp(home: child),
@@ -423,6 +550,7 @@ Widget _wrapWithRouter({_TestOverrides? overrides}) {
       chatApiProvider.overrideWithValue(o.chatApi),
       recognitionApiProvider.overrideWithValue(o.recApi),
       favoriteApiInChatProvider.overrideWithValue(o.favoriteApi),
+      priceAlertApiInChatProvider.overrideWithValue(o.priceAlertApi),
       healthApiProvider.overrideWithValue(FakeHealthApi()),
       voiceApiProvider.overrideWithValue(const FakeVoiceApi()),
     ],
@@ -561,11 +689,19 @@ void main() {
       await tester.tap(find.text('价格最低'));
       await tester.pumpAndSettle();
 
-      // Should show product result list
+      // Should show product group list
       expect(find.textContaining('找到 '), findsWidgets);
-      expect(find.text('平台比价'), findsOneWidget);
-      // Should show user-facing platform names
-      expect(find.text('京东'), findsWidgets);
+      expect(find.text('匹配商品'), findsOneWidget);
+      // Should show minimal group cards with title, price, platform count, chevron
+      expect(find.textContaining('运动鞋'), findsWidgets);
+      expect(find.textContaining('¥'), findsWidgets);
+      expect(find.textContaining('个平台'), findsWidgets);
+      expect(find.byIcon(Icons.chevron_right), findsWidgets);
+      // Should NOT show brand labels, highlights, relaxed match tags in group row
+      expect(find.text('耐克'), findsNothing);
+      expect(find.text('放宽匹配'), findsNothing);
+      // Should show clarification card
+      expect(find.text('查看同款低价'), findsOneWidget);
     });
 
     testWidgets('recognition card renders with correct fields', (tester) async {
@@ -922,7 +1058,7 @@ void main() {
       expect(find.text('推荐耳机'), findsOneWidget);
     });
 
-    testWidgets('empty comparison card shows placeholder', (tester) async {
+    testWidgets('empty product group list shows empty reason', (tester) async {
       final ov = _TestOverrides();
       final completer = Completer<AgentReply>();
       ov.chatApi.stubSendMessage(completer);
@@ -938,19 +1074,28 @@ void main() {
         replyType: 'product_recommendation',
         text: '当前预算下暂无合适的 Mock 商品',
         cards: const [
-          ReplyCard(cardType: 'product_list', title: '多平台商品结果', products: []),
-          ReplyCard(cardType: 'comparison', title: '平台比价', platformStats: {}),
+          ReplyCard(
+            cardType: 'product_group_list',
+            title: '匹配商品',
+            groups: [],
+            emptyReason: '当前预算下暂无合适的 Mock 商品，请放宽条件。',
+          ),
+          ReplyCard(
+            cardType: 'clarification',
+            title: '你更看重哪一点？',
+            options: [
+              ClarificationOption(optionId: 'lowest_price', label: '价格最低'),
+            ],
+          ),
         ],
       ));
       await tester.pumpAndSettle();
 
-      expect(find.text('平台比价'), findsOneWidget);
-      expect(find.text('暂无可比价平台'), findsOneWidget);
-      expect(find.text('暂无符合条件的商品'), findsOneWidget);
+      expect(find.text('匹配商品'), findsOneWidget);
+      expect(find.text('当前预算下暂无合适的 Mock 商品，请放宽条件。'), findsOneWidget);
     });
 
-    testWidgets('recommendation card uses shopping app summary layout',
-        (tester) async {
+    testWidgets('product group list shows lightweight summary', (tester) async {
       final ov = _TestOverrides();
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
@@ -958,15 +1103,26 @@ void main() {
       await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pumpAndSettle();
 
-      expect(find.text('匹配度 86'), findsOneWidget);
-      expect(find.text('推荐理由'), findsOneWidget);
-      expect(find.text('注意事项'), findsOneWidget);
-      expect(find.text('为什么推荐它'), findsOneWidget);
-      expect(find.text('备选商品'), findsOneWidget);
+      // Should show product group list with minimal info only
+      expect(find.text('匹配商品'), findsOneWidget);
+      expect(find.textContaining('组'), findsWidgets);
+      // Should show price and platform count
+      expect(find.textContaining('¥'), findsWidgets);
+      expect(find.textContaining('个平台'), findsWidgets);
+      expect(find.byIcon(Icons.chevron_right), findsWidgets);
+      // Should NOT show highlights, tags, or heavy info in group row
+      expect(find.textContaining('最低 '), findsNothing);
+      expect(find.textContaining('评分'), findsNothing);
+      expect(find.textContaining('条评价'), findsNothing);
+      expect(find.text('放宽匹配'), findsNothing);
+      // Should show clarification card
+      expect(find.text('查看同款低价'), findsOneWidget);
+      // Should NOT show heavy recommendation cards
+      expect(find.text('推荐理由'), findsNothing);
+      expect(find.text('注意事项'), findsNothing);
+      expect(find.text('为什么推荐它'), findsNothing);
       expect(find.text('综合分 86'), findsNothing);
       expect(find.text('决策信号'), findsNothing);
-      expect(find.text('证据摘要'), findsNothing);
-      expect(find.text('商品对比'), findsNothing);
     });
 
     testWidgets('old recommendation card without explanation still works',
@@ -1319,7 +1475,8 @@ void main() {
       expect(find.text('自营保障，物流快'), findsOneWidget);
     });
 
-    testWidgets('product list shows active filter summary', (tester) async {
+    testWidgets('product group list shows active filter summary',
+        (tester) async {
       final ov = _TestOverrides();
       final completer = Completer<AgentReply>();
       ov.chatApi.stubSendMessage(completer);
@@ -1336,10 +1493,10 @@ void main() {
         text: '推荐结果',
         cards: [
           ReplyCard(
-            cardType: 'product_list',
-            title: '多平台商品结果',
+            cardType: 'product_group_list',
+            title: '匹配商品',
             filterSummary: ['品类：耳机', '预算≤300元', '颜色：黑色'],
-            products: [],
+            groups: [],
           ),
         ],
       ));
@@ -1350,7 +1507,64 @@ void main() {
       expect(find.text('全部平台'), findsOneWidget);
     });
 
-    testWidgets('product list hides empty filter summary', (tester) async {
+    testWidgets('product group list shows recognition result box',
+        (tester) async {
+      final ov = _TestOverrides();
+      final completer = Completer<AgentReply>();
+      ov.chatApi.stubSendMessage(completer);
+
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), '识别这张图');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.pump();
+
+      completer.complete(const AgentReply(
+        replyId: 'reply-rec-groups',
+        replyType: 'product_recommendation',
+        text: '我已经识别了你的商品图片。你更看重哪一点？',
+        cards: [
+          ReplyCard(
+            cardType: 'product_group_list',
+            title: '匹配商品',
+            imageId: 'test-image-id',
+            category: '运动鞋',
+            brand: 'Mock 品牌',
+            model: 'Mock 型号',
+            keywords: ['运动鞋', '白色'],
+            attributes: {'color': '白色'},
+            confidence: 0.82,
+            aiProvider: 'mock',
+            fallbackUsed: false,
+            explanation: '演示识别结果。',
+            recognitionId: 'rec-test-001',
+            filterSummary: ['品类：运动鞋'],
+            groups: [],
+          ),
+          ReplyCard(
+            cardType: 'clarification',
+            title: '你更看重哪一点？',
+            options: [
+              ClarificationOption(optionId: 'lowest_price', label: '查看同款低价'),
+            ],
+          ),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('recognition_result_box')), findsOneWidget);
+      expect(find.text('识别结果'), findsOneWidget);
+      expect(find.text('识别到：运动鞋'), findsOneWidget);
+      expect(find.text('品牌：Mock 品牌'), findsOneWidget);
+      expect(find.text('型号：Mock 型号'), findsOneWidget);
+      expect(find.text('置信度 82%'), findsOneWidget);
+      expect(find.text('修正'), findsOneWidget);
+      expect(find.text('匹配商品'), findsOneWidget);
+      expect(find.text('查看同款低价'), findsOneWidget);
+    });
+
+    testWidgets('product group list hides empty filter summary',
+        (tester) async {
       final ov = _TestOverrides();
       final completer = Completer<AgentReply>();
       ov.chatApi.stubSendMessage(completer);
@@ -1366,7 +1580,7 @@ void main() {
         replyType: 'product_recommendation',
         text: '推荐结果',
         cards: [
-          ReplyCard(cardType: 'product_list', title: '多平台商品结果', products: []),
+          ReplyCard(cardType: 'product_group_list', title: '匹配商品', groups: []),
         ],
       ));
       await tester.pumpAndSettle();
@@ -1402,6 +1616,189 @@ void main() {
       expect(find.text('查看同款低价'), findsOneWidget);
       expect(find.text('相似风格推荐'), findsOneWidget);
       expect(find.text('查看历史价格走势'), findsOneWidget);
+    });
+
+    test('PlatformOfferSummary.fromJson parses new fields', () {
+      final p = PlatformOfferSummary.fromJson({
+        'productId': 'jd-001',
+        'platform': '京东-mock',
+        'price': 199,
+        'originalPrice': 299,
+        'shopName': '测试店铺',
+        'productUrl': '',
+        'rating': 4.5,
+        'sales': 1000,
+        'tags': ['自营'],
+        'reasons': ['低价'],
+        'score': 7.5,
+        'title': '测试商品标题',
+        'imageUrl': 'https://example.com/img.jpg',
+        'brand': '测试品牌',
+        'priceHistory': [299, 259, 199],
+        'matchedPreferences': ['lowest_price'],
+        'specs': [
+          {'label': '品类', 'value': '耳机'},
+          {'label': '店铺', 'value': '测试店铺'},
+        ],
+      });
+
+      expect(p.productId, 'jd-001');
+      expect(p.title, '测试商品标题');
+      expect(p.imageUrl, 'https://example.com/img.jpg');
+      expect(p.brand, '测试品牌');
+      expect(p.priceHistory, [299, 259, 199]);
+      expect(p.matchedPreferences, ['lowest_price']);
+      expect(p.specs.length, 2);
+      expect(p.specs[0].label, '品类');
+      expect(p.specs[0].value, '耳机');
+    });
+
+    test('PlatformOfferSummary.fromJson handles missing new fields', () {
+      final p = PlatformOfferSummary.fromJson({
+        'productId': 'jd-001',
+        'platform': '京东-mock',
+        'price': 199,
+        'originalPrice': 299,
+        'shopName': '测试店铺',
+        'productUrl': '',
+        'rating': 4.5,
+        'sales': 1000,
+        'tags': [],
+        'reasons': [],
+      });
+
+      // Should not crash — use defaults
+      expect(p.title, '');
+      expect(p.imageUrl, '');
+      expect(p.brand, '');
+      expect(p.priceHistory, []);
+      expect(p.matchedPreferences, []);
+      expect(p.specs, []);
+      expect(p.score, 0);
+    });
+
+    testWidgets('group row shows only minimal info', (tester) async {
+      final ov = _TestOverrides();
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), '推荐耳机');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.pumpAndSettle();
+
+      // Group row shows: thumbnail placeholder, title, price, platform count, chevron
+      expect(find.text('匹配商品'), findsOneWidget);
+      expect(find.textContaining('¥'), findsWidgets);
+      expect(find.textContaining('个平台'), findsWidgets);
+      expect(find.byIcon(Icons.chevron_right), findsWidgets);
+      // Group row does NOT show: rating, reviews, specs, tags, original price
+      expect(find.textContaining('分'), findsNothing);
+      expect(find.textContaining('条评价'), findsNothing);
+      // Strikethrough original price must not appear (test data has 399 vs 199)
+      expect(find.text('¥399'), findsNothing);
+    });
+
+    testWidgets('tapping group row opens 商品详情 page', (tester) async {
+      final ov = _TestOverrides();
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), '推荐耳机');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.pumpAndSettle();
+
+      // Tap the first group row
+      await tester.tap(find.byIcon(Icons.chevron_right).first);
+      await tester.pumpAndSettle();
+
+      // Should be on detail page
+      expect(find.text('商品详情'), findsOneWidget);
+      expect(find.text('平台比价'), findsOneWidget);
+    });
+
+    testWidgets('detail page shows all required sections', (tester) async {
+      final ov = _TestOverrides();
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), '推荐耳机');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.pumpAndSettle();
+
+      // Open detail page
+      await tester.tap(find.byIcon(Icons.chevron_right).first);
+      await tester.pumpAndSettle();
+
+      // Header
+      expect(find.text('商品详情'), findsOneWidget);
+      // Price section
+      expect(find.textContaining('¥'), findsWidgets);
+      // Platform comparison list
+      expect(find.text('平台比价'), findsOneWidget);
+      // Platform cards show shop name and action buttons
+      expect(find.text('去平台'), findsWidgets);
+      expect(find.text('价格提醒'), findsWidgets);
+      // Rating/sales displayed
+      expect(find.textContaining('分'), findsWidgets);
+    });
+
+    testWidgets('detail page back returns to chat', (tester) async {
+      final ov = _TestOverrides();
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), '推荐耳机');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.pumpAndSettle();
+
+      // Open detail page
+      await tester.tap(find.byIcon(Icons.chevron_right).first);
+      await tester.pumpAndSettle();
+      expect(find.text('商品详情'), findsOneWidget);
+
+      // Go back
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+
+      // Back on chat screen
+      expect(find.text('匹配商品'), findsOneWidget);
+      expect(find.text('查看同款低价'), findsOneWidget);
+    });
+
+    testWidgets('detail page price alert calls API with platform price',
+        (tester) async {
+      final ov = _TestOverrides();
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), '推荐耳机');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.pumpAndSettle();
+
+      // Open detail page
+      await tester.tap(find.byIcon(Icons.chevron_right).first);
+      await tester.pumpAndSettle();
+      expect(find.text('商品详情'), findsOneWidget);
+
+      // Scroll to the first "价格提醒" button (may be off-screen)
+      await tester.scrollUntilVisible(
+        find.text('价格提醒').first,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+
+      // Tap "价格提醒" on first platform card
+      await tester.tap(find.text('价格提醒').first);
+      await tester.pumpAndSettle();
+
+      // Enter target price (leave default = platform price = 199)
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      // Verify API was called with platform price as targetPrice
+      expect(ov.priceAlertApi.createdPayloads, hasLength(1));
+      final payload = ov.priceAlertApi.createdPayloads.first;
+      expect(payload['productId'], isNotEmpty);
+      expect(payload['platform'], contains('-mock'));
+      // Default is current platform price (299), not 0.9 * price
+      expect(payload['targetPrice'], 299.0);
+      expect(payload['note'], '从商品详情页创建');
     });
   });
 }

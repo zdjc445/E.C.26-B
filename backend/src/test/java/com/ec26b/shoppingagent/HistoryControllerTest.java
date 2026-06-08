@@ -114,7 +114,8 @@ class HistoryControllerTest {
                 .andExpect(jsonPath("$.data.messages[0].role").value("user"))
                 .andExpect(jsonPath("$.data.messages[1].role").value("assistant"))
                 .andExpect(jsonPath("$.data.messages[1].agentReply.replyType").value("clarification"))
-                .andExpect(jsonPath("$.data.messages[1].agentReply.cards[0].cardType").value("clarification"));
+                .andExpect(jsonPath("$.data.messages[1].agentReply.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.messages[1].agentReply.cards[1].cardType").value("clarification"));
     }
 
     @Test
@@ -137,8 +138,8 @@ class HistoryControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.messages", hasSize(4)))
                 .andExpect(jsonPath("$.data.messages[3].agentReply.replyType").value("product_recommendation"))
-                .andExpect(jsonPath("$.data.messages[3].agentReply.cards[0].cardType").value("product_list"))
-                .andExpect(jsonPath("$.data.messages[3].agentReply.cards[2].platform").isString());
+                .andExpect(jsonPath("$.data.messages[3].agentReply.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.messages[3].agentReply.cards[1].cardType").value("clarification"));
     }
 
     @Test
@@ -153,8 +154,10 @@ class HistoryControllerTest {
 
         mockMvc.perform(get("/api/chat/sessions/{sessionId}/messages", sessionId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.messages[1].agentReply.replyType").value("recognition"))
-                .andExpect(jsonPath("$.data.messages[1].agentReply.cards[0].cardType").value("recognition"));
+                .andExpect(jsonPath("$.data.messages[1].agentReply.replyType").value("product_recommendation"))
+                .andExpect(jsonPath("$.data.messages[1].agentReply.cards.length()").value(2))
+                .andExpect(jsonPath("$.data.messages[1].agentReply.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.messages[1].agentReply.cards[1].cardType").value("clarification"));
     }
 
     @Test

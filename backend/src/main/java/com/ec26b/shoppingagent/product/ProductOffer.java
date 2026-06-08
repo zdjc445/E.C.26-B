@@ -19,7 +19,8 @@ public record ProductOffer(
         double score,
         String brand,
         List<Double> priceHistory,
-        List<String> matchedPreferences
+        List<String> matchedPreferences,
+        String sameItemKey
 ) {
 
     public ProductOffer {
@@ -27,6 +28,7 @@ public record ProductOffer(
         reasons = reasons == null ? List.of() : List.copyOf(reasons);
         priceHistory = priceHistory == null ? List.of() : List.copyOf(priceHistory);
         matchedPreferences = matchedPreferences == null ? List.of() : List.copyOf(matchedPreferences);
+        // sameItemKey is nullable — null means no explicit same-item grouping
     }
 
     public ProductOffer(String productId, String title, String platform,
@@ -35,7 +37,7 @@ public record ProductOffer(
                         double rating, int sales,
                         List<String> tags, List<String> reasons, double score) {
         this(productId, title, platform, price, originalPrice, shopName, imageUrl, productUrl,
-                rating, sales, tags, reasons, score, null, List.of(), List.of());
+                rating, sales, tags, reasons, score, null, List.of(), List.of(), null);
     }
 
     public ProductOffer(String productId, String title, String platform,
@@ -45,7 +47,7 @@ public record ProductOffer(
                         List<String> tags, List<String> reasons, double score,
                         String brand) {
         this(productId, title, platform, price, originalPrice, shopName, imageUrl, productUrl,
-                rating, sales, tags, reasons, score, brand, defaultPriceHistory(price, originalPrice), List.of());
+                rating, sales, tags, reasons, score, brand, defaultPriceHistory(price, originalPrice), List.of(), null);
     }
 
     public ProductOffer withScoringResult(double newScore, List<String> newReasons,
@@ -56,7 +58,7 @@ public record ProductOffer(
         }
         return new ProductOffer(productId, title, platform, price, originalPrice, shopName,
                 imageUrl, productUrl, rating, sales, tags, mergedReasons, newScore,
-                brand, priceHistory, matched);
+                brand, priceHistory, matched, sameItemKey);
     }
 
     private static List<Double> defaultPriceHistory(double price, double originalPrice) {

@@ -6,21 +6,13 @@ import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
-import '../alerts/price_alert_api.dart';
 import '../auth/auth_controller.dart';
-import '../favorites/favorite_api.dart';
 import '../voice/voice_api.dart';
 import 'chat_controller.dart';
 import 'chat_history_drawer.dart';
 import 'chat_models.dart';
-
-final favoriteApiInChatProvider = Provider<FavoriteApi>((ref) {
-  return FavoriteApi(baseUrl: ref.watch(apiBaseUrlProvider));
-});
-
-final priceAlertApiInChatProvider = Provider<PriceAlertApi>((ref) {
-  return PriceAlertApi(baseUrl: ref.watch(apiBaseUrlProvider));
-});
+import 'chat_providers.dart';
+import 'product_group_detail_screen.dart';
 
 final voiceApiProvider = Provider<VoiceApi>((ref) {
   return VoiceApi(baseUrl: ref.watch(apiBaseUrlProvider));
@@ -751,6 +743,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         return _buildProductListCard(card);
       case 'comparison':
         return _buildComparisonCard(card);
+      case 'product_group_list':
+        return _buildProductGroupListCard(card);
       default:
         return const SizedBox.shrink();
     }
@@ -2054,6 +2048,284 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           border: Border.all(color: AppColors.line)),
       child: Text(_platformLabel(platform),
           style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+    );
+  }
+
+  // ── Product group list card ────────────────────────────────
+
+  Widget _buildProductGroupListCard(ReplyCard card) {
+    final groups = card.groups ?? [];
+    final emptyReason = card.emptyReason;
+    final filterSummary = card.filterSummary;
+    final showRecognitionBox = _hasRecognitionMeta(card);
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (showRecognitionBox) ...[
+            _buildRecognitionResultBox(card),
+            const SizedBox(height: 10),
+          ],
+          Row(
+            children: [
+              const Icon(Icons.category_outlined,
+                  size: 17, color: AppColors.accent),
+              const SizedBox(width: 6),
+              Text(card.title,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w700)),
+              const Spacer(),
+              if (groups.isNotEmpty)
+                Text('${groups.length} 组',
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.inkSoft)),
+            ],
+          ),
+          if (filterSummary.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            _buildFilterBar(card, []),
+          ],
+          const SizedBox(height: 8),
+          if (groups.isEmpty && emptyReason != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.panel,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.line),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline,
+                      size: 16, color: AppColors.inkSoft),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(emptyReason,
+                        style: const TextStyle(
+                            fontSize: 13, color: AppColors.inkSoft)),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...groups.map((g) => _buildGroupRow(g)),
+        ],
+      ),
+    );
+  }
+
+  bool _hasRecognitionMeta(ReplyCard card) {
+    return (card.imageId != null && card.imageId!.isNotEmpty) ||
+        (card.recognitionId != null && card.recognitionId!.isNotEmpty) ||
+        (card.category != null && card.category!.isNotEmpty) ||
+        (card.brand != null && card.brand!.isNotEmpty) ||
+        (card.model != null && card.model!.isNotEmpty);
+  }
+
+  Widget _buildRecognitionResultBox(ReplyCard card) {
+    final imagePath = _recognitionImagePath(card.imageId);
+    final hasCorrection =
+        card.recognitionId != null && card.recognitionId!.isNotEmpty;
+    final badges = <Widget>[
+      _recognitionInfoBadge(_confidenceText(card)),
+    ];
+    if (card.brand != null && card.brand!.isNotEmpty) {
+      badges.add(_recognitionInfoBadge('品牌：${card.brand}'));
+    }
+    if (card.model != null && card.model!.isNotEmpty) {
+      badges.add(_recognitionInfoBadge('型号：${card.model}'));
+    }
+    if (card.aiProvider != null && card.aiProvider!.isNotEmpty) {
+      badges.add(_recognitionInfoBadge('来源：${card.aiProvider}'));
+    }
+
+    return Container(
+      key: const Key('recognition_result_box'),
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.accent.withAlpha(60)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _recognitionThumb(imagePath),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.image_search,
+                        size: 15, color: AppColors.accent),
+                    const SizedBox(width: 5),
+                    const Text('识别结果',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.inkSoft,
+                            fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    if (hasCorrection)
+                      TextButton.icon(
+                        onPressed: () => _openCorrectionSheet(card),
+                        icon: const Icon(Icons.edit, size: 14),
+                        label: const Text('修正', style: TextStyle(fontSize: 12)),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          minimumSize: const Size(0, 28),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text('识别到：${card.category ?? "未知商品"}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 15,
+                        height: 1.3,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 7),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: badges,
+                ),
+                if (card.fallbackUsed == true) ...[
+                  const SizedBox(height: 6),
+                  const Text('已回退到 Mock 识别',
+                      style: TextStyle(fontSize: 11, color: AppColors.warn)),
+                ],
+                if (card.explanation != null && card.explanation!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(card.explanation!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.inkSoft)),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupRow(ProductGroup group) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ProductGroupDetailScreen(group: group),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _groupThumb(group),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(group.displayTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 14,
+                          height: 1.35,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text('¥${group.bestPrice.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                              fontSize: 18,
+                              height: 1,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.priceRed)),
+                      const Spacer(),
+                      Text(
+                        '${group.platformCount} 个平台',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.inkSoft),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right, size: 18, color: AppColors.inkSoft),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _groupThumb(ProductGroup group) {
+    final imageUrl = group.thumbnailUrl?.trim() ?? '';
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.network(
+          imageUrl,
+          width: 56,
+          height: 56,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _groupThumbPlaceholder(group),
+        ),
+      );
+    }
+    return _groupThumbPlaceholder(group);
+  }
+
+  Widget _groupThumbPlaceholder(ProductGroup group) {
+    final accent = switch (group.category ?? '') {
+      '耳机' => const Color(0xFF2F343B),
+      '吹风机' => const Color(0xFFB23A48),
+      '背包' => const Color(0xFFC27A2C),
+      '智能手表' => const Color(0xFF4A6FA5),
+      _ => AppColors.accent,
+    };
+    final icon = switch (group.category ?? '') {
+      '耳机' => Icons.headphones,
+      '吹风机' => Icons.air,
+      '背包' => Icons.backpack,
+      '智能手表' => Icons.watch,
+      _ => Icons.shopping_bag_outlined,
+    };
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        color: accent.withAlpha(15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Icon(icon, size: 24, color: accent.withAlpha(150)),
     );
   }
 

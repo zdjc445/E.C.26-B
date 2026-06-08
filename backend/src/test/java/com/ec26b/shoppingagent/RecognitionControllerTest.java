@@ -136,10 +136,13 @@ class RecognitionControllerTest {
                         .content(objectMapper.writeValueAsString(msgBody)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.replyType").value("recognition"))
-                .andExpect(jsonPath("$.data.cards[0].cardType").value("recognition"))
+                .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
+                .andExpect(jsonPath("$.data.cards.length()").value(2))
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
                 .andExpect(jsonPath("$.data.cards[0].category").isNotEmpty())
-                .andExpect(jsonPath("$.data.cards[0].recognitionId").isNotEmpty());
+                .andExpect(jsonPath("$.data.cards[0].recognitionId").isNotEmpty())
+                .andExpect(jsonPath("$.data.cards[0].groups.length()").value(greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.data.cards[1].cardType").value("clarification"));
     }
 
     @Test

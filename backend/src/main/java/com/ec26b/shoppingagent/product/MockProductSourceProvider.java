@@ -124,7 +124,8 @@ public class MockProductSourceProvider implements ProductSourceProvider {
                             4.9, 23000, List.of("自营", "降噪"), "索尼"),
                     p("jd-102", "小米入耳式耳机 白色 长续航", "京东-mock",
                             179.00, 259.00, "小米品牌旗舰店",
-                            4.7, 18000, List.of("官方", "长续航", "入耳式"), "小米"),
+                            4.7, 18000, List.of("官方", "长续航", "入耳式"), "小米",
+                            "xiaomi-earbud-basic"),
                     p("jd-103", "索尼头戴式降噪耳机 黑色 专业级", "京东-mock",
                             458.00, 599.00, "索尼京东自营",
                             4.8, 15000, List.of("自营", "降噪", "头戴式"), "索尼"),
@@ -175,7 +176,8 @@ public class MockProductSourceProvider implements ProductSourceProvider {
                             4.8, 16000, List.of("官方", "运动"), "华为"),
                     p("jd-403", "小米智能手表 黑色 长续航", "京东-mock",
                             499.00, 699.00, "小米京东自营",
-                            4.7, 28000, List.of("自营", "长续航"), "小米"),
+                            4.7, 28000, List.of("自营", "长续航"), "小米",
+                            "xiaomi-smartwatch-std"),
                     p("jd-404", "华为商务智能手表 棕色 真皮表带", "京东-mock",
                             1499.00, 1899.00, "华为品牌专营店",
                             4.6, 5200, List.of("商务"), "华为")
@@ -193,7 +195,8 @@ public class MockProductSourceProvider implements ProductSourceProvider {
                         4.7, 6200, List.of("自营", "复古"), "新百伦"),
                 p("jd-004", "李宁透气网面跑步运动鞋 深蓝色", "京东-mock",
                         219.00, 299.00, "李宁品牌专营店",
-                        4.4, 18000, List.of("透气", "跑步"), "李宁")
+                        4.4, 18000, List.of("透气", "跑步"), "李宁",
+                        "lining-running-shoe")
         );
     }
 
@@ -208,7 +211,8 @@ public class MockProductSourceProvider implements ProductSourceProvider {
                             4.3, 92000, List.of("爆款", "性价比"), null),
                     p("pdd-102", "小米无线耳机 运动款 防水 白色", "拼多多-mock",
                             129.00, 189.00, "小米耳机专营店",
-                            4.2, 35000, List.of("性价比", "防水"), "小米"),
+                            4.2, 35000, List.of("性价比", "防水"), "小米",
+                            "xiaomi-earbud-basic"),
                     p("pdd-103", "头戴式游戏耳机 黑色", "拼多多-mock",
                             239.00, 349.00, "数码专营店",
                             4.4, 28000, List.of("头戴式"), null),
@@ -256,7 +260,8 @@ public class MockProductSourceProvider implements ProductSourceProvider {
                             4.2, 62000, List.of("爆款", "性价比"), null),
                     p("pdd-402", "小米智能手表 标准版 黑色", "拼多多-mock",
                             349.00, 499.00, "小米数码专营店",
-                            4.5, 48000, List.of("性价比", "长续航"), "小米"),
+                            4.5, 48000, List.of("性价比", "长续航"), "小米",
+                            "xiaomi-smartwatch-std"),
                     p("pdd-403", "时尚智能手表 粉色 女士款", "拼多多-mock",
                             259.00, 399.00, "时尚专营店",
                             4.3, 32000, List.of("时尚"), null),
@@ -274,7 +279,8 @@ public class MockProductSourceProvider implements ProductSourceProvider {
                         4.3, 23000, List.of("性价比"), null),
                 p("pdd-003", "李宁夏季透气跑步运动鞋 黑色", "拼多多-mock",
                         169.00, 249.00, "李宁品牌折扣店",
-                        4.2, 78000, List.of("性价比", "跑步", "透气"), "李宁"),
+                        4.2, 78000, List.of("性价比", "跑步", "透气"), "李宁",
+                        "lining-running-shoe"),
                 p("pdd-004", "复古厚底运动鞋 白色", "拼多多-mock",
                         189.00, 269.00, "潮鞋专营店",
                         4.4, 45000, List.of("复古", "性价比"), null)
@@ -343,7 +349,8 @@ public class MockProductSourceProvider implements ProductSourceProvider {
                             4.7, 14000, List.of("官方", "时尚"), "华为"),
                     p("tb-403", "小米智能手表 标准款 白色", "淘宝-mock",
                             429.00, 599.00, "小米潮品集合店",
-                            4.5, 22000, List.of("性价比"), "小米"),
+                            4.5, 22000, List.of("性价比"), "小米",
+                            "xiaomi-smartwatch-std"),
                     p("tb-404", "运动智能手表 黑色 GPS 防水", "淘宝-mock",
                             699.00, 999.00, "潮品集合店",
                             4.4, 9000, List.of("防水", "GPS"), null)
@@ -370,5 +377,27 @@ public class MockProductSourceProvider implements ProductSourceProvider {
                                   double rating, int sales, List<String> tags, String brand) {
         return new ProductOffer(id, title, platform, price, originalPrice, shopName,
                 "", "", rating, sales, tags, List.of(), 0, brand);
+    }
+
+    private static ProductOffer p(String id, String title, String platform,
+                                  double price, double originalPrice, String shopName,
+                                  double rating, int sales, List<String> tags, String brand,
+                                  String sameItemKey) {
+        List<Double> priceHistory = defaultPriceHistory(price, originalPrice);
+        return new ProductOffer(id, title, platform, price, originalPrice, shopName,
+                "", "", rating, sales, tags, List.of(), 0, brand,
+                priceHistory, List.of(), sameItemKey);
+    }
+
+    private static List<Double> defaultPriceHistory(double price, double originalPrice) {
+        if (price <= 0) return List.of();
+        double base = originalPrice > price ? originalPrice : price * 1.15;
+        return List.of(
+                Math.round(base * 100.0) / 100.0,
+                Math.round(base * 0.97 * 100.0) / 100.0,
+                Math.round(((base + price) / 2.0) * 100.0) / 100.0,
+                Math.round(price * 1.05 * 100.0) / 100.0,
+                Math.round(price * 100.0) / 100.0
+        );
     }
 }

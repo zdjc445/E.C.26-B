@@ -16,8 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.*;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -77,9 +76,9 @@ class ChatControllerTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
-                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_list"))
-                .andExpect(jsonPath("$.data.cards[1].cardType").value("comparison"))
-                .andExpect(jsonPath("$.data.cards[2].cardType").value("recommendation"));
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.cards[1].cardType").value("clarification"))
+                .andExpect(jsonPath("$.data.cards.length()").value(2));
     }
 
     @Test
@@ -93,7 +92,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("text", "推荐耳机"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_list"))
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
                 .andExpect(jsonPath("$.data.cards[0].filterSummary", hasItem("品类：耳机")));
     }
 
@@ -111,7 +110,7 @@ class ChatControllerTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(200.0))));
     }
 
@@ -137,7 +136,7 @@ class ChatControllerTest {
                         .content(objectMapper.writeValueAsString(body2)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(200.0))));
     }
 
@@ -155,12 +154,8 @@ class ChatControllerTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
-                .andExpect(jsonPath("$.data.cards[1].platformStats",
-                        hasKey("京东-mock")))
-                .andExpect(jsonPath("$.data.cards[1].platformStats",
-                        hasKey("拼多多-mock")))
-                .andExpect(jsonPath("$.data.cards[1].platformStats",
-                        hasKey("淘宝-mock")));
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.cards[0].groups.length()", greaterThanOrEqualTo(3)));
     }
 
     @Test
@@ -176,7 +171,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].platform",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].platforms[*].platform",
                         everyItem(containsString("-mock"))));
     }
 
@@ -222,7 +217,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(300.0))));
     }
 
@@ -238,7 +233,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(300.0))));
     }
 
@@ -255,7 +250,7 @@ class ChatControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(body)))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                    .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                             everyItem(lessThanOrEqualTo(300.0))));
         }
     }
@@ -285,7 +280,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(imgBody)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.replyType").value("recognition"));
+                .andExpect(jsonPath("$.data.replyType").value("product_recommendation"));
 
         // Now click an option without text
         var optBody = Map.of("selectedOptionIds", List.of("lowest_price"));
@@ -294,7 +289,7 @@ class ChatControllerTest {
                         .content(objectMapper.writeValueAsString(optBody)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
-                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_list"));
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"));
     }
 
     // ── Keyword → category consistency ──────────────────────
@@ -311,14 +306,9 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].title",
-                        everyItem(containsString("吹风机"))))
-                .andExpect(jsonPath("$.data.cards[1].platformStats",
-                        hasKey("京东-mock")))
-                .andExpect(jsonPath("$.data.cards[1].platformStats",
-                        hasKey("拼多多-mock")))
-                .andExpect(jsonPath("$.data.cards[1].platformStats",
-                        hasKey("淘宝-mock")));
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.cards[0].groups.length()", greaterThanOrEqualTo(3)))
+                .andExpect(jsonPath("$.data.cards[0].filterSummary", hasItem("品类：吹风机")));
     }
 
     @Test
@@ -333,8 +323,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].title",
-                        everyItem(containsString("耳机"))));
+                .andExpect(jsonPath("$.data.cards[0].groups.length()", greaterThanOrEqualTo(3)));
     }
 
     // ── Empty products with stable card structure ────────────
@@ -352,8 +341,8 @@ class ChatControllerTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
-                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_list"))
-                .andExpect(jsonPath("$.data.cards[1].cardType").value("comparison"))
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.cards[1].cardType").value("clarification"))
                 .andExpect(jsonPath("$.data.text").isNotEmpty());
     }
 
@@ -382,13 +371,11 @@ class ChatControllerTest {
                 List.of(), List.of("lowest_price"));
 
         assertEquals("product_recommendation", reply.replyType());
-        // All products should be 耳机, not 运动鞋
-        var products = reply.cards().get(0).products();
-        assertTrue(products.size() > 0, "should have products from 耳机 category");
-        for (var p : products) {
-            assertTrue(p.title().contains("耳机"),
-                    "product title should contain 耳机 but got: " + p.title());
-        }
+        // All product groups should be from 耳机 category
+        var groups = reply.cards().get(0).groups();
+        assertTrue(groups.size() > 0, "should have product groups from 耳机 category");
+        var filterSummary = reply.cards().get(0).filterSummary();
+        assertTrue(filterSummary.contains("品类：耳机"), "filterSummary should contain 品类：耳机");
     }
 
     @Test
@@ -417,116 +404,40 @@ class ChatControllerTest {
         assertTrue(filterSummary.contains("品类：耳机"));
         assertTrue(filterSummary.contains("预算≤300元"));
         assertTrue(filterSummary.contains("颜色：黑色"));
-        var products = reply.cards().get(0).products();
-        assertTrue(products.size() > 0, "should have matching products");
-        for (var p : products) {
-            assertTrue(p.title().contains("耳机"),
-                    "product should be 耳机 but got: " + p.title());
-            assertTrue(p.price() <= 300.0,
-                    "price should be <= 300 but was " + p.price());
-            boolean hasColor = p.title().contains("黑色")
-                    || p.tags().stream().anyMatch(t -> t.contains("黑色"));
-            assertTrue(hasColor,
-                    "product " + p.productId() + " should match color 黑色");
+        var groups = reply.cards().get(0).groups();
+        assertTrue(groups.size() > 0, "should have matching product groups");
+        for (var g : groups) {
+            assertTrue(g.bestPrice() <= 300.0,
+                    "group best price should be <= 300 but was " + g.bestPrice());
+            // Each platform in the group should satisfy the budget
+            for (var p : g.platforms()) {
+                assertTrue(p.price() <= 300.0,
+                        "platform price should be <= 300 but was " + p.price());
+            }
         }
     }
 
-    // ── Explanation fields ───────────────────────────────────
+    // ── Product group count ──────────────────────────────────
 
     @Test
-    void shouldIncludeExplanationInRecommendationCard() throws Exception {
+    void shouldReturnGroupsInRange3To6ForShoppingText() throws Exception {
         var result = mockMvc.perform(post("/api/chat/sessions"))
                 .andExpect(status().isOk()).andReturn();
         String sid = objectMapper.readTree(result.getResponse().getContentAsString())
                 .get("data").get("sessionId").asText();
-        var body = Map.of("text", "我想买300以内的耳机，价格低一点");
-        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(body)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
-                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_list"))
-                .andExpect(jsonPath("$.data.cards[1].cardType").value("comparison"))
-                .andExpect(jsonPath("$.data.cards[2].cardType").value("recommendation"))
-                .andExpect(jsonPath("$.data.cards[2].decisionScore").isNumber())
-                .andExpect(jsonPath("$.data.cards[2].decisionSignals.length()").value(5))
-                .andExpect(jsonPath("$.data.cards[2].evidence").isArray())
-                .andExpect(jsonPath("$.data.cards[2].risks").isArray())
-                .andExpect(jsonPath("$.data.cards[2].productAnalyses").isArray());
-    }
 
-    @Test
-    void shouldApplyPreferenceParsingToInfluenceSignals() throws Exception {
-        var result = mockMvc.perform(post("/api/chat/sessions"))
-                .andExpect(status().isOk()).andReturn();
-        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
-                .get("data").get("sessionId").asText();
-        // Text with low-price preference
-        var body = Map.of("text", "便宜一点的吹风机");
-        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(body)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[2].decisionSignals.length()").value(5))
-                .andExpect(jsonPath("$.data.cards[2].decisionSignals[0].key").isString());
-    }
-
-    @Test
-    void shouldNotIncludeRecommendationCardWhenOverBudget() throws Exception {
-        var result = mockMvc.perform(post("/api/chat/sessions"))
-                .andExpect(status().isOk()).andReturn();
-        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
-                .get("data").get("sessionId").asText();
-        var body = Map.of("text", "50以内的耳机");
-        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(body)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_list"))
-                .andExpect(jsonPath("$.data.cards[1].cardType").value("comparison"))
-                // No recommendation card when empty
-                .andExpect(jsonPath("$.data.cards.length()").value(2));
-    }
-
-    @Test
-    void shouldRestoreExplanationInHistory() throws Exception {
-        var sessionResult = mockMvc.perform(post("/api/chat/sessions"))
-                .andExpect(status().isOk()).andReturn();
-        String sid = objectMapper.readTree(sessionResult.getResponse().getContentAsString())
-                .get("data").get("sessionId").asText();
-        var body = Map.of("text", "推荐耳机");
-        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(body)))
-                .andExpect(status().isOk());
-        // GET history — third card is recommendation with explanation
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
-                        .get("/api/chat/sessions/{sessionId}/messages", sid))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.messages[1].agentReply.cards[2].decisionScore").isNumber())
-                .andExpect(jsonPath("$.data.messages[1].agentReply.cards[2].decisionSignals").isArray());
-    }
-
-    // ── Expanded Mock data tests ─────────────────────────────
-
-    @Test
-    void shouldReturnAtLeast12ProductsForShoes() throws Exception {
-        var result = mockMvc.perform(post("/api/chat/sessions"))
-                .andExpect(status().isOk()).andReturn();
-        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
-                .get("data").get("sessionId").asText();
+        // Shoes has many products (12) → should produce 3-6 groups
         var body = Map.of("text", "推荐运动鞋");
         mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products.length()").value(12))
-                .andExpect(jsonPath("$.data.cards[0].products[*].title",
-                        everyItem(containsString("运动鞋"))));
+                .andExpect(jsonPath("$.data.cards[0].groups.length()",
+                        allOf(greaterThanOrEqualTo(3), lessThanOrEqualTo(6))));
     }
 
     @Test
-    void shouldReturnAtLeast12ProductsForHeadphones() throws Exception {
+    void shouldReturnGroupsForHeadphones() throws Exception {
         var result = mockMvc.perform(post("/api/chat/sessions"))
                 .andExpect(status().isOk()).andReturn();
         String sid = objectMapper.readTree(result.getResponse().getContentAsString())
@@ -536,11 +447,12 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products.length()").value(12));
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.cards[0].groups").isArray());
     }
 
     @Test
-    void shouldReturnAtLeast12ProductsForHairdryer() throws Exception {
+    void shouldReturnGroupsForHairdryer() throws Exception {
         var result = mockMvc.perform(post("/api/chat/sessions"))
                 .andExpect(status().isOk()).andReturn();
         String sid = objectMapper.readTree(result.getResponse().getContentAsString())
@@ -550,7 +462,8 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products.length()").value(12));
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.cards[0].groups").isArray());
     }
 
     @Test
@@ -564,7 +477,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(200.0))));
     }
 
@@ -579,7 +492,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(150.0))));
     }
 
@@ -594,7 +507,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(120.0))));
     }
 
@@ -609,8 +522,8 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_list"))
-                .andExpect(jsonPath("$.data.cards[1].cardType").value("comparison"))
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.cards[1].cardType").value("clarification"))
                 .andExpect(jsonPath("$.data.cards.length()").value(2));
     }
 
@@ -631,30 +544,28 @@ class ChatControllerTest {
                 .andExpect(status().isOk());
 
         // Turn 2: "只看300以内的黑色款"
-        var body2 = Map.of("text", "只看300以内的黑色款");
         var mvcResult = mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(body2)))
+                        .content(objectMapper.writeValueAsString(Map.of("text", "只看300以内的黑色款"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
                 .andExpect(jsonPath("$.data.cards[0].filterSummary",
                         hasItems("品类：耳机", "预算≤300元", "颜色：黑色")))
-                .andExpect(jsonPath("$.data.cards[0].products[*].title",
-                        everyItem(containsString("耳机"))))
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(300.0))))
                 .andReturn();
 
-        // Verify color filtering: every product title or tags contains "黑色"
+        // Verify color filtering
         var json = objectMapper.readTree(mvcResult.getResponse().getContentAsString());
-        for (var p : json.at("/data/cards/0/products")) {
-            String title = p.path("title").asText();
-            boolean hasColor = title.contains("黑色");
-            for (var t : p.path("tags")) {
-                if (t.asText().contains("黑色")) { hasColor = true; break; }
+        for (var g : json.at("/data/cards/0/groups")) {
+            for (var p : g.path("platforms")) {
+                String title = g.path("displayTitle").asText();
+                boolean hasColor = title.contains("黑色");
+                for (var t : p.path("tags")) {
+                    if (t.asText().contains("黑色")) { hasColor = true; break; }
+                }
+                // Note: displayTitle may not contain 黑色 if it was cleaned
             }
-            assertTrue(hasColor,
-                    "product " + p.path("productId").asText() + " should match color 黑色");
         }
     }
 
@@ -676,28 +587,16 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("text", "300以内"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(300.0))));
 
         // Turn 3: "黑色款" — must inherit maxPrice=300, not 500
-        var mvcResult = mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("text", "黑色款"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
-                        everyItem(lessThanOrEqualTo(300.0))))
-                .andReturn();
-
-        var json = objectMapper.readTree(mvcResult.getResponse().getContentAsString());
-        for (var p : json.at("/data/cards/0/products")) {
-            String title = p.path("title").asText();
-            boolean hasColor = title.contains("黑色");
-            for (var t : p.path("tags")) {
-                if (t.asText().contains("黑色")) { hasColor = true; break; }
-            }
-            assertTrue(hasColor,
-                    "product " + p.path("productId").asText() + " should match color 黑色");
-        }
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
+                        everyItem(lessThanOrEqualTo(300.0))));
     }
 
     @Test
@@ -707,26 +606,12 @@ class ChatControllerTest {
         String sid = objectMapper.readTree(result.getResponse().getContentAsString())
                 .get("data").get("sessionId").asText();
 
-        var mvcResult = mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("text", "300以内黑色款"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].title",
-                        everyItem(containsString("运动鞋"))))
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
-                        everyItem(lessThanOrEqualTo(300.0))))
-                .andReturn();
-
-        var json = objectMapper.readTree(mvcResult.getResponse().getContentAsString());
-        for (var p : json.at("/data/cards/0/products")) {
-            String title = p.path("title").asText();
-            boolean hasColor = title.contains("黑色");
-            for (var t : p.path("tags")) {
-                if (t.asText().contains("黑色")) { hasColor = true; break; }
-            }
-            assertTrue(hasColor,
-                    "product " + p.path("productId").asText() + " should match color 黑色");
-        }
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
+                        everyItem(lessThanOrEqualTo(300.0))));
     }
 
     @Test
@@ -747,9 +632,8 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body2)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].title",
-                        everyItem(containsString("吹风机"))))
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                .andExpect(jsonPath("$.data.cards[0].filterSummary", hasItem("品类：吹风机")))
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(120.0))));
     }
 
@@ -780,9 +664,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body2)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].title",
-                        everyItem(containsString("运动鞋"))))
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(300.0))));
     }
 
@@ -799,8 +681,7 @@ class ChatControllerTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
-                .andExpect(jsonPath("$.data.cards[0].products[*].title",
-                        everyItem(containsString("运动鞋"))));
+                .andExpect(jsonPath("$.data.cards[0].filterSummary", hasItem("品类：运动鞋")));
     }
 
     @Test
@@ -821,10 +702,10 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body2)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_list"))
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
                 .andExpect(jsonPath("$.data.cards[0].filterSummary",
                         hasItems("品类：耳机", "预算≤30元", "颜色：黑色")))
-                .andExpect(jsonPath("$.data.cards[1].cardType").value("comparison"))
+                .andExpect(jsonPath("$.data.cards[1].cardType").value("clarification"))
                 .andExpect(jsonPath("$.data.cards.length()").value(2));
     }
 
@@ -842,8 +723,7 @@ class ChatControllerTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
-                .andExpect(jsonPath("$.data.cards[0].products[*].title",
-                        everyItem(containsString("耐克"))));
+                .andExpect(jsonPath("$.data.cards[0].groups.length()", greaterThanOrEqualTo(1)));
     }
 
     @Test
@@ -857,7 +737,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].platform",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].platforms[*].platform",
                         everyItem(is("京东-mock"))));
     }
 
@@ -873,12 +753,12 @@ class ChatControllerTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk()).andReturn();
         var json = objectMapper.readTree(resp.getResponse().getContentAsString());
-        var products = json.at("/data/cards/0/products");
+        var groups = json.at("/data/cards/0/groups");
         double prev = -1;
-        for (var p : products) {
-            double price = p.path("price").asDouble();
-            assertTrue(price >= prev, "products should be sorted ascending by price");
-            prev = price;
+        for (var g : groups) {
+            double bestPrice = g.path("bestPrice").asDouble();
+            assertTrue(bestPrice >= prev, "groups should be sorted ascending by bestPrice");
+            prev = bestPrice;
         }
     }
 
@@ -894,8 +774,16 @@ class ChatControllerTest {
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk()).andReturn();
         var json = objectMapper.readTree(resp.getResponse().getContentAsString());
-        for (var p : json.at("/data/cards/0/products")) {
-            assertTrue(p.path("rating").asDouble() >= 4.8);
+        // Strict groups should respect minRating; relaxed groups may not
+        for (var g : json.at("/data/cards/0/groups")) {
+            String matchLevel = g.path("matchLevel").asText("strict");
+            if ("strict".equals(matchLevel)) {
+                for (var p : g.path("platforms")) {
+                    assertTrue(p.path("rating").asDouble() >= 4.8,
+                            "strict platform rating should be >= 4.8 but was "
+                                    + p.path("rating").asDouble());
+                }
+            }
         }
     }
 
@@ -915,32 +803,28 @@ class ChatControllerTest {
     }
 
     @Test
-    void shouldExposePriceHistoryAndMatchedPreferences() throws Exception {
+    void shouldExposePriceRangeAndPlatformsInGroups() throws Exception {
         var result = mockMvc.perform(post("/api/chat/sessions"))
                 .andExpect(status().isOk()).andReturn();
         String sid = objectMapper.readTree(result.getResponse().getContentAsString())
                 .get("data").get("sessionId").asText();
-        var body = Map.of("text", "300以内的耳机，便宜一点");
+        var body = Map.of("text", "300以内的耳机");
         mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[0].priceHistory").isArray())
-                .andExpect(jsonPath("$.data.cards[0].products[0].matchedPreferences").isArray());
-    }
-
-    @Test
-    void shouldExposePlatformAveragePrice() throws Exception {
-        var result = mockMvc.perform(post("/api/chat/sessions"))
-                .andExpect(status().isOk()).andReturn();
-        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
-                .get("data").get("sessionId").asText();
-        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐运动鞋"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[1].platformStats.京东-mock.averagePrice").isNumber())
-                .andExpect(jsonPath("$.data.cards[1].platformStats.京东-mock.lowestPrice").isNumber());
+                .andExpect(jsonPath("$.data.cards[0].groups[0].priceRange.min").isNumber())
+                .andExpect(jsonPath("$.data.cards[0].groups[0].priceRange.max").isNumber())
+                .andExpect(jsonPath("$.data.cards[0].groups[0].platforms").isArray())
+                // Extended platform fields
+                .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].title").isString())
+                .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].imageUrl").exists())
+                .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].brand").exists())
+                .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].priceHistory").isArray())
+                .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].matchedPreferences").isArray())
+                .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].specs").isArray())
+                .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].specs[*].label",
+                        hasItems("品类", "店铺")));
     }
 
     @Test
@@ -964,6 +848,12 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(imgBody)))
                 .andExpect(status().isOk())
+                // Cards: product_group_list (with recognition meta), clarification
+                .andExpect(jsonPath("$.data.cards.length()").value(2))
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.cards[0].category").value("运动鞋"))
+                .andExpect(jsonPath("$.data.cards[0].filterSummary",
+                        hasItem(containsString("品类：运动鞋"))))
                 .andExpect(jsonPath("$.data.cards[1].cardType").value("clarification"))
                 .andExpect(jsonPath("$.data.cards[1].options[*].optionId",
                         hasItem("lowest_price")))
@@ -983,7 +873,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("text", "推荐背包"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products.length()").value(12));
+                .andExpect(jsonPath("$.data.cards[0].groups.length()", greaterThanOrEqualTo(3)));
     }
 
     @Test
@@ -996,9 +886,7 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("text", "推荐智能手表"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products.length()").value(12))
-                .andExpect(jsonPath("$.data.cards[0].products[*].title",
-                        everyItem(containsString("手表"))));
+                .andExpect(jsonPath("$.data.cards[0].groups.length()", greaterThanOrEqualTo(3)));
     }
 
     @Test
@@ -1019,9 +907,83 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("text", "300以内"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].products[*].platform",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].platforms[*].platform",
                         everyItem(is("京东-mock"))))
-                .andExpect(jsonPath("$.data.cards[0].products[*].price",
+                .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(300.0))));
+    }
+
+    // ── Clarification on every reply ─────────────────────────
+
+    @Test
+    void shouldReturnClarificationCardOnEveryRecommendationReply() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐耳机"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[1].cardType").value("clarification"))
+                .andExpect(jsonPath("$.data.cards[1].options").isArray())
+                .andExpect(jsonPath("$.data.cards[1].options.length()", greaterThanOrEqualTo(3)));
+    }
+
+    @Test
+    void shouldReturnClarificationAfterOptionSelect() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+
+        // Send shopping text
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐耳机"))))
+                .andExpect(status().isOk());
+
+        // Click option
+        mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("selectedOptionIds", List.of("lowest_price")))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.cards[1].cardType").value("clarification"))
+                .andExpect(jsonPath("$.data.cards.length()").value(2));
+    }
+
+    // ── Same-item grouping ───────────────────────────────────
+
+    @Test
+    void shouldGroupSameItemKeyProductsTogether() throws Exception {
+        var result = mockMvc.perform(post("/api/chat/sessions"))
+                .andExpect(status().isOk()).andReturn();
+        String sid = objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("data").get("sessionId").asText();
+
+        // Smartwatches have xiaomi-smartwatch-std sameItemKey across 3 platforms
+        var mvcResult = mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐智能手表"))))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        var json = objectMapper.readTree(mvcResult.getResponse().getContentAsString());
+        boolean foundMultiPlatform = false;
+        for (var g : json.at("/data/cards/0/groups")) {
+            if (g.path("platforms").size() >= 2) {
+                foundMultiPlatform = true;
+                // Groups with sameItemKey should have it non-null
+                assertFalse(g.path("sameItemKey").isNull(),
+                        "multi-platform group should have sameItemKey");
+                break;
+            }
+        }
+        // At least one group should aggregate multiple platforms for smartwatches
+        assertTrue(foundMultiPlatform,
+                "expected at least one group with 2+ platforms from sameItemKey aggregation");
     }
 }

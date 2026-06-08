@@ -106,11 +106,11 @@ class ReplyCard {
   final bool? fallbackUsed;
   final String? explanation;
   final String? recognitionId;
-  // product fields
+  // product fields (legacy)
   final List<ProductItem>? products;
   final Map<String, dynamic>? platformStats;
   final List<String> filterSummary;
-  // explanation fields
+  // explanation fields (legacy)
   final int? decisionScore;
   final List<DecisionSignal>? decisionSignals;
   final List<RecommendationEvidence>? evidence;
@@ -122,6 +122,9 @@ class ReplyCard {
   final String? explanationProvider;
   final bool? explanationFallbackUsed;
   final List<String>? notices;
+  // product group fields (new)
+  final List<ProductGroup>? groups;
+  final String? emptyReason;
 
   const ReplyCard({
     required this.cardType,
@@ -155,6 +158,8 @@ class ReplyCard {
     this.explanationProvider,
     this.explanationFallbackUsed,
     this.notices,
+    this.groups,
+    this.emptyReason,
   });
 
   factory ReplyCard.fromJson(Map<String, dynamic> json) {
@@ -166,16 +171,13 @@ class ReplyCard {
       price: (json['price'] as num?)?.toDouble(),
       reason: json['reason'] as String?,
       options: (json['options'] as List?)
-          ?.map((o) =>
-              ClarificationOption.fromJson(o as Map<String, dynamic>))
+          ?.map((o) => ClarificationOption.fromJson(o as Map<String, dynamic>))
           .toList(),
       imageId: json['imageId'] as String?,
       category: json['category'] as String?,
       brand: json['brand'] as String?,
       model: json['model'] as String?,
-      keywords: (json['keywords'] as List?)
-          ?.map((k) => k.toString())
-          .toList(),
+      keywords: (json['keywords'] as List?)?.map((k) => k.toString()).toList(),
       attributes: _stringMap(json['attributes']),
       confidence: (json['confidence'] as num?)?.toDouble(),
       aiProvider: json['aiProvider'] as String?,
@@ -186,20 +188,18 @@ class ReplyCard {
           ?.map((p) => ProductItem.fromJson(p as Map<String, dynamic>))
           .toList(),
       platformStats: _stringMap(json['platformStats']),
-      filterSummary: (json['filterSummary'] as List?)
-              ?.map((v) => v.toString())
-              .toList() ??
-          const [],
+      filterSummary:
+          (json['filterSummary'] as List?)?.map((v) => v.toString()).toList() ??
+              const [],
       decisionScore: json['decisionScore'] as int?,
       decisionSignals: (json['decisionSignals'] as List?)
           ?.map((s) => DecisionSignal.fromJson(s as Map<String, dynamic>))
           .toList(),
       evidence: (json['evidence'] as List?)
-          ?.map((e) => RecommendationEvidence.fromJson(e as Map<String, dynamic>))
+          ?.map(
+              (e) => RecommendationEvidence.fromJson(e as Map<String, dynamic>))
           .toList(),
-      risks: (json['risks'] as List?)
-          ?.map((r) => r.toString())
-          .toList(),
+      risks: (json['risks'] as List?)?.map((r) => r.toString()).toList(),
       productAnalyses: (json['productAnalyses'] as List?)
           ?.map((a) => ProductAnalysis.fromJson(a as Map<String, dynamic>))
           .toList(),
@@ -208,6 +208,164 @@ class ReplyCard {
       explanationProvider: json['explanationProvider'] as String?,
       explanationFallbackUsed: json['explanationFallbackUsed'] as bool?,
       notices: (json['notices'] as List?)?.map((n) => n.toString()).toList(),
+      groups: (json['groups'] as List?)
+          ?.map((g) => ProductGroup.fromJson(g as Map<String, dynamic>))
+          .toList(),
+      emptyReason: json['emptyReason'] as String?,
+    );
+  }
+}
+
+class ProductGroup {
+  final String groupId;
+  final String? sameItemKey;
+  final String displayTitle;
+  final String? category;
+  final String? brand;
+  final String? thumbnailUrl;
+  final double bestPrice;
+  final double originalPrice;
+  final PriceRange? priceRange;
+  final int platformCount;
+  final List<PlatformOfferSummary> platforms;
+  final List<String> highlights;
+  final String? matchLevel;
+
+  const ProductGroup({
+    required this.groupId,
+    this.sameItemKey,
+    required this.displayTitle,
+    this.category,
+    this.brand,
+    this.thumbnailUrl,
+    required this.bestPrice,
+    required this.originalPrice,
+    this.priceRange,
+    required this.platformCount,
+    required this.platforms,
+    required this.highlights,
+    this.matchLevel,
+  });
+
+  factory ProductGroup.fromJson(Map<String, dynamic> json) {
+    return ProductGroup(
+      groupId: json['groupId'] as String,
+      sameItemKey: json['sameItemKey'] as String?,
+      displayTitle: json['displayTitle'] as String,
+      category: json['category'] as String?,
+      brand: json['brand'] as String?,
+      thumbnailUrl: json['thumbnailUrl'] as String?,
+      bestPrice: (json['bestPrice'] as num).toDouble(),
+      originalPrice: (json['originalPrice'] as num).toDouble(),
+      priceRange: json['priceRange'] != null
+          ? PriceRange.fromJson(json['priceRange'] as Map<String, dynamic>)
+          : null,
+      platformCount: json['platformCount'] as int,
+      platforms: (json['platforms'] as List)
+          .map((p) => PlatformOfferSummary.fromJson(p as Map<String, dynamic>))
+          .toList(),
+      highlights:
+          (json['highlights'] as List).map((h) => h.toString()).toList(),
+      matchLevel: json['matchLevel'] as String?,
+    );
+  }
+}
+
+class ProductSpec {
+  final String label;
+  final String value;
+
+  const ProductSpec({required this.label, required this.value});
+
+  factory ProductSpec.fromJson(Map<String, dynamic> json) {
+    return ProductSpec(
+      label: json['label'] as String? ?? '',
+      value: json['value'] as String? ?? '',
+    );
+  }
+}
+
+class PriceRange {
+  final double min;
+  final double max;
+
+  const PriceRange({required this.min, required this.max});
+
+  factory PriceRange.fromJson(Map<String, dynamic> json) {
+    return PriceRange(
+      min: (json['min'] as num).toDouble(),
+      max: (json['max'] as num).toDouble(),
+    );
+  }
+}
+
+class PlatformOfferSummary {
+  final String productId;
+  final String platform;
+  final double price;
+  final double originalPrice;
+  final String shopName;
+  final String productUrl;
+  final double rating;
+  final int sales;
+  final List<String> tags;
+  final List<String> reasons;
+  final double score;
+  final String title;
+  final String imageUrl;
+  final String brand;
+  final List<double> priceHistory;
+  final List<String> matchedPreferences;
+  final List<ProductSpec> specs;
+
+  const PlatformOfferSummary({
+    required this.productId,
+    required this.platform,
+    required this.price,
+    required this.originalPrice,
+    required this.shopName,
+    required this.productUrl,
+    required this.rating,
+    required this.sales,
+    required this.tags,
+    required this.reasons,
+    this.score = 0,
+    this.title = '',
+    this.imageUrl = '',
+    this.brand = '',
+    this.priceHistory = const [],
+    this.matchedPreferences = const [],
+    this.specs = const [],
+  });
+
+  factory PlatformOfferSummary.fromJson(Map<String, dynamic> json) {
+    return PlatformOfferSummary(
+      productId: json['productId'] as String,
+      platform: json['platform'] as String,
+      price: (json['price'] as num).toDouble(),
+      originalPrice: (json['originalPrice'] as num).toDouble(),
+      shopName: json['shopName'] as String,
+      productUrl: json['productUrl'] as String? ?? '',
+      rating: (json['rating'] as num).toDouble(),
+      sales: json['sales'] as int,
+      tags: (json['tags'] as List).map((t) => t.toString()).toList(),
+      reasons: (json['reasons'] as List).map((r) => r.toString()).toList(),
+      score: (json['score'] as num?)?.toDouble() ?? 0,
+      title: json['title'] as String? ?? '',
+      imageUrl: json['imageUrl'] as String? ?? '',
+      brand: json['brand'] as String? ?? '',
+      priceHistory: (json['priceHistory'] as List?)
+              ?.map((v) => (v as num).toDouble())
+              .toList() ??
+          const [],
+      matchedPreferences: (json['matchedPreferences'] as List?)
+              ?.map((v) => v.toString())
+              .toList() ??
+          const [],
+      specs: (json['specs'] as List?)
+              ?.map((s) => ProductSpec.fromJson(s as Map<String, dynamic>))
+              .toList() ??
+          const [],
     );
   }
 }
@@ -281,7 +439,8 @@ class ProductAnalysis {
       rank: json['rank'] as int,
       score: json['score'] as int,
       strengths: (json['strengths'] as List).map((s) => s.toString()).toList(),
-      weaknesses: (json['weaknesses'] as List).map((w) => w.toString()).toList(),
+      weaknesses:
+          (json['weaknesses'] as List).map((w) => w.toString()).toList(),
     );
   }
 }
@@ -355,8 +514,7 @@ class ClarificationOption {
   final String optionId;
   final String label;
 
-  const ClarificationOption(
-      {required this.optionId, required this.label});
+  const ClarificationOption({required this.optionId, required this.label});
 
   factory ClarificationOption.fromJson(Map<String, dynamic> json) {
     return ClarificationOption(

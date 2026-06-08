@@ -7,6 +7,8 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -100,7 +102,11 @@ public class MockAgent {
             var m = msgs.get(i);
             if ("assistant".equals(m.role()) && m.agentReply() != null) {
                 for (Card card : m.agentReply().cards()) {
-                    if ("recognition".equals(card.cardType()) && card.category() != null)
+                    // Check recognition cards (legacy) and product_group_list cards
+                    // that carry recognition metadata (new format)
+                    if (card.category() != null &&
+                            ("recognition".equals(card.cardType())
+                                    || "product_group_list".equals(card.cardType())))
                         return card.category();
                 }
             }
@@ -243,7 +249,6 @@ public class MockAgent {
                     intent.needsClarification(), intent.clarificationQuestion(),
                     intent.intentProvider(), intent.intentFallbackUsed(), intent.notices());
         }
-        List<String> effectivePrefs = intent.toPreferenceIds();
         String effectiveColor = overrideColor != null ? overrideColor : intent.color();
         Double effectiveMaxPrice = overrideMaxPrice != null ? overrideMaxPrice : intent.maxPrice();
         String effectiveBrand = overrideBrand != null ? overrideBrand : intent.brand();
@@ -268,41 +273,379 @@ public class MockAgent {
         List<String> filterSummary = buildFilterSummary(fullIntent);
 
         ProductSearchResult sr = productSource.search(
-                new ProductSearchQuery(keyword, effectivePrefs, effectiveMaxPrice, effectiveColor,
-                        effectiveBrand, effectivePlatforms, effectiveSortBy, effectiveMinRating));
+                new ProductSearchQuery(keyword, fullIntent.toPreferenceIds(), effectiveMaxPrice,
+                        effectiveColor, effectiveBrand, effectivePlatforms,
+                        effectiveSortBy, effectiveMinRating));
         List<Card> cards = new ArrayList<>();
 
-        cards.add(Card.productList("多平台商品结果", sr.products(), filterSummary));
-        cards.add(Card.comparison("平台比价", sr.platformStats()));
+        // Build product groups from search results.
+        // Wrap in mutable list — groupProducts may return immutable List.of() when empty.
+        List<ProductGroup> groups = new ArrayList<>(
+                groupProducts(sr.products(), fullIntent, sr));
 
-        if (sr.products().isEmpty()) {
-            String note = noEmptyNote(effectiveMaxPrice, effectiveBrand, effectiveColor, effectiveMinRating);
-            return new AgentReply(UUID.randomUUID().toString(), "product_recommendation", note, cards);
+        // If strict filtering left us with fewer than 3 groups, try a relaxed search.
+        // This handles both "no products at all" (e.g., very tight budget) and
+        // "some products but fewer than 3 groups after grouping".
+        if (groups.size() < 3) {
+            int needed = 3 - groups.size();
+            List<ProductOffer> relaxed = findRelaxedProducts(sr.products(), fullIntent, needed);
+            for (ProductOffer p : relaxed) {
+                mergeRelaxedProduct(groups, p, keyword);
+            }
+            // Re-sort after merging
+            sortGroupsByCompositeScore(groups, fullIntent);
         }
 
-        RecommendationExplanation ruleExp = ruleExplainer.explain(sr, fullIntent.toUserPreference(), keyword);
-        RecommendationExplanation exp;
-        if (useArk) {
-            exp = arkExplainer.explain(ruleExp, fullIntent, sr);
+        String emptyReason = null;
+        if (groups.isEmpty()) {
+            emptyReason = noEmptyNote(effectiveMaxPrice, effectiveBrand, effectiveColor, effectiveMinRating);
+        }
+
+        // Always emit product_group_list + clarification
+        cards.add(Card.productGroupList("匹配商品", groups, filterSummary, emptyReason));
+        cards.add(buildSuggestionCard(keyword, effectiveBrand));
+
+        String replyText;
+        if (groups.isEmpty()) {
+            replyText = emptyReason != null ? emptyReason : "暂无合适的商品。";
+        } else if (groups.size() == 1) {
+            replyText = "找到 1 组匹配商品，你更看重哪一点？";
         } else {
-            exp = ruleExp;
-        }
-
-        if (sr.topPick() != null) {
-            ProductOffer t = sr.topPick();
-            List<String> allNotices = new ArrayList<>(fullIntent.notices());
-            allNotices.addAll(exp.notices());
-            cards.add(Card.recommendation("推荐购买", t.title(), t.platform(), t.price(),
-                    exp.summaryReason(),
-                    exp.decisionScore(), exp.decisionSignals(), exp.evidence(),
-                    exp.risks(), exp.productAnalyses(),
-                    fullIntent.intentProvider(), fullIntent.intentFallbackUsed(),
-                    exp.explanationProvider(), exp.explanationFallbackUsed(),
-                    allNotices));
+            replyText = "找到 " + groups.size() + " 组匹配商品，你更看重哪一点？";
         }
 
         return new AgentReply(UUID.randomUUID().toString(),
-                "product_recommendation", "我按你的偏好整理了几个平台的选择。", cards);
+                "product_recommendation", replyText, cards);
+    }
+
+    /**
+     * Group products by {@code sameItemKey}.
+     * <ul>
+     *   <li>Same {@code sameItemKey} (non-null, non-blank) → same group</li>
+     *   <li>Null/blank {@code sameItemKey} → one group per product (groupId = productId)</li>
+     *   <li>Target 3–6 groups from strict matches</li>
+     *   <li>If fewer than 3 strict groups, relax non-category constraints to reach 3</li>
+     *   <li>Relaxed groups are marked {@code matchLevel = "relaxed"}</li>
+     *   <li>Max 6 groups total</li>
+     *   <li>Groups are sorted by composite match strength, not by price</li>
+     * </ul>
+     */
+    private List<ProductGroup> groupProducts(List<ProductOffer> products,
+                                              ShoppingIntent intent,
+                                              ProductSearchResult sr) {
+        if (products.isEmpty()) return List.of();
+
+        String effectiveCategory = intent.keyword();
+
+        // Phase 1: group by sameItemKey (non-null, non-blank)
+        Map<String, List<ProductOffer>> keyGroups = new LinkedHashMap<>();
+        List<ProductOffer> unkeyed = new ArrayList<>();
+
+        for (ProductOffer p : products) {
+            String key = p.sameItemKey();
+            if (key != null && !key.isBlank()) {
+                keyGroups.computeIfAbsent(key, k -> new ArrayList<>()).add(p);
+            } else {
+                unkeyed.add(p);
+            }
+        }
+
+        List<ProductGroup> groups = new ArrayList<>();
+
+        // Build groups from sameItemKey clusters
+        for (var entry : keyGroups.entrySet()) {
+            groups.add(buildGroup(entry.getKey(), entry.getValue(), "strict", effectiveCategory));
+        }
+
+        // Build individual groups for unkeyed products
+        for (ProductOffer p : unkeyed) {
+            groups.add(buildGroup(p.productId(), List.of(p), "strict", effectiveCategory));
+        }
+
+        // Phase 2: sort by composite match strength (strict → highest score/rating/sales → best price)
+        sortGroupsByCompositeScore(groups, intent);
+
+        // Select top groups first (strict), then relax if under target
+        int targetMin = 3;
+        int targetMax = 6;
+
+        List<ProductGroup> strictGroups = groups.stream()
+                .filter(g -> "strict".equals(g.matchLevel()))
+                .toList();
+
+        List<ProductGroup> result = new ArrayList<>();
+
+        if (strictGroups.size() >= targetMin) {
+            // Enough strict groups — take top N
+            result.addAll(strictGroups.subList(0, Math.min(strictGroups.size(), targetMax)));
+        } else {
+            // Not enough strict — take all strict, then relax
+            result.addAll(strictGroups);
+
+            // Relax: expand non-category constraints (color, rating, platform, brand)
+            int needed = targetMin - result.size();
+            List<ProductOffer> relaxed = findRelaxedProducts(products, intent, needed);
+            for (ProductOffer p : relaxed) {
+                mergeRelaxedProduct(result, p, effectiveCategory);
+            }
+            // Re-sort after merging relaxed products
+            sortGroupsByCompositeScore(result, intent);
+        }
+
+        // Trim to max
+        if (result.size() > targetMax) {
+            result = new ArrayList<>(result.subList(0, targetMax));
+        }
+
+        return result;
+    }
+
+    /**
+     * Sort groups by composite match strength:
+     *  1. Strict before relaxed
+     *  2. Highest max score in group
+     *  3. Highest max rating
+     *  4. Highest max sales
+     *  5. Lowest price as tiebreaker
+     *
+     * When intent requests explicit price sort, price ordering takes precedence.
+     */
+    private void sortGroupsByCompositeScore(List<ProductGroup> groups, ShoppingIntent intent) {
+        boolean explicitPriceSort = "price_asc".equals(intent.sortBy())
+                || "price_desc".equals(intent.sortBy());
+        if (explicitPriceSort) {
+            if ("price_asc".equals(intent.sortBy())) {
+                groups.sort(Comparator.comparingDouble(ProductGroup::bestPrice));
+            } else {
+                groups.sort(Comparator.comparingDouble(ProductGroup::bestPrice).reversed());
+            }
+        } else {
+            groups.sort(Comparator
+                    .comparingInt((ProductGroup g) -> "strict".equals(g.matchLevel()) ? 0 : 1)
+                    .thenComparingDouble((ProductGroup g) -> -g.platforms().stream()
+                            .mapToDouble(PlatformOfferSummary::score).max().orElse(0))
+                    .thenComparingDouble((ProductGroup g) -> -g.platforms().stream()
+                            .mapToDouble(PlatformOfferSummary::rating).max().orElse(0))
+                    .thenComparingInt((ProductGroup g) -> -g.platforms().stream()
+                            .mapToInt(PlatformOfferSummary::sales).max().orElse(0))
+                    .thenComparingDouble(ProductGroup::bestPrice));
+        }
+    }
+
+    /**
+     * Merge a relaxed product into the result list, respecting {@code sameItemKey} so that
+     * products belonging to the same item end up in one group (one card), never split across two.
+     */
+    private void mergeRelaxedProduct(List<ProductGroup> groups, ProductOffer p,
+                                     String effectiveCategory) {
+        // Check if product already exists in any group
+        for (ProductGroup g : groups) {
+            boolean alreadyPresent = g.platforms().stream()
+                    .anyMatch(plat -> plat.productId().equals(p.productId()));
+            if (alreadyPresent) return;
+        }
+
+        // If product has a sameItemKey, try to merge into an existing group with the same key
+        String key = p.sameItemKey();
+        if (key != null && !key.isBlank()) {
+            for (int i = 0; i < groups.size(); i++) {
+                ProductGroup g = groups.get(i);
+                if (key.equals(g.sameItemKey())) {
+                    // Merge into existing group: add the new platform to the existing group
+                    List<PlatformOfferSummary> mergedPlatforms = new ArrayList<>(g.platforms());
+                    String cat = resolveCategory(effectiveCategory, p);
+                    mergedPlatforms.add(new PlatformOfferSummary(
+                            p.productId(), p.platform(), p.price(), p.originalPrice(),
+                            p.shopName(), p.productUrl(), p.rating(), p.sales(),
+                            p.tags(), p.reasons(), p.score(),
+                            p.title(), p.imageUrl(), p.brand(),
+                            p.priceHistory(), p.matchedPreferences(),
+                            deriveSpecs(p, cat)));
+                    // Recompute group stats
+                    double newBestPrice = Math.min(g.bestPrice(), p.price());
+                    double newMinPrice = Math.min(g.priceRange() != null ? g.priceRange().min() : g.bestPrice(), p.price());
+                    double newMaxPrice = Math.max(g.priceRange() != null ? g.priceRange().max() : g.bestPrice(), p.price());
+                    List<String> newHighlights = new ArrayList<>(g.highlights());
+                    if (!newHighlights.contains("多平台")) {
+                        newHighlights.add("多平台");
+                    }
+                    ProductGroup merged = new ProductGroup(
+                            g.groupId(), g.sameItemKey(), g.displayTitle(),
+                            g.category(), g.brand(), g.thumbnailUrl(),
+                            newBestPrice, g.originalPrice(),
+                            new PriceRange(newMinPrice, newMaxPrice),
+                            mergedPlatforms.size(), mergedPlatforms,
+                            newHighlights, g.matchLevel());
+                    groups.set(i, merged);
+                    return;
+                }
+            }
+        }
+
+        // No existing group to merge into — create a new relaxed group
+        groups.add(buildGroup(p.productId(), List.of(p), "relaxed", effectiveCategory));
+    }
+
+    /**
+     * Find additional products by relaxing non-category constraints.
+     * Relaxation order: color → rating → platform → brand.
+     * Never relax category or budget.
+     */
+    private List<ProductOffer> findRelaxedProducts(List<ProductOffer> all,
+                                                    ShoppingIntent intent,
+                                                    int needed) {
+        // Re-search without color, minRating, platform, or brand — keep only category and budget.
+        String keyword = intent.keyword();
+        ProductSearchQuery relaxedQuery = new ProductSearchQuery(
+                keyword, List.of(), intent.maxPrice(), null,
+                null, List.of(), intent.sortBy(), null);
+        ProductSearchResult relaxedSr = productSource.search(relaxedQuery);
+
+        List<ProductOffer> relaxedProducts = new ArrayList<>(relaxedSr.products());
+        // Remove already-included products
+        relaxedProducts.removeIf(p -> all.stream().anyMatch(
+                a -> a.productId().equals(p.productId())));
+        // Sort by score descending
+        relaxedProducts.sort(Comparator.comparingDouble(ProductOffer::score).reversed());
+
+        return relaxedProducts.subList(0, Math.min(needed, relaxedProducts.size()));
+    }
+
+    private ProductGroup buildGroup(String groupId, List<ProductOffer> products,
+                                     String matchLevel, String effectiveCategory) {
+        if (products.isEmpty()) throw new IllegalArgumentException("products must not be empty");
+
+        ProductOffer first = products.get(0);
+
+        // Compute best (lowest) price
+        double bestPrice = products.stream().mapToDouble(ProductOffer::price).min().orElse(first.price());
+        double originalPrice = first.originalPrice();
+
+        // Compute price range
+        double minPrice = products.stream().mapToDouble(ProductOffer::price).min().orElse(bestPrice);
+        double maxPrice = products.stream().mapToDouble(ProductOffer::price).max().orElse(bestPrice);
+
+        // Derive display title and category first — needed for specs derivation
+        String displayTitle = deriveGroupTitle(products);
+        // Category: use the resolved effective category (from search keyword / recognition).
+        // Never fall back to brand — category is a product type, brand is a manufacturer.
+        final String cat = resolveCategory(effectiveCategory, first);
+
+        // Build platform summaries with extended fields
+        List<PlatformOfferSummary> platforms = products.stream()
+                .map(p -> new PlatformOfferSummary(
+                        p.productId(), p.platform(), p.price(), p.originalPrice(),
+                        p.shopName(), p.productUrl(), p.rating(), p.sales(),
+                        p.tags(), p.reasons(), p.score(),
+                        p.title(), p.imageUrl(), p.brand(),
+                        p.priceHistory(), p.matchedPreferences(),
+                        deriveSpecs(p, cat)))
+                .toList();
+
+        // Highlights — up to 3
+        List<String> highlights = new ArrayList<>();
+        highlights.add("最低 ¥" + formatPrice(bestPrice));
+        if (products.size() > 1) {
+            highlights.add(products.size() + " 个平台有售");
+        }
+        ProductOffer highestRated = products.stream()
+                .max(Comparator.comparingDouble(ProductOffer::rating)).orElse(first);
+        if (highestRated.rating() >= 4.5) {
+            highlights.add("高评分");
+        } else if (products.stream().anyMatch(p -> p.sales() >= 10000)) {
+            highlights.add("高销量");
+        } else if (bestPrice < originalPrice) {
+            highlights.add("有优惠");
+        }
+        if (highlights.size() > 3) highlights = highlights.subList(0, 3);
+
+        return new ProductGroup(
+                groupId,
+                first.sameItemKey(),
+                displayTitle,
+                cat,
+                first.brand(),
+                first.imageUrl(),
+                bestPrice,
+                originalPrice,
+                new PriceRange(minPrice, maxPrice),
+                products.size(),
+                platforms,
+                highlights,
+                matchLevel
+        );
+    }
+
+    private String resolveCategory(String effectiveCategory, ProductOffer first) {
+        if (effectiveCategory != null && !effectiveCategory.isBlank()) return effectiveCategory;
+        String resolved = CategoryResolver.defaultResolver().resolveName(first.title());
+        if (resolved != null && !resolved.isBlank()) return resolved;
+        return "其他";
+    }
+
+    /**
+     * Derive product specs from the offer and the resolved category.
+     * Always includes: 品类, 店铺, 平台服务.
+     * Includes 品牌 only when present.
+     * Includes 颜色 only when detectable from title/tags.
+     */
+    private static final Set<String> KNOWN_COLORS = Set.of(
+            "白色", "黑色", "红色", "蓝色", "绿色", "黄色", "粉色", "紫色", "灰色", "银色",
+            "金色", "棕色", "橘色", "橙色", "米色", "卡其色", "藏青", "深蓝", "浅灰", "深灰"
+    );
+
+    private List<ProductSpec> deriveSpecs(ProductOffer p, String category) {
+        List<ProductSpec> specs = new ArrayList<>();
+        specs.add(new ProductSpec("品类", category));
+        if (p.brand() != null && !p.brand().isBlank()) {
+            specs.add(new ProductSpec("品牌", p.brand()));
+        }
+
+        // Detect color from title and tags
+        String combined = p.title() + " " + String.join(" ", p.tags());
+        for (String color : KNOWN_COLORS) {
+            if (combined.contains(color)) {
+                specs.add(new ProductSpec("颜色", color));
+                break;
+            }
+        }
+
+        // Platform service tags
+        List<String> serviceTags = new ArrayList<>();
+        for (String tag : p.tags()) {
+            if (tag.contains("自营") || tag.contains("官方") || tag.contains("包邮")
+                    || tag.contains("配送") || tag.contains("售后") || tag.contains("发货")) {
+                serviceTags.add(tag);
+            }
+        }
+        if (!serviceTags.isEmpty()) {
+            specs.add(new ProductSpec("平台服务", String.join("、", serviceTags)));
+        } else {
+            specs.add(new ProductSpec("平台服务", "标准配送"));
+        }
+
+        specs.add(new ProductSpec("店铺", p.shopName()));
+        return specs;
+    }
+
+    private String deriveGroupTitle(List<ProductOffer> products) {
+        ProductOffer best = products.stream()
+                .min(Comparator.comparingDouble(ProductOffer::price)).orElse(products.get(0));
+        String title = best.title();
+        // Clean marketing words
+        title = title.replaceAll("爆款|高性价比|专业级|高音质|新款|百搭配色|春季新款|经典|轻便|时尚设计", "");
+        title = title.replaceAll("\\s+", " ").trim();
+        if (title.length() > 36) {
+            title = title.substring(0, 34) + "…";
+        }
+        if (title.isBlank()) {
+            title = best.brand() != null ? best.brand() + " 商品" : "推荐商品";
+        }
+        return title;
+    }
+
+    private String formatPrice(double price) {
+        return BigDecimal.valueOf(price).stripTrailingZeros().toPlainString();
     }
 
     private String noEmptyNote(Double maxPrice, String brand, String color, Double minRating) {
@@ -397,28 +740,86 @@ public class MockAgent {
     // ── Recognition ──────────────────────────────────────────
 
     private AgentReply buildRecognitionReply(List<String> imageIds) {
-        Card rec = Card.recognition(imageIds.get(0), "运动鞋", "Mock 品牌", "Mock 型号",
+        // Search products for the recognized category to provide product_group_list
+        String category = "运动鞋";
+        String brand = "Mock 品牌";
+        List<ProductGroup> groups = quickSearchGroups(category, null, null, null);
+        String emptyReason = groups.isEmpty() ? "当前演示数据中暂无运动鞋商品。" : null;
+
+        // Merge recognition info into filterSummary — no separate recognition card
+        List<String> filterSummary = new ArrayList<>();
+        filterSummary.add("品类：" + category);
+        filterSummary.add("识别品牌：" + brand);
+        filterSummary.add("识别型号：Mock 型号");
+        filterSummary.add("置信度：82%");
+        Card pgCard = Card.productGroupList("匹配商品", groups, filterSummary, emptyReason);
+        // Carry recognition metadata on the product_group_list card for detail-page use
+        pgCard = pgCard.withRecognitionMeta(
+                imageIds.get(0), category, brand, "Mock 型号",
                 List.of("运动鞋", "白色", "跑步鞋"), Map.of("color", "白色", "style", "通勤运动鞋"),
                 0.82, "mock", false, "当前为演示识别结果。", null);
-        return new AgentReply(UUID.randomUUID().toString(), "recognition",
+
+        return new AgentReply(UUID.randomUUID().toString(), "product_recommendation",
                 "我已经识别了你的商品图片。你更看重哪一点？",
-                List.of(rec, buildSuggestionCard("运动鞋", null)));
+                List.of(pgCard, buildSuggestionCard(category, null)));
     }
 
     private AgentReply buildRecognitionReplyWithResult(RecognitionResult rec) {
-        Card recCard = Card.recognition(rec.getImageId(), rec.getCategory(),
-                rec.getBrand(), rec.getModel(), rec.getKeywords(), rec.getAttributes(),
+        String category = CategoryResolver.defaultResolver().resolveName(rec.getCategory());
+        if (category == null) category = rec.getCategory();
+        // Search by category only — recognized brand goes into filterSummary/metadata,
+        // not as a hard filter, to avoid empty results when mock data lacks the brand.
+        List<ProductGroup> groups = quickSearchGroups(category, null, null, null);
+        String emptyReason = groups.isEmpty() ? "当前数据中暂无「" + category + "」商品。" : null;
+
+        // Merge recognition info into filterSummary — no separate recognition card
+        List<String> filterSummary = new ArrayList<>();
+        filterSummary.add("品类：" + (category != null ? category : rec.getCategory()));
+        if (rec.getBrand() != null && !rec.getBrand().isBlank())
+            filterSummary.add("识别品牌：" + rec.getBrand());
+        if (rec.getModel() != null && !rec.getModel().isBlank())
+            filterSummary.add("识别型号：" + rec.getModel());
+        if (rec.getConfidence() > 0)
+            filterSummary.add("置信度：" + Math.round(rec.getConfidence() * 100) + "%");
+
+        Card pgCard = Card.productGroupList("匹配商品", groups, filterSummary, emptyReason);
+        pgCard = pgCard.withRecognitionMeta(
+                rec.getImageId(), rec.getCategory(), rec.getBrand(), rec.getModel(),
+                rec.getKeywords(), rec.getAttributes(),
                 rec.getConfidence(), rec.getAiProvider(), rec.isFallbackUsed(),
                 rec.getExplanation(), rec.getRecognitionId());
-        return new AgentReply(UUID.randomUUID().toString(), "recognition",
+
+        return new AgentReply(UUID.randomUUID().toString(), "product_recommendation",
                 "我已经识别了你的商品图片。你更看重哪一点？",
-                List.of(recCard, buildSuggestionCard(rec.getCategory(), rec.getBrand())));
+                List.of(pgCard, buildSuggestionCard(rec.getCategory(), rec.getBrand())));
     }
 
     private AgentReply buildClarification(String category) {
+        // Also provide product_group_list for non-shopping text
+        String keyword = category != null ? category : "运动鞋";
+        List<ProductGroup> groups = quickSearchGroups(keyword, null, null, null);
+        String emptyReason = groups.isEmpty() ? "请输入你想要的商品关键词以开始搜索。" : null;
+        List<String> filterSummary = List.of("品类：" + keyword);
+        Card pgCard = Card.productGroupList("匹配商品", groups, filterSummary, emptyReason);
+
         return new AgentReply(UUID.randomUUID().toString(), "clarification",
                 "我已经收到你的需求。你更看重哪一点？",
-                List.of(buildSuggestionCard(category, null)));
+                List.of(pgCard, buildSuggestionCard(category, null)));
+    }
+
+    /**
+     * Quick product search and grouping helper for non-product-recommendation flows.
+     */
+    private List<ProductGroup> quickSearchGroups(String keyword, String brand,
+                                                  Double maxPrice, String sortBy) {
+        ProductSearchResult sr = productSource.search(
+                new ProductSearchQuery(keyword, List.of(), maxPrice, null,
+                        brand, List.of(), sortBy, null));
+        ShoppingIntent dummyIntent = new ShoppingIntent(keyword, maxPrice, null,
+                false, false, false, false, false,
+                brand, List.of(), sortBy, null,
+                false, null, "mock", false, List.of());
+        return groupProducts(sr.products(), dummyIntent, sr);
     }
 
     /**
@@ -469,7 +870,7 @@ public class MockAgent {
                 0.0, null, false, null, null, null, null,
                 null, null, null, null, null,
                 null, null, null, null, null,
-                null);
+                null, null, null);
     }
 
     // ── DTOs ─────────────────────────────────────────────────
@@ -496,7 +897,9 @@ public class MockAgent {
             String explanationProvider,
             Boolean explanationFallbackUsed,
             List<String> notices,
-            List<String> filterSummary) {
+            List<String> filterSummary,
+            List<ProductGroup> groups,
+            String emptyReason) {
 
         public static Card clarification(String title) {
             return new Card("clarification", title, null, null, null, null,
@@ -507,7 +910,7 @@ public class MockAgent {
                     0.0, null, false, null, null, null, null,
                     null, null, null, null, null,
                     null, null, null, null, null,
-                    null);
+                    null, null, null);
         }
 
         public static Card recommendation(String title, String productName,
@@ -525,7 +928,7 @@ public class MockAgent {
                     0.0, null, false, null, null, null, null,
                     decisionScore, signals, evidence, risks, analyses,
                     intentProvider, intentFallback, explProvider, explFallback, notices,
-                    null);
+                    null, null, null);
         }
 
         public static Card recognition(String imageId, String category, String brand,
@@ -538,7 +941,7 @@ public class MockAgent {
                     conf, aiProvider, fallback, explanation, recognitionId,
                     null, null, null, null, null, null, null,
                     null, null, null, null, null,
-                    null);
+                    null, null, null);
         }
 
         public static Card productList(String title, List<ProductOffer> products,
@@ -548,7 +951,7 @@ public class MockAgent {
                     0.0, null, false, null, null, products, null,
                     null, null, null, null, null,
                     null, null, null, null, null,
-                    filterSummary);
+                    filterSummary, null, null);
         }
 
         public static Card comparison(String title,
@@ -558,9 +961,83 @@ public class MockAgent {
                     0.0, null, false, null, null, null, stats,
                     null, null, null, null, null,
                     null, null, null, null, null,
-                    null);
+                    null, null, null);
+        }
+
+        public static Card productGroupList(String title, List<ProductGroup> groups,
+                                            List<String> filterSummary, String emptyReason) {
+            return new Card("product_group_list", title, null, null, null, null, null,
+                    null, null, null, null, null, null,
+                    0.0, null, false, null, null, null, null,
+                    null, null, null, null, null,
+                    null, null, null, null, null,
+                    filterSummary, groups, emptyReason);
+        }
+
+        /**
+         * Returns a copy of this card with recognition metadata fields populated.
+         * Used when a product_group_list card also carries image recognition info
+         * (so the frontend can show recognition details without a separate card).
+         */
+        public Card withRecognitionMeta(String imageId, String category, String brand,
+                                         String model, List<String> keywords,
+                                         Map<String, Object> attributes, double confidence,
+                                         String aiProvider, boolean fallbackUsed,
+                                         String explanation, String recognitionId) {
+            return new Card(this.cardType, this.title,
+                    this.productName, this.platform, this.price, this.reason,
+                    this.options,
+                    imageId, category, brand, model, keywords, attributes,
+                    confidence, aiProvider, fallbackUsed, explanation, recognitionId,
+                    this.products, this.platformStats,
+                    this.decisionScore, this.decisionSignals, this.evidence, this.risks,
+                    this.productAnalyses,
+                    this.intentProvider, this.intentFallbackUsed,
+                    this.explanationProvider, this.explanationFallbackUsed,
+                    this.notices,
+                    this.filterSummary, this.groups, this.emptyReason);
         }
     }
 
     public record Option(String optionId, String label) {}
+
+    public record ProductGroup(
+            String groupId,
+            String sameItemKey,
+            String displayTitle,
+            String category,
+            String brand,
+            String thumbnailUrl,
+            double bestPrice,
+            double originalPrice,
+            PriceRange priceRange,
+            int platformCount,
+            List<PlatformOfferSummary> platforms,
+            List<String> highlights,
+            String matchLevel
+    ) {}
+
+    public record PriceRange(double min, double max) {}
+
+    public record PlatformOfferSummary(
+            String productId,
+            String platform,
+            double price,
+            double originalPrice,
+            String shopName,
+            String productUrl,
+            double rating,
+            int sales,
+            List<String> tags,
+            List<String> reasons,
+            double score,
+            String title,
+            String imageUrl,
+            String brand,
+            List<Double> priceHistory,
+            List<String> matchedPreferences,
+            List<ProductSpec> specs
+    ) {}
+
+    public record ProductSpec(String label, String value) {}
 }
