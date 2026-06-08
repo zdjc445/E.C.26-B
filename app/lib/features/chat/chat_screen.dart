@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -729,7 +730,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       style: const TextStyle(
                           fontSize: 13, height: 1.4, color: AppColors.inkSoft)),
                 ),
-              if (reply != null) ...reply.cards.map(_buildCard),
+              if (reply != null)
+                ...reply.cards.map((card) => _buildCard(card, reply.cards)),
             ],
           ),
         ),
@@ -737,12 +739,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Widget _buildCard(ReplyCard card) {
+  Widget _buildCard(ReplyCard card, List<ReplyCard> siblingCards) {
     switch (card.cardType) {
       case 'clarification':
         return _buildClarificationCard(card);
       case 'recommendation':
-        return _buildRecommendationCard(card);
+        return _buildRecommendationCard(card, _productsFromCards(siblingCards));
       case 'recognition':
         return _buildRecognitionCard(card);
       case 'product_list':
@@ -752,6 +754,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  List<ProductItem> _productsFromCards(List<ReplyCard> cards) {
+    final products = <ProductItem>[];
+    for (final card in cards) {
+      final items = card.products;
+      if (card.cardType == 'product_list' && items != null) {
+        products.addAll(items);
+      }
+    }
+    return products;
   }
 
   Widget _buildClarificationCard(ReplyCard card) {
@@ -797,7 +810,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Widget _buildRecommendationCard(ReplyCard card) {
+  Widget _buildRecommendationCard(ReplyCard card, List<ProductItem> products) {
+    final reasons = _recommendationReasons(card);
+    final risks = _recommendationRisks(card);
+    final details = _recommendationDetails(card);
+    final alternatives = _alternativeProducts(card, products);
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
@@ -805,35 +823,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       decoration: BoxDecoration(
         color: AppColors.panel,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.accent.withAlpha(40)),
+        border: Border.all(color: AppColors.line),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            const Icon(Icons.recommend, size: 18, color: AppColors.accent),
+            const Icon(Icons.shopping_bag_outlined,
+                size: 18, color: AppColors.accent),
             const SizedBox(width: 6),
             Text(card.title,
                 style:
                     const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             const Spacer(),
-            if (card.decisionScore != null)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: card.decisionScore! >= 80
-                      ? AppColors.good.withAlpha(20)
-                      : AppColors.warn.withAlpha(20),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text('综合分 ${card.decisionScore}',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: card.decisionScore! >= 80
-                            ? AppColors.good
-                            : AppColors.warn)),
-              ),
+            if (card.decisionScore != null) _scoreBadge(card.decisionScore!),
           ]),
           const SizedBox(height: 8),
           if (card.productName != null)
@@ -847,18 +850,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               if (card.platform != null && card.price != null)
                 const SizedBox(width: 8),
               if (card.price != null)
-                Text('¥${card.price!.toStringAsFixed(2)}',
+                Text('¥${card.price!.toStringAsFixed(0)}',
                     style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
                         color: AppColors.priceRed)),
             ]),
-          if (card.reason != null) ...[
-            const SizedBox(height: 6),
-            Text(card.reason!,
-                style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
+          if (reasons.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _briefInfoBlock(
+              title: '推荐理由',
+              lines: reasons,
+              icon: Icons.check_circle_outline,
+              color: AppColors.good,
+            ),
           ],
-          // Quick actions: favorite / price alert
+          if (risks.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _briefInfoBlock(
+              title: '注意事项',
+              lines: risks,
+              icon: Icons.error_outline,
+              color: AppColors.warn,
+            ),
+          ],
           if (card.productName != null) ...[
             const SizedBox(height: 8),
             Row(children: [
@@ -885,166 +900,346 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
             ]),
           ],
-          // Provider status
-          if (card.intentProvider != null ||
-              card.explanationProvider != null) ...[
-            const SizedBox(height: 6),
-            Row(children: [
-              if (card.intentProvider != null) ...[
-                _providerChip('意图：${card.intentProvider}',
-                    fallback: card.intentFallbackUsed == true),
-                const SizedBox(width: 6),
-              ],
-              if (card.explanationProvider != null) ...[
-                _providerChip('解释：${card.explanationProvider}',
-                    fallback: card.explanationFallbackUsed == true),
-              ],
-            ]),
-          ],
-          if (card.notices != null && card.notices!.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            ...card.notices!.map((n) => Text(n,
-                style: const TextStyle(fontSize: 10, color: AppColors.warn))),
-          ],
-          // Decision signals
-          if (card.decisionSignals != null &&
-              card.decisionSignals!.isNotEmpty) ...[
+          if (details.isNotEmpty) ...[
             const SizedBox(height: 10),
-            const Text('决策信号',
+            _recommendationReasonExpansion(card, details),
+          ],
+          if (alternatives.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Text('备选商品',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
-            ...card.decisionSignals!.map((s) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(children: [
-                    SizedBox(
-                        width: 60,
-                        child: Text(s.label,
-                            style: const TextStyle(
-                                fontSize: 11, color: AppColors.inkSoft))),
-                    Expanded(
-                        child: ClipRRect(
-                      borderRadius: BorderRadius.circular(3),
-                      child: LinearProgressIndicator(
-                        value: s.score / 100.0,
-                        backgroundColor: AppColors.line,
-                        color: _signalColor(s.score),
-                        minHeight: 6,
-                      ),
-                    )),
-                    const SizedBox(width: 6),
-                    Text('${s.score}',
-                        style: const TextStyle(
-                            fontSize: 11, fontWeight: FontWeight.w600)),
-                  ]),
-                )),
-          ],
-          // Evidence
-          if (card.evidence != null && card.evidence!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            const Text('证据摘要',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            ...card.evidence!.map((e) => Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Row(children: [
-                    const Icon(Icons.check_circle_outline,
-                        size: 12, color: AppColors.good),
-                    const SizedBox(width: 4),
-                    Expanded(
-                        child: Text(e.content,
-                            style: const TextStyle(
-                                fontSize: 11, color: AppColors.inkSoft))),
-                  ]),
-                )),
-          ],
-          // Risks
-          if (card.risks != null && card.risks!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            const Text('风险提示',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            ...card.risks!.map((r) => Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Row(children: [
-                    const Icon(Icons.warning_amber,
-                        size: 12, color: AppColors.warn),
-                    const SizedBox(width: 4),
-                    Expanded(
-                        child: Text(r,
-                            style: const TextStyle(
-                                fontSize: 11, color: AppColors.warn))),
-                  ]),
-                )),
-          ],
-          // Product analyses
-          if (card.productAnalyses != null &&
-              card.productAnalyses!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            const Text('商品对比',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            ...card.productAnalyses!.map((a) => Container(
-                  margin: const EdgeInsets.only(top: 4),
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(children: [
-                          Text('#${a.rank}',
-                              style: const TextStyle(
-                                  fontSize: 11, fontWeight: FontWeight.w700)),
-                          const SizedBox(width: 6),
-                          _platformBadge(a.platform),
-                          const Spacer(),
-                          Text('${a.score}分',
-                              style: const TextStyle(
-                                  fontSize: 11, fontWeight: FontWeight.w600)),
-                        ]),
-                        const SizedBox(height: 2),
-                        if (a.strengths.isNotEmpty)
-                          Text('优势：${a.strengths.join("、")}',
-                              style: const TextStyle(
-                                  fontSize: 11, color: AppColors.good)),
-                        if (a.weaknesses.isNotEmpty)
-                          Text('不足：${a.weaknesses.join("、")}',
-                              style: const TextStyle(
-                                  fontSize: 11, color: AppColors.warn)),
-                      ]),
-                )),
+            ...alternatives.map(_alternativeProductRow),
           ],
         ],
       ),
     );
   }
 
-  Color _signalColor(int score) {
-    if (score >= 80) return AppColors.good;
-    if (score >= 50) return AppColors.warn;
-    return AppColors.priceRed;
-  }
-
-  Widget _providerChip(String label, {bool fallback = false}) {
+  Widget _scoreBadge(int score) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: fallback
-            ? AppColors.warn.withAlpha(20)
-            : AppColors.accent.withAlpha(15),
-        borderRadius: BorderRadius.circular(4),
+        color: AppColors.panelSoft,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.line),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text(label,
-            style: TextStyle(
-                fontSize: 10,
-                color: fallback ? AppColors.warn : AppColors.accent)),
-        if (fallback) ...[
-          const SizedBox(width: 4),
-          const Text('已回退规则处理',
-              style: TextStyle(fontSize: 9, color: AppColors.warn)),
-        ],
-      ]),
+      child: Text('匹配度 $score',
+          style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.inkSoft)),
     );
+  }
+
+  Widget _briefInfoBlock({
+    required String title,
+    required List<String> lines,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 4),
+        ...lines.map((line) => Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(icon, size: 13, color: color),
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(line,
+                        style: TextStyle(
+                            fontSize: 11.5,
+                            height: 1.35,
+                            color: color == AppColors.warn
+                                ? AppColors.warn
+                                : AppColors.inkSoft)),
+                  ),
+                ],
+              ),
+            )),
+      ],
+    );
+  }
+
+  Widget _recommendationReasonExpansion(
+      ReplyCard card, List<MapEntry<String, String>> details) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.panelSoft,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+          shape: const Border(),
+          collapsedShape: const Border(),
+          title: const Text('为什么推荐它',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          subtitle: Text(_recommendationSummary(card),
+              style: const TextStyle(
+                  fontSize: 11, height: 1.35, color: AppColors.inkSoft)),
+          children: details.map(_recommendationDetailRow).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _recommendationDetailRow(MapEntry<String, String> detail) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 42,
+            child: Text(detail.key,
+                style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.inkMain)),
+          ),
+          Expanded(
+            child: Text(detail.value,
+                style: const TextStyle(
+                    fontSize: 11, height: 1.35, color: AppColors.inkSoft)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _alternativeProductRow(_AlternativeProductView item) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.line)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 12.5, fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(width: 8),
+              Text(item.price,
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.priceRed)),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Row(children: [
+            _platformBadge(item.platform),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text('优点：${item.strength}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+            ),
+          ]),
+          const SizedBox(height: 2),
+          Text('注意：${item.caution}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+        ],
+      ),
+    );
+  }
+
+  List<String> _recommendationReasons(ReplyCard card) {
+    final lines = <String>[];
+    final reason = _compactDecisionText(card.reason);
+    if (reason != null) lines.add(reason);
+    for (final evidence in card.evidence ?? const <RecommendationEvidence>[]) {
+      final line = _compactDecisionText(evidence.content);
+      if (line != null) lines.add(line);
+    }
+    if (lines.isEmpty) {
+      for (final signal in card.decisionSignals ?? const <DecisionSignal>[]) {
+        final line = _compactDecisionText(signal.explanation);
+        if (line != null) lines.add(line);
+      }
+    }
+    if (lines.isEmpty) lines.add('价格、评价和售后信息较均衡');
+    return _uniqueLimited(lines, 3);
+  }
+
+  List<String> _recommendationRisks(ReplyCard card) {
+    final lines = <String>[];
+    for (final risk in card.risks ?? const <String>[]) {
+      final line = _compactDecisionText(risk);
+      if (line != null) lines.add(line);
+    }
+    return _uniqueLimited(lines, 2);
+  }
+
+  List<MapEntry<String, String>> _recommendationDetails(ReplyCard card) {
+    final rows = <MapEntry<String, String>>[];
+    for (final signal in card.decisionSignals ?? const <DecisionSignal>[]) {
+      final detail = _compactDecisionText(signal.explanation, maxLength: 42);
+      rows.add(
+          MapEntry(_decisionSignalLabel(signal), detail ?? '${signal.score}分'));
+    }
+    if (rows.isEmpty) {
+      for (final evidence
+          in card.evidence ?? const <RecommendationEvidence>[]) {
+        final detail = _compactDecisionText(evidence.content, maxLength: 42);
+        if (detail != null) rows.add(MapEntry('参考', detail));
+      }
+    }
+    return rows.take(5).toList();
+  }
+
+  String _recommendationSummary(ReplyCard card) {
+    final reasons = _recommendationReasons(card);
+    final risks = _recommendationRisks(card);
+    if (reasons.isNotEmpty && risks.isNotEmpty) {
+      return '${_stripEndPunctuation(reasons.first)}，${_stripEndPunctuation(risks.first)}。';
+    }
+    if (reasons.isNotEmpty) {
+      return '${_stripEndPunctuation(reasons.first)}，下单前再核对规格和优惠。';
+    }
+    return '价格、评价和售后信息已按当前条件整理。';
+  }
+
+  List<_AlternativeProductView> _alternativeProducts(
+      ReplyCard card, List<ProductItem> products) {
+    final analyses = card.productAnalyses ?? const <ProductAnalysis>[];
+    final items = <_AlternativeProductView>[];
+    for (final analysis in analyses.take(3)) {
+      final product = _productForAnalysis(analysis, products);
+      final title = product != null
+          ? _displayProductTitle(product)
+          : _cleanProductTitle(analysis.title);
+      final platform = product?.platform ?? analysis.platform;
+      final price = product != null
+          ? '¥${product.price.toStringAsFixed(0)}'
+          : (card.productName == analysis.title && card.price != null
+              ? '¥${card.price!.toStringAsFixed(0)}'
+              : '价格见列表');
+      final strength = _compactDecisionText(
+              analysis.strengths.isNotEmpty
+                  ? analysis.strengths.first
+                  : (product?.reasons.isNotEmpty == true
+                      ? product!.reasons.first
+                      : '价格和评价较均衡'),
+              maxLength: 24) ??
+          '价格和评价较均衡';
+      final caution = _compactDecisionText(
+              analysis.weaknesses.isNotEmpty
+                  ? analysis.weaknesses.first
+                  : _defaultProductCaution(product),
+              maxLength: 24) ??
+          '购买前核对规格';
+      items.add(_AlternativeProductView(
+        title: title,
+        platform: platform,
+        price: price,
+        strength: strength,
+        caution: caution,
+      ));
+    }
+    return items;
+  }
+
+  ProductItem? _productForAnalysis(
+      ProductAnalysis analysis, List<ProductItem> products) {
+    for (final product in products) {
+      if (product.productId == analysis.productId) return product;
+    }
+    return null;
+  }
+
+  String _decisionSignalLabel(DecisionSignal signal) {
+    final text = '${signal.key}${signal.label}';
+    if (text.contains('price') || text.contains('价格')) return '价格';
+    if (text.contains('rating') ||
+        text.contains('review') ||
+        text.contains('评分') ||
+        text.contains('评价')) {
+      return '评价';
+    }
+    if (text.contains('store') ||
+        text.contains('shop') ||
+        text.contains('店') ||
+        text.contains('售后')) {
+      return '售后';
+    }
+    if (text.contains('risk') || text.contains('风险')) return '风险';
+    if (text.contains('platform') || text.contains('渠道')) return '平台';
+    return signal.label;
+  }
+
+  String? _compactDecisionText(String? value, {int maxLength = 36}) {
+    final raw = value?.trim();
+    if (raw == null || raw.isEmpty) return null;
+    var text = raw
+        .replaceAll('\n', ' ')
+        .replaceAll('整体决策得分', '')
+        .replaceAll('模型判断', '')
+        .replaceAll('综合排序策略', '')
+        .replaceAll('AI', '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (text.isEmpty) return null;
+    if (text.length > maxLength) {
+      text = '${text.substring(0, maxLength)}...';
+    }
+    return text;
+  }
+
+  String _stripEndPunctuation(String value) {
+    return value.replaceAll(RegExp(r'[。！？；,.!?\s]+$'), '');
+  }
+
+  List<String> _uniqueLimited(List<String> values, int limit) {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final value in values) {
+      if (seen.add(value)) result.add(value);
+      if (result.length >= limit) break;
+    }
+    return result;
+  }
+
+  String _cleanProductTitle(String title) {
+    return title
+        .replaceAll('爆款', '')
+        .replaceAll('高性价比', '')
+        .replaceAll('专业级', '')
+        .replaceAll('高音质', '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String _defaultProductCaution(ProductItem? product) {
+    if (product == null) return '购买前核对规格';
+    if (product.platform == '拼多多-mock') return '注意店铺售后规则';
+    if (product.priceHistory.isEmpty) return '暂无历史价参考';
+    return '下单前确认优惠有效';
   }
 
   Widget _buildRecognitionCard(ReplyCard card) {
@@ -1353,42 +1548,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     TextButton(
                       key: Key('go_${p.productId}'),
                       onPressed: () => _showProductJumpSheet(p),
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(48, 28),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        foregroundColor: AppColors.accent,
-                      ),
-                      child: const Text('去看看', style: TextStyle(fontSize: 12)),
+                      style: _productActionStyle(primary: true),
+                      child: const Text('去看看', style: TextStyle(fontSize: 11)),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
                     TextButton.icon(
                       key: Key('favorite_${p.productId}'),
                       onPressed: () => _addProductToFavorites(p),
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(58, 28),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        foregroundColor:
-                            isFavorite ? AppColors.priceRed : AppColors.inkSoft,
-                      ),
+                      style: _productActionStyle(selected: isFavorite),
                       icon: Icon(
                         isFavorite ? Icons.favorite : Icons.favorite_border,
-                        size: 14,
+                        size: 13,
                       ),
                       label: Text(isFavorite ? '已收藏' : '收藏',
-                          style: const TextStyle(fontSize: 12)),
+                          style: const TextStyle(fontSize: 11)),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 8),
                     TextButton(
                       onPressed: () {},
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(48, 28),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        foregroundColor: AppColors.inkSoft,
-                      ),
-                      child: const Text('比价详情', style: TextStyle(fontSize: 12)),
+                      style: _productActionStyle(),
+                      child: const Text('比价详情', style: TextStyle(fontSize: 11)),
                     ),
                   ],
                 ),
@@ -1397,6 +1576,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  ButtonStyle _productActionStyle(
+      {bool primary = false, bool selected = false}) {
+    final color = selected
+        ? AppColors.priceRed
+        : (primary ? AppColors.accent : AppColors.inkSoft);
+    return TextButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      minimumSize: const Size(0, 28),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      foregroundColor: color,
+      backgroundColor:
+          primary ? AppColors.accent.withAlpha(12) : AppColors.panelSoft,
+      side: BorderSide(
+          color: selected
+              ? AppColors.priceRed.withAlpha(80)
+              : (primary ? AppColors.accent.withAlpha(50) : AppColors.line)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
     );
   }
 
@@ -1522,19 +1721,42 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _productThumbPlaceholder(ProductItem product) {
+    final accent = _thumbAccent(product);
     return Container(
+      key: Key('product_thumb_${product.productId}'),
       width: 88,
       height: 88,
       decoration: BoxDecoration(
-        color: AppColors.panelSoft,
+        color: _thumbSurface(product),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: AppColors.line),
       ),
       child: Stack(
         children: [
-          Center(
-            child: Icon(_productIcon(product),
-                size: 30, color: AppColors.inkSoft.withAlpha(180)),
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _ProductThumbPainter(
+                icon: _productIcon(product),
+                accent: accent,
+                lineColor: AppColors.inkSoft.withAlpha(80),
+                text: '${product.title}${product.tags.join()}',
+              ),
+            ),
+          ),
+          Positioned(
+            left: 6,
+            top: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(215),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: AppColors.line),
+              ),
+              child: Text(_thumbBrand(product),
+                  style: TextStyle(
+                      fontSize: 9, fontWeight: FontWeight.w600, color: accent)),
+            ),
           ),
           Positioned(
             left: 6,
@@ -1544,6 +1766,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               decoration: BoxDecoration(
                 color: Colors.white.withAlpha(230),
                 borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: AppColors.line),
               ),
               child: Text(_platformLabel(product.platform),
                   style:
@@ -1553,6 +1776,36 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ],
       ),
     );
+  }
+
+  Color _thumbSurface(ProductItem product) {
+    return switch (product.platform) {
+      '京东-mock' => const Color(0xFFF8F3F4),
+      '拼多多-mock' => const Color(0xFFFFF4EE),
+      '淘宝-mock' => const Color(0xFFF7F5EF),
+      _ => AppColors.panelSoft,
+    };
+  }
+
+  Color _thumbAccent(ProductItem product) {
+    final text = '${product.title}${product.tags.join()}';
+    if (text.contains('黑色')) return const Color(0xFF2F343B);
+    if (text.contains('白色')) return const Color(0xFF8A8F98);
+    if (product.platform == '京东-mock') return const Color(0xFFB23A48);
+    if (product.platform == '拼多多-mock') return const Color(0xFFE36A3D);
+    if (product.platform == '淘宝-mock') return const Color(0xFFC27A2C);
+    return AppColors.accent;
+  }
+
+  String _thumbBrand(ProductItem product) {
+    final brand = product.brand?.trim();
+    if (brand != null && brand.isNotEmpty) return brand;
+    final title = _displayProductTitle(product);
+    if (title.contains('索尼')) return 'SONY';
+    if (title.contains('小米')) return 'MI';
+    if (title.contains('华为')) return 'HUAWEI';
+    if (title.contains('森海塞尔')) return 'SENN';
+    return '商品';
   }
 
   IconData _productIcon(ProductItem product) {
@@ -1627,12 +1880,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   List<String> _decisionTags(ProductItem product) {
     final tags = <String>[];
     final priceNote = _priceNote(product);
-    if (priceNote != null) tags.add(priceNote);
-    if (product.originalPrice > product.price) tags.add('有优惠');
+    if (priceNote != null && priceNote != '暂无历史价' && priceNote != '价格稳定') {
+      tags.add(priceNote);
+    }
     if (_afterSaleText(product) == '官方售后') {
-      tags.add('官方售后');
+      tags.add('自营/官方');
     } else if (_shippingText(product) == '包邮') {
       tags.add('包邮');
+    }
+    if (product.originalPrice > product.price && tags.length < 3) {
+      tags.add('券后价');
     }
     return tags.take(3).toList();
   }
@@ -1665,6 +1922,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Widget _buildComparisonCard(ReplyCard card) {
     final stats = card.platformStats ?? {};
+    final lowestValues = <double>[];
+    for (final entry in stats.entries) {
+      final value = entry.value;
+      if (value is Map<String, dynamic>) {
+        final lowest = (value['lowestPrice'] as num?)?.toDouble();
+        if (lowest != null) lowestValues.add(lowest);
+      }
+    }
+    final minLowest = lowestValues.isEmpty
+        ? null
+        : lowestValues.reduce((a, b) => a < b ? a : b);
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
@@ -1684,6 +1952,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 style:
                     const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
           ]),
+          if (stats.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            const Text('各平台价格概览',
+                style: TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+          ],
           const SizedBox(height: 8),
           if (stats.isEmpty)
             const Text('暂无可比价平台',
@@ -1691,40 +1964,52 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           else
             ...stats.entries.map((e) {
               final s = e.value as Map<String, dynamic>;
-              final lowest =
-                  (s['lowestPrice'] as num?)?.toStringAsFixed(0) ?? '-';
-              final avg = (s['averagePrice'] as num?)?.toStringAsFixed(0);
-              final highlight = s['highlight'] as String?;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 6),
+              final platform = s['platform'] as String? ?? e.key;
+              final lowestValue = (s['lowestPrice'] as num?)?.toDouble();
+              final lowest = lowestValue?.toStringAsFixed(0) ?? '-';
+              final avgValue = (s['averagePrice'] as num?)?.toDouble();
+              final avg = avgValue?.toStringAsFixed(0);
+              final count = s['productCount'] ?? 0;
+              final highlight = (s['highlight'] as String?)?.trim();
+              final isLowest = minLowest != null &&
+                  lowestValue != null &&
+                  lowestValue == minLowest;
+              final isStable = _isStablePlatform(platform, highlight);
+              return Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: AppColors.line)),
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      _platformBadge(s['platform'] as String? ?? e.key),
+                      _platformBadge(platform),
+                      if (isLowest) ...[
+                        const SizedBox(width: 6),
+                        _platformMarker('最低价平台', AppColors.priceRed),
+                      ],
+                      if (isStable) ...[
+                        const SizedBox(width: 6),
+                        _platformMarker('更稳妥平台', AppColors.accent),
+                      ],
                       const Spacer(),
                       Text('最低 ¥$lowest',
                           style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
                               color: AppColors.priceRed)),
-                      if (avg != null) ...[
-                        const SizedBox(width: 8),
-                        Text('均价 ¥$avg',
-                            style: const TextStyle(
-                                fontSize: 11, color: AppColors.inkSoft)),
-                      ],
-                      const SizedBox(width: 8),
-                      Text('${s['productCount'] ?? 0}件',
-                          style: const TextStyle(
-                              fontSize: 11, color: AppColors.inkSoft)),
                     ]),
+                    const SizedBox(height: 3),
+                    Text('${avg != null ? '均价 ¥$avg' : '暂无均价'} · $count件',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.inkSoft)),
                     if (highlight != null && highlight.isNotEmpty)
                       Padding(
-                        padding: const EdgeInsets.only(top: 2, left: 2),
-                        child: Text(highlight,
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(_compactPlatformHighlight(highlight),
                             style: const TextStyle(
-                                fontSize: 10, color: AppColors.inkSoft)),
+                                fontSize: 11, color: AppColors.inkSoft)),
                       ),
                   ],
                 ),
@@ -1733,6 +2018,31 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ],
       ),
     );
+  }
+
+  Widget _platformMarker(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withAlpha(14),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withAlpha(50)),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 9, fontWeight: FontWeight.w600, color: color)),
+    );
+  }
+
+  bool _isStablePlatform(String platform, String? highlight) {
+    if (platform == '京东-mock') return true;
+    final text = highlight ?? '';
+    return text.contains('自营') || text.contains('售后') || text.contains('保障');
+  }
+
+  String _compactPlatformHighlight(String value) {
+    if (value.length <= 26) return value;
+    return '${value.substring(0, 26)}...';
   }
 
   Widget _platformBadge(String platform) {
@@ -1884,6 +2194,212 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
       ),
     );
+  }
+}
+
+class _AlternativeProductView {
+  final String title;
+  final String platform;
+  final String price;
+  final String strength;
+  final String caution;
+
+  const _AlternativeProductView({
+    required this.title,
+    required this.platform,
+    required this.price,
+    required this.strength,
+    required this.caution,
+  });
+}
+
+class _ProductThumbPainter extends CustomPainter {
+  final IconData icon;
+  final Color accent;
+  final Color lineColor;
+  final String text;
+
+  const _ProductThumbPainter({
+    required this.icon,
+    required this.accent,
+    required this.lineColor,
+    required this.text,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final softPaint = Paint()
+      ..color = accent.withAlpha(18)
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(size.width * 0.68, size.height * 0.28),
+        size.width * 0.28, softPaint);
+    canvas.drawCircle(Offset(size.width * 0.28, size.height * 0.78),
+        size.width * 0.18, softPaint);
+
+    if (text.contains('耳机')) {
+      _paintHeadphones(canvas, size);
+    } else if (text.contains('鞋')) {
+      _paintShoe(canvas, size);
+    } else if (text.contains('吹风机')) {
+      _paintHairDryer(canvas, size);
+    } else if (text.contains('背包') || text.contains('双肩')) {
+      _paintBag(canvas, size);
+    } else if (text.contains('手表')) {
+      _paintWatch(canvas, size);
+    } else {
+      _paintIcon(canvas, size);
+    }
+  }
+
+  void _paintHeadphones(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..color = accent
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+    final fill = Paint()
+      ..color = accent.withAlpha(170)
+      ..style = PaintingStyle.fill;
+    canvas.drawArc(
+      Rect.fromLTWH(size.width * 0.24, size.height * 0.20, size.width * 0.52,
+          size.height * 0.54),
+      math.pi,
+      math.pi,
+      false,
+      stroke,
+    );
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(size.width * 0.23, size.height * 0.48,
+                size.width * 0.17, size.height * 0.27),
+            const Radius.circular(8)),
+        fill);
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(size.width * 0.60, size.height * 0.48,
+                size.width * 0.17, size.height * 0.27),
+            const Radius.circular(8)),
+        fill);
+    canvas.drawLine(Offset(size.width * 0.40, size.height * 0.72),
+        Offset(size.width * 0.60, size.height * 0.72), stroke);
+  }
+
+  void _paintShoe(Canvas canvas, Size size) {
+    final fill = Paint()
+      ..color = accent.withAlpha(190)
+      ..style = PaintingStyle.fill;
+    final sole = Paint()
+      ..color = lineColor
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    final path = Path()
+      ..moveTo(size.width * 0.20, size.height * 0.58)
+      ..quadraticBezierTo(size.width * 0.43, size.height * 0.34,
+          size.width * 0.62, size.height * 0.48)
+      ..quadraticBezierTo(size.width * 0.76, size.height * 0.58,
+          size.width * 0.84, size.height * 0.64)
+      ..quadraticBezierTo(size.width * 0.67, size.height * 0.72,
+          size.width * 0.23, size.height * 0.70)
+      ..close();
+    canvas.drawPath(path, fill);
+    canvas.drawLine(Offset(size.width * 0.18, size.height * 0.73),
+        Offset(size.width * 0.82, size.height * 0.74), sole);
+  }
+
+  void _paintHairDryer(Canvas canvas, Size size) {
+    final fill = Paint()
+      ..color = accent.withAlpha(185)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(size.width * 0.22, size.height * 0.35,
+                size.width * 0.36, size.height * 0.24),
+            const Radius.circular(10)),
+        fill);
+    final nozzle = Path()
+      ..moveTo(size.width * 0.56, size.height * 0.39)
+      ..lineTo(size.width * 0.82, size.height * 0.35)
+      ..lineTo(size.width * 0.82, size.height * 0.56)
+      ..lineTo(size.width * 0.56, size.height * 0.53)
+      ..close();
+    canvas.drawPath(nozzle, fill);
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(size.width * 0.34, size.height * 0.55,
+                size.width * 0.14, size.height * 0.28),
+            const Radius.circular(6)),
+        fill);
+  }
+
+  void _paintBag(Canvas canvas, Size size) {
+    final fill = Paint()
+      ..color = accent.withAlpha(180)
+      ..style = PaintingStyle.fill;
+    final stroke = Paint()
+      ..color = lineColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(size.width * 0.28, size.height * 0.32,
+                size.width * 0.44, size.height * 0.46),
+            const Radius.circular(10)),
+        fill);
+    canvas.drawArc(
+        Rect.fromLTWH(size.width * 0.36, size.height * 0.22, size.width * 0.28,
+            size.height * 0.25),
+        math.pi,
+        math.pi,
+        false,
+        stroke);
+    canvas.drawLine(Offset(size.width * 0.35, size.height * 0.52),
+        Offset(size.width * 0.65, size.height * 0.52), stroke);
+  }
+
+  void _paintWatch(Canvas canvas, Size size) {
+    final fill = Paint()
+      ..color = accent.withAlpha(180)
+      ..style = PaintingStyle.fill;
+    final band = Paint()
+      ..color = lineColor
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(size.width * 0.43, size.height * 0.18,
+                size.width * 0.14, size.height * 0.62),
+            const Radius.circular(7)),
+        band);
+    canvas.drawCircle(
+        Offset(size.width * 0.50, size.height * 0.50), size.width * 0.22, fill);
+  }
+
+  void _paintIcon(Canvas canvas, Size size) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: String.fromCharCode(icon.codePoint),
+        style: TextStyle(
+          fontSize: 34,
+          color: accent.withAlpha(185),
+          fontFamily: icon.fontFamily,
+          package: icon.fontPackage,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    painter.paint(
+      canvas,
+      Offset(
+          (size.width - painter.width) / 2, (size.height - painter.height) / 2),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ProductThumbPainter oldDelegate) {
+    return oldDelegate.icon != icon ||
+        oldDelegate.accent != accent ||
+        oldDelegate.lineColor != lineColor ||
+        oldDelegate.text != text;
   }
 }
 

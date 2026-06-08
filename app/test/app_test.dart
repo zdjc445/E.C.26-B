@@ -949,7 +949,8 @@ void main() {
       expect(find.text('暂无符合条件的商品'), findsOneWidget);
     });
 
-    testWidgets('recommendation card shows decision score', (tester) async {
+    testWidgets('recommendation card uses shopping app summary layout',
+        (tester) async {
       final ov = _TestOverrides();
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
@@ -957,11 +958,15 @@ void main() {
       await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pumpAndSettle();
 
-      expect(find.text('综合分 86'), findsOneWidget);
-      expect(find.text('决策信号'), findsOneWidget);
-      expect(find.text('证据摘要'), findsOneWidget);
-      expect(find.text('风险提示'), findsOneWidget);
-      expect(find.text('商品对比'), findsOneWidget);
+      expect(find.text('匹配度 86'), findsOneWidget);
+      expect(find.text('推荐理由'), findsOneWidget);
+      expect(find.text('注意事项'), findsOneWidget);
+      expect(find.text('为什么推荐它'), findsOneWidget);
+      expect(find.text('备选商品'), findsOneWidget);
+      expect(find.text('综合分 86'), findsNothing);
+      expect(find.text('决策信号'), findsNothing);
+      expect(find.text('证据摘要'), findsNothing);
+      expect(find.text('商品对比'), findsNothing);
     });
 
     testWidgets('old recommendation card without explanation still works',
@@ -1015,7 +1020,7 @@ void main() {
       expect(find.text('综合分'), findsNothing);
     });
 
-    testWidgets('recommendation card shows provider status', (tester) async {
+    testWidgets('recommendation card hides provider status', (tester) async {
       final ov = _TestOverrides();
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
@@ -1023,8 +1028,8 @@ void main() {
       await tester.tap(find.byIcon(Icons.arrow_forward));
       await tester.pumpAndSettle();
 
-      expect(find.text('意图：rule'), findsOneWidget);
-      expect(find.text('解释：rule'), findsOneWidget);
+      expect(find.text('意图：rule'), findsNothing);
+      expect(find.text('解释：rule'), findsNothing);
     });
 
     testWidgets('history restores provider metadata', (tester) async {
@@ -1104,9 +1109,9 @@ void main() {
       // Verify history loaded
       expect(find.text('T'), findsOneWidget);
       expect(find.text('test'), findsOneWidget);
-      // Provider metadata
-      expect(find.text('意图：ark'), findsOneWidget);
-      expect(find.text('已回退规则处理'), findsOneWidget);
+      // Provider metadata is retained in the model but hidden from the user UI.
+      expect(find.text('意图：ark'), findsNothing);
+      expect(find.text('已回退规则处理'), findsNothing);
     });
   });
 
@@ -1166,8 +1171,11 @@ void main() {
       expect(find.text('索尼无线降噪耳机 黑色款'), findsOneWidget);
       expect(find.text('京东 · 京东自营'), findsOneWidget);
       expect(find.textContaining('条评价'), findsOneWidget);
+      expect(find.byKey(const Key('product_thumb_jd-101')), findsOneWidget);
       expect(find.text('近30天低价'), findsOneWidget);
-      expect(find.text('有优惠'), findsOneWidget);
+      expect(find.text('自营/官方'), findsOneWidget);
+      expect(find.text('券后价'), findsOneWidget);
+      expect(find.text('有优惠'), findsNothing);
     });
 
     testWidgets('product row favorite updates state and avoids duplicate add',
@@ -1305,7 +1313,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('最低 ¥199'), findsOneWidget);
-      expect(find.text('均价 ¥259'), findsOneWidget);
+      expect(find.text('均价 ¥259 · 4件'), findsOneWidget);
+      expect(find.text('最低价平台'), findsOneWidget);
+      expect(find.text('更稳妥平台'), findsOneWidget);
       expect(find.text('自营保障，物流快'), findsOneWidget);
     });
 
