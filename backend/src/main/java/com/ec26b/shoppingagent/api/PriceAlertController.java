@@ -4,9 +4,9 @@ import com.ec26b.shoppingagent.alert.PriceAlert;
 import com.ec26b.shoppingagent.alert.PriceAlertRepository;
 import com.ec26b.shoppingagent.auth.AuthService;
 import com.ec26b.shoppingagent.auth.CurrentUser;
-import com.ec26b.shoppingagent.product.MockProductSourceProvider;
 import com.ec26b.shoppingagent.product.ProductOffer;
 import com.ec26b.shoppingagent.product.ProductSearchQuery;
+import com.ec26b.shoppingagent.product.ProductSourceProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,10 +21,10 @@ public class PriceAlertController {
 
     private final PriceAlertRepository repository;
     private final CurrentUser currentUser;
-    private final MockProductSourceProvider productSource;
+    private final ProductSourceProvider productSource;
 
     public PriceAlertController(PriceAlertRepository repository, CurrentUser currentUser,
-                                MockProductSourceProvider productSource) {
+                                ProductSourceProvider productSource) {
         this.repository = repository;
         this.currentUser = currentUser;
         this.productSource = productSource;

@@ -2,13 +2,18 @@
 
 ## 概述
 
-当前阶段使用人工构造数据支撑聊天式 AI 识别与多平台 Mock 推荐演示。Mock 数据只用于本地开发、接口联调、自动化测试和页面验收，不代表真实平台商品、真实价格、真实库存或真实用户数据。
+当前阶段使用两类数据支撑聊天式 AI 识别与多平台推荐演示：
+
+- 公开 Flipkart 样例商品：用于补充真实商品图片、商品链接、标价和折扣价。
+- 人工构造 Mock 商品：用于中文演示、平台筛选、测试稳定性和回退。
+
+旧 Mock 数据只用于本地开发、接口联调、自动化测试和页面验收，不代表真实平台商品、真实价格、真实库存或真实用户数据。
 
 详细字段说明与品牌覆盖见 [../mock-data/README.md](../mock-data/README.md)。
 
-## Mock 商品范围
+## 商品范围
 
-当前内置 5 类商品，总计 60 个：
+当前旧 Mock 内置 5 类商品，总计 60 个：
 
 | 类别 | 平台数量 | 每个平台商品数 | 说明 |
 |------|----------|----------------|------|
@@ -36,6 +41,28 @@
 - `淘宝-mock`
 
 ## 当前数据来源
+
+### 公开 Flipkart 样例商品
+
+后端资源文件 `backend/src/main/resources/data/public-product-offers.json` 抽取自 Hugging Face 镜像 `jason1966/PromptCloudHQ_flipkart-products` 的 `flipkart_com-ecommerce_sample.csv`。
+
+使用的原始字段：
+
+- `product_name`
+- `retail_price`
+- `discounted_price`
+- `image`
+- `product_url`
+- `product_rating`
+- `brand`
+
+运行时由 `PublicDatasetProductSourceProvider` 读取，平台名为 `Flipkart-sample`。当前覆盖 `运动鞋`、`耳机`、`吹风机`、`背包`。原始 `image` 字段是 URL 列表，资源文件取第一张图写入 `imageUrl`。
+
+配置项：
+
+- `PRODUCT_SOURCE_MODE=public-dataset`：默认，公开样例和旧 Mock 合并。
+- `PRODUCT_SOURCE_MODE=mock`：只使用旧 Mock。
+- `PRODUCT_SOURCE_MODE=public-dataset-only`：只使用公开样例。
 
 ### 后端内存 Mock 商品
 
@@ -74,7 +101,7 @@
 
 ### 推荐评分
 
-`MockProductSourceProvider` 先生成当前品类下三平台商品，再按预算、颜色、品牌、平台、最低评分依次过滤，最后按 sortBy 排序。
+`MockProductSourceProvider` 先生成当前品类下三平台商品，再按预算、颜色、品牌、平台、最低评分依次过滤，最后按 sortBy 排序。公开样例商品也复用同一组搜索条件和排序字段。
 
 `RecommendationScorer` 根据以下规则生成分数和理由：
 
@@ -106,7 +133,7 @@
 
 ### 平台比价统计
 
-`MockProductSourceProvider` 输出 `PlatformStats`：
+`CompositeProductSourceProvider` 合并公开样例与旧 Mock 后输出 `PlatformStats`：
 
 - `platform`：平台名
 - `lowestPrice`：当前过滤后最低价
@@ -126,7 +153,7 @@ mock-data/
 └── platform-products.json
 ```
 
-其中 `category-taxonomy.json` 会被后端 `CategoryResolver` 读取用于品类归一；其他文件主要用于说明和演示，不作为当前后端运行时的唯一商品数据来源。
+其中 `category-taxonomy.json` 会被后端 `CategoryResolver` 读取用于品类归一；其他文件主要用于说明和演示。公开样例商品资源位于 `backend/src/main/resources/data/public-product-offers.json`。
 
 ## 图片识别数据
 
@@ -150,9 +177,10 @@ mock-data/
 
 ## 约束
 
-- Mock 数据均为人工构造示例。
+- 旧 Mock 数据均为人工构造示例。
+- 公开样例商品来自公开数据集镜像，当前仅抽取少量记录用于缩略图和比价卡演示。
 - 不包含真实用户数据。
-- 不包含爬取数据。
+- 仓库不包含自行爬取脚本。
 - 不包含真实密钥、Token 或个人信息。
-- 不把 Mock 数据描述为真实平台数据。
-- 真实平台接口不在当前交付范围；商品数据固定使用 Mock。
+- 不把旧 Mock 数据描述为真实平台数据。
+- 真实平台接口不在当前交付范围；公开样例数据为离线资源，不调用真实电商接口。

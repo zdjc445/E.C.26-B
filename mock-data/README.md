@@ -1,10 +1,18 @@
 # Mock 数据说明
 
-本目录存放聊天式 Mock Agent 阶段的开发与演示数据。所有数据均为人工构造示例，不代表真实平台商品、真实价格或真实用户数据。
+本目录存放聊天式 Mock Agent 阶段的开发与演示数据。旧 Mock 商品为人工构造示例，不代表真实平台商品、真实价格或真实用户数据。
+
+后端运行时还内置一份公开 Flipkart 样例商品资源：
+
+- 文件：`backend/src/main/resources/data/public-product-offers.json`
+- 来源：Hugging Face 镜像 `jason1966/PromptCloudHQ_flipkart-products`
+- 原始字段：`product_name`、`retail_price`、`discounted_price`、`image`、`product_url`、`product_rating`、`brand`
+- 覆盖品类：`运动鞋`、`耳机`、`吹风机`、`背包`
+- 平台名：`Flipkart-sample`
 
 ## 后端运行时 Mock 商品
 
-后端运行时使用 `MockProductSourceProvider` 内置 5 品类 × 3 平台 × 4 商品（共 60 个）：
+`MockProductSourceProvider` 仍内置 5 品类 × 3 平台 × 4 商品（共 60 个），用于回退、测试和中文演示：
 
 | 品类 | 平台 | 价格区间 | 关键差异 |
 |------|------|----------|----------|
@@ -16,7 +24,7 @@
 
 每个品类故意分布在低/中/高价位段，并故意包含部分非官方渠道、评分偏低的商品以触发推荐解释的「不足」分析。
 
-平台名固定为：
+Mock 平台名固定为：
 
 - `京东-mock`
 - `拼多多-mock`
@@ -34,7 +42,7 @@
 | `price` | 当前价 |
 | `originalPrice` | 原价（用于划线） |
 | `shopName` | 店铺名（含品牌前缀） |
-| `imageUrl` / `productUrl` | 当前为空，后续接入图片资源后补齐 |
+| `imageUrl` / `productUrl` | 公开样例商品来自原始数据；旧 Mock 商品仍为空 |
 | `rating` | 4.1 - 4.9 |
 | `sales` | 销量数（影响排序信号） |
 | `tags` | 自营 / 官方 / 旗舰店 / 爆款 / 性价比 / 透气 / 防水 / 长续航 等 |
@@ -53,7 +61,7 @@
 | `products.json` | 演示商品摘要 |
 | `platform-products.json` | 演示平台商品摘要 |
 
-这些 JSON 文件仅用于文档展示与后续脚本测试，不作为后端运行时数据。
+这些 JSON 文件仅用于文档展示与后续脚本测试，不作为后端运行时公开样例商品数据。
 
 ## 演示场景覆盖
 
@@ -71,9 +79,10 @@
 
 ## 约束
 
-- Mock 数据均为人工构造示例。
+- 旧 Mock 数据均为人工构造示例。
+- 公开样例商品来自公开数据集镜像，当前仅抽取少量记录用于缩略图和比价卡演示。
 - 不包含真实用户数据。
-- 不包含爬取数据。
+- 仓库不包含自行爬取脚本。
 - 不包含真实密钥、Token 或个人信息。
-- 不把 Mock 数据描述为真实平台数据。
+- 不把旧 Mock 数据描述为真实平台数据。
 - 真实平台接口接入后，Mock 数据仍作为演示模式和降级数据。

@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 @Component
 public class MockAgent {
 
-    private final MockProductSourceProvider productSource;
+    private final ProductSourceProvider productSource;
     private final ShoppingIntentParser intentParser;
     private final RecommendationExplainer ruleExplainer;
     private final ArkRecommendationExplainer arkExplainer;
@@ -28,7 +28,7 @@ public class MockAgent {
             "买|想买|想要|推荐|帮我找|找.*商品|多少钱|价格|便宜|优惠|性价比|官方|自营|旗舰|配送|物流|评价|评分|销量|预算|以内|不超过|以下");
     private static final Set<String> DEFAULT_PLATFORM_SET = Set.of("京东-mock", "拼多多-mock", "淘宝-mock");
 
-    public MockAgent(MockProductSourceProvider productSource,
+    public MockAgent(ProductSourceProvider productSource,
                      ShoppingIntentParser intentParser,
                      RecommendationExplainer ruleExplainer,
                      ArkRecommendationExplainer arkExplainer,

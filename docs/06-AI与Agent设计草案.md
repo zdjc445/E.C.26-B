@@ -2,7 +2,7 @@
 
 ## 概述
 
-当前项目已具备 Mock/Ark 图片识别路径、规则/Ark 购物意图解析路径、规则/Ark 推荐解释路径、多轮自然语言追加筛选、多平台 Mock 商品推荐和聊天式 Agent 卡片输出。AI 与 Agent 设计遵循两个原则：
+当前项目已具备 Mock/Ark 图片识别路径、规则/Ark 购物意图解析路径、规则/Ark 推荐解释路径、多轮自然语言追加筛选、公开样例 + 多平台 Mock 商品推荐和聊天式 Agent 卡片输出。AI 与 Agent 设计遵循两个原则：
 
 - 对外展示结构化结果和解释摘要，不展示真实模型推理链。
 - 外部服务不可用时保持 Mock 降级，保证演示闭环可运行。
@@ -102,7 +102,8 @@ MockAgent 读取会话上下文
         ↓
 CategoryResolver 通过 mock-data/category-taxonomy.json 归一标准品类
         ↓
-MockProductSourceProvider 生成 5 品类 × 3 平台 × 4 商品
+CompositeProductSourceProvider 合并公开 Flipkart 样例和 MockProductSourceProvider
+MockProductSourceProvider 生成 5 品类 × 3 平台 × 4 商品作为回退
         ↓
 按预算、颜色、品牌、平台、最低评分过滤；按 sortBy 排序
         ↓
@@ -147,7 +148,7 @@ product_list 携带 filterSummary，前端显式展示当前生效条件
 - **数值字段（maxPrice/color/brand/平台/排序/最低评分）：** 使用最近一次明确值，当前文本可覆盖历史值。
 - **偏好布尔（officialStore/fastDelivery/lowestPrice/highRating/highSales）：** 跨轮累积。
 - `ProductSearchQuery` 当前包含 `keyword`、`preferences`、`maxPrice`、`color`、`brand`、`platforms`、`sortBy`、`minRating`。
-- `MockProductSourceProvider` 在预算过滤后依次进行颜色、品牌、平台、最低评分过滤，最后按 sortBy 排序。
+- `PublicDatasetProductSourceProvider` 和 `MockProductSourceProvider` 在预算过滤后依次进行颜色、品牌、平台、最低评分过滤，最后按 sortBy 排序。
 
 ## 品类归一与 RAG 扩展
 
@@ -170,7 +171,7 @@ product_list 携带 filterSummary，前端显式展示当前生效条件
 - `decisionScore`：综合分。
 - `decisionSignals`：意图匹配、价格、店铺信誉、渠道可信、风险。
 - `evidence`：预算、颜色、品牌、平台、最低评分、排序方式、价格等证据摘要。
-- `risks`：Mock 数据、配送时效等风险提示。
+- `risks`：样例/Mock 数据、配送时效等风险提示。
 - `productAnalyses`：商品胜因/不足和排序分数。
 - `intentProvider` / `intentFallbackUsed`：意图解析来源。
 - `explanationProvider` / `explanationFallbackUsed`：解释生成来源。
