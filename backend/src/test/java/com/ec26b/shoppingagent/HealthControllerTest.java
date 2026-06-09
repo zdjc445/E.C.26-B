@@ -32,7 +32,7 @@ class HealthControllerTest {
                 .andExpect(jsonPath("$.aiProvider").value("mock"))
                 .andExpect(jsonPath("$.chatHistoryStore").value("memory"))
                 .andExpect(jsonPath("$.authEnabled").value(false))
-                .andExpect(jsonPath("$.ecommerceProvider").value("mock"))
+                .andExpect(jsonPath("$.ecommerceProvider").value("mock-data"))
                 .andExpect(jsonPath("$.voiceProvider").value("mock"))
                 .andExpect(jsonPath("$.timestamp").isNotEmpty());
     }

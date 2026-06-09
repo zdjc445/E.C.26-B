@@ -1,0 +1,242 @@
+{
+  "description": "购物助手 Mock 商品数据 — 国内电商平台运动鞋/耳机/吹风机/背包",
+  "products": [
+    {
+      "productId": "shoe-001",
+      "category": "运动鞋",
+      "title": "Nike 飞马系列缓震跑步鞋",
+      "brand": "Nike",
+      "imageUrl": "https://img.alicdn.com/placeholder/shoe-nike-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 699
+    },
+    {
+      "productId": "shoe-002",
+      "category": "运动鞋",
+      "title": "Adidas Ultraboost 轻量跑鞋",
+      "brand": "Adidas",
+      "imageUrl": "https://img.alicdn.com/placeholder/shoe-adidas-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 649
+    },
+    {
+      "productId": "shoe-003",
+      "category": "运动鞋",
+      "title": "Asics Gel-Kayano 稳定支撑跑鞋",
+      "brand": "Asics",
+      "imageUrl": "https://img.alicdn.com/placeholder/shoe-asics-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 599
+    },
+    {
+      "productId": "shoe-004",
+      "category": "运动鞋",
+      "title": "Puma 经典复古休闲运动鞋",
+      "brand": "Puma",
+      "imageUrl": "https://img.alicdn.com/placeholder/shoe-puma-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 399
+    },
+    {
+      "productId": "shoe-005",
+      "category": "运动鞋",
+      "title": "New Balance 574 百搭运动鞋",
+      "brand": "New Balance",
+      "imageUrl": "https://img.alicdn.com/placeholder/shoe-nb-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 469
+    },
+    {
+      "productId": "shoe-006",
+      "category": "运动鞋",
+      "title": "Converse 经典帆布运动鞋",
+      "brand": "Converse",
+      "imageUrl": "https://img.alicdn.com/placeholder/shoe-converse-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 319
+    },
+    {
+      "productId": "shoe-007",
+      "category": "运动鞋",
+      "title": "Skechers 软底健步运动鞋",
+      "brand": "Skechers",
+      "imageUrl": "https://img.alicdn.com/placeholder/shoe-skechers-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 429
+    },
+    {
+      "productId": "shoe-008",
+      "category": "运动鞋",
+      "title": "李宁 超轻系列透气跑鞋",
+      "brand": "李宁",
+      "imageUrl": "https://img.alicdn.com/placeholder/shoe-lining-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 299
+    },
+    {
+      "productId": "shoe-009",
+      "category": "运动鞋",
+      "title": "安踏 C37 软底跑步鞋",
+      "brand": "安踏",
+      "imageUrl": "https://img.alicdn.com/placeholder/shoe-anta-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 269
+    },
+    {
+      "productId": "shoe-010",
+      "category": "运动鞋",
+      "title": "特步 160X 竞速跑鞋",
+      "brand": "特步",
+      "imageUrl": "https://img.alicdn.com/placeholder/shoe-xtep-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 239
+    },
+    {
+      "productId": "shoe-011",
+      "category": "运动鞋",
+      "title": "361° Spire 稳定跑步鞋",
+      "brand": "361°",
+      "imageUrl": "https://img.alicdn.com/placeholder/shoe-361-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 219
+    },
+    {
+      "productId": "shoe-012",
+      "category": "运动鞋",
+      "title": "Fila 斐乐潮流运动鞋",
+      "brand": "Fila",
+      "imageUrl": "https://img.alicdn.com/placeholder/shoe-fila-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 479
+    },
+
+    {
+      "productId": "phone-001",
+      "category": "耳机",
+      "title": "Sony WH-1000XM5 无线降噪耳机",
+      "brand": "Sony",
+      "imageUrl": "https://img.alicdn.com/placeholder/phone-sony-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 1899
+    },
+    {
+      "productId": "phone-002",
+      "category": "耳机",
+      "title": "Bose QC45 头戴降噪耳机",
+      "brand": "Bose",
+      "imageUrl": "https://img.alicdn.com/placeholder/phone-bose-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 1599
+    },
+    {
+      "productId": "phone-003",
+      "category": "耳机",
+      "title": "Sennheiser 森海塞尔 IE200 入耳耳机",
+      "brand": "Sennheiser",
+      "imageUrl": "https://img.alicdn.com/placeholder/phone-senn-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 799
+    },
+    {
+      "productId": "phone-004",
+      "category": "耳机",
+      "title": "JBL Tune 510BT 无线蓝牙耳机",
+      "brand": "JBL",
+      "imageUrl": "https://img.alicdn.com/placeholder/phone-jbl-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 299
+    },
+    {
+      "productId": "phone-005",
+      "category": "耳机",
+      "title": "小米 Buds 4 Pro 真无线降噪耳机",
+      "brand": "小米",
+      "imageUrl": "https://img.alicdn.com/placeholder/phone-xiaomi-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 499
+    },
+    {
+      "productId": "phone-006",
+      "category": "耳机",
+      "title": "SteelSeries 赛睿 寒冰7 电竞游戏耳机",
+      "brand": "SteelSeries",
+      "imageUrl": "https://img.alicdn.com/placeholder/phone-steelseries-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 699
+    },
+
+    {
+      "productId": "dryer-001",
+      "category": "吹风机",
+      "title": "戴森 Dyson Supersonic 高速吹风机",
+      "brand": "戴森",
+      "imageUrl": "https://img.alicdn.com/placeholder/dryer-dyson-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 2699
+    },
+    {
+      "productId": "dryer-002",
+      "category": "吹风机",
+      "title": "松下 NA98Q 纳诺怡护发吹风机",
+      "brand": "松下",
+      "imageUrl": "https://img.alicdn.com/placeholder/dryer-pana-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 899
+    },
+    {
+      "productId": "dryer-003",
+      "category": "吹风机",
+      "title": "飞利浦 BHD500 负离子吹风机",
+      "brand": "飞利浦",
+      "imageUrl": "https://img.alicdn.com/placeholder/dryer-philips-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 459
+    },
+    {
+      "productId": "dryer-004",
+      "category": "吹风机",
+      "title": "小米 米家水离子吹风机",
+      "brand": "小米",
+      "imageUrl": "https://img.alicdn.com/placeholder/dryer-xiaomi-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 199
+    },
+
+    {
+      "productId": "bag-001",
+      "category": "背包",
+      "title": "小米 90分 轻量商务双肩包",
+      "brand": "小米",
+      "imageUrl": "https://img.alicdn.com/placeholder/bag-xiaomi-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 169
+    },
+    {
+      "productId": "bag-002",
+      "category": "背包",
+      "title": "新秀丽 Samsonite 商务通勤双肩包",
+      "brand": "新秀丽",
+      "imageUrl": "https://img.alicdn.com/placeholder/bag-samsonite-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 399
+    },
+    {
+      "productId": "bag-003",
+      "category": "背包",
+      "title": "国家地理 National Geographic 旅行双肩包",
+      "brand": "国家地理",
+      "imageUrl": "https://img.alicdn.com/placeholder/bag-ng-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 289
+    },
+    {
+      "productId": "bag-004",
+      "category": "背包",
+      "title": "Herschel Supply 经典双肩包",
+      "brand": "Herschel",
+      "imageUrl": "https://img.alicdn.com/placeholder/bag-herschel-001.jpg",
+      "platforms": ["天猫-mock", "京东-mock", "拼多多-mock", "淘宝-mock"],
+      "basePrice": 329
+    }
+  ]
+}

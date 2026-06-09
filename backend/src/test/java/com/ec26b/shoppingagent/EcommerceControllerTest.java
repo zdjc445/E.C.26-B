@@ -23,17 +23,15 @@ class EcommerceControllerTest {
     private MockMvc mockMvc;
 
     @Test
-    void shouldReturnMockStatusByDefault() throws Exception {
+    void shouldReturnPublicDatasetStatus() throws Exception {
         mockMvc.perform(get("/api/ecommerce/status"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.activeProvider").value("mock"))
+                .andExpect(jsonPath("$.data.activeProvider").value("mock-data"))
                 .andExpect(jsonPath("$.data.realProviderEnabled").value(false))
                 .andExpect(jsonPath("$.data.realProviderActive").value(false))
-                .andExpect(jsonPath("$.data.mockPlatforms", hasItem("京东-mock")))
-                .andExpect(jsonPath("$.data.mockPlatforms", hasItem("拼多多-mock")))
-                .andExpect(jsonPath("$.data.mockPlatforms", hasItem("淘宝-mock")))
-                .andExpect(jsonPath("$.data.mockCategories", hasItem("背包")))
-                .andExpect(jsonPath("$.data.mockCategories", hasItem("智能手表")));
+                .andExpect(jsonPath("$.data.mockDataPlatforms", hasItem("京东")))
+                .andExpect(jsonPath("$.data.mockDataCategories", hasItem("运动鞋")))
+                .andExpect(jsonPath("$.data.mockDataCategories", hasItem("耳机")));
     }
 }

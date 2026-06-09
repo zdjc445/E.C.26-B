@@ -121,7 +121,7 @@ public class ChatController {
 
             MockAgent.AgentReply reply = mockAgent.processWithRecognition(sessionOpt.get(),
                     request.text(), request.imageIds(), request.selectedOptionIds(),
-                    recResult);
+                    recResult, request.profile());
 
             var assistantMsg = new ChatStore.MessageRecord(
                     reply.replyId(),
@@ -148,7 +148,7 @@ public class ChatController {
         repo.addMessage(sessionId, userMsg);
 
         MockAgent.AgentReply reply = mockAgent.process(sessionOpt.get(), request.text(),
-                request.imageIds(), request.selectedOptionIds());
+                request.imageIds(), request.selectedOptionIds(), request.profile());
 
         var assistantMsg = new ChatStore.MessageRecord(
                 reply.replyId(),
@@ -248,6 +248,7 @@ public class ChatController {
     public record ChatMessageRequest(
             String text,
             List<String> imageIds,
-            List<String> selectedOptionIds
+            List<String> selectedOptionIds,
+            Map<String, Object> profile
     ) {}
 }

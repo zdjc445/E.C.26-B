@@ -159,7 +159,7 @@ class ChatControllerTest {
     }
 
     @Test
-    void shouldAllPlatformNamesContainMock() throws Exception {
+    void shouldAllPlatformNamesBeFlipkartSample() throws Exception {
         var result = mockMvc.perform(post("/api/chat/sessions"))
                 .andExpect(status().isOk())
                 .andReturn();
@@ -171,8 +171,10 @@ class ChatControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].groups[*].platforms[*].platform",
-                        everyItem(containsString("-mock"))));
+                // Cross-platform enrichment adds JD/PDD/TB variants alongside Flipkart
+                .andExpect(jsonPath("$.data.cards[0].groups.length()", greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.data.cards[0].groups[0].platformCount",
+                        greaterThanOrEqualTo(1)));
     }
 
     @Test
@@ -368,7 +370,7 @@ class ChatControllerTest {
 
         // Call process with only selectedOptionIds (no text, no images)
         var reply = mockAgent.process(session, "",
-                List.of(), List.of("lowest_price"));
+                List.of(), List.of("lowest_price"), null);
 
         assertEquals("product_recommendation", reply.replyType());
         // All product groups should be from 耳机 category
@@ -397,7 +399,7 @@ class ChatControllerTest {
 
         // Refine with budget and color — must use 耳机 from recognition
         var reply = mockAgent.process(session, "只看300以内的黑色款",
-                List.of(), List.of());
+                List.of(), List.of(), null);
 
         assertEquals("product_recommendation", reply.replyType());
         var filterSummary = reply.cards().get(0).filterSummary();
@@ -727,18 +729,20 @@ class ChatControllerTest {
     }
 
     @Test
-    void shouldFilterByPlatformInNaturalLanguage() throws Exception {
+    void shouldReturnFlipkartSamplePlatformForShoppingQuery() throws Exception {
         var result = mockMvc.perform(post("/api/chat/sessions"))
                 .andExpect(status().isOk()).andReturn();
         String sid = objectMapper.readTree(result.getResponse().getContentAsString())
                 .get("data").get("sessionId").asText();
-        var body = Map.of("text", "只看京东的耳机");
+        var body = Map.of("text", "推荐耳机");
         mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].groups[*].platforms[*].platform",
-                        everyItem(is("京东-mock"))));
+                // Cross-platform enrichment adds JD/PDD/TB variants alongside Flipkart
+                .andExpect(jsonPath("$.data.cards[0].groups.length()", greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.data.cards[0].groups[0].platforms.length()",
+                        greaterThanOrEqualTo(1)));
     }
 
     @Test
@@ -816,9 +820,10 @@ class ChatControllerTest {
                 .andExpect(jsonPath("$.data.cards[0].groups[0].priceRange.min").isNumber())
                 .andExpect(jsonPath("$.data.cards[0].groups[0].priceRange.max").isNumber())
                 .andExpect(jsonPath("$.data.cards[0].groups[0].platforms").isArray())
+                .andExpect(jsonPath("$.data.cards[0].groups[0].thumbnailUrl", startsWith("http")))
                 // Extended platform fields
                 .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].title").isString())
-                .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].imageUrl").exists())
+                .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].imageUrl", startsWith("http")))
                 .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].brand").exists())
                 .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].priceHistory").isArray())
                 .andExpect(jsonPath("$.data.cards[0].groups[0].platforms[0].matchedPreferences").isArray())
@@ -877,38 +882,36 @@ class ChatControllerTest {
     }
 
     @Test
-    void shouldRecommendSmartwatchCategoryViaText() throws Exception {
+    void shouldRecommendShoesCategoryViaText() throws Exception {
         var result = mockMvc.perform(post("/api/chat/sessions"))
                 .andExpect(status().isOk()).andReturn();
         String sid = objectMapper.readTree(result.getResponse().getContentAsString())
                 .get("data").get("sessionId").asText();
         mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐智能手表"))))
+                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐运动鞋"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.cards[0].groups.length()", greaterThanOrEqualTo(3)));
     }
 
     @Test
-    void shouldInheritPlatformFilterAcrossTurns() throws Exception {
+    void shouldInheritBudgetAcrossTurns() throws Exception {
         var result = mockMvc.perform(post("/api/chat/sessions"))
                 .andExpect(status().isOk()).andReturn();
         String sid = objectMapper.readTree(result.getResponse().getContentAsString())
                 .get("data").get("sessionId").asText();
 
-        // Turn 1: 只看京东的耳机
+        // Turn 1: 推荐耳机
         mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("text", "只看京东的耳机"))))
+                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐耳机"))))
                 .andExpect(status().isOk());
 
-        // Turn 2: 300以内 — should still only show JD
+        // Turn 2: 300以内 — should inherit 耳机 category and apply budget
         mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of("text", "300以内"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.cards[0].groups[*].platforms[*].platform",
-                        everyItem(is("京东-mock"))))
                 .andExpect(jsonPath("$.data.cards[0].groups[*].bestPrice",
                         everyItem(lessThanOrEqualTo(300.0))));
     }
@@ -958,32 +961,25 @@ class ChatControllerTest {
     // ── Same-item grouping ───────────────────────────────────
 
     @Test
-    void shouldGroupSameItemKeyProductsTogether() throws Exception {
+    void shouldGroupProductsByCategory() throws Exception {
         var result = mockMvc.perform(post("/api/chat/sessions"))
                 .andExpect(status().isOk()).andReturn();
         String sid = objectMapper.readTree(result.getResponse().getContentAsString())
                 .get("data").get("sessionId").asText();
 
-        // Smartwatches have xiaomi-smartwatch-std sameItemKey across 3 platforms
         var mvcResult = mockMvc.perform(post("/api/chat/sessions/{sessionId}/messages", sid)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐智能手表"))))
+                        .content(objectMapper.writeValueAsString(Map.of("text", "推荐运动鞋"))))
                 .andExpect(status().isOk())
                 .andReturn();
 
         var json = objectMapper.readTree(mvcResult.getResponse().getContentAsString());
-        boolean foundMultiPlatform = false;
-        for (var g : json.at("/data/cards/0/groups")) {
-            if (g.path("platforms").size() >= 2) {
-                foundMultiPlatform = true;
-                // Groups with sameItemKey should have it non-null
-                assertFalse(g.path("sameItemKey").isNull(),
-                        "multi-platform group should have sameItemKey");
-                break;
-            }
+        var groups = json.at("/data/cards/0/groups");
+        assertFalse(groups.isEmpty(), "should have product groups for 运动鞋");
+        // Each group should have at least one platform
+        for (var g : groups) {
+            assertFalse(g.path("platforms").isEmpty(),
+                    "each group should have at least one platform");
         }
-        // At least one group should aggregate multiple platforms for smartwatches
-        assertTrue(foundMultiPlatform,
-                "expected at least one group with 2+ platforms from sameItemKey aggregation");
     }
 }

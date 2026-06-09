@@ -2,7 +2,7 @@ package com.ec26b.shoppingagent.chat;
 
 import com.ec26b.shoppingagent.ai.ArkClient;
 import com.ec26b.shoppingagent.product.ArkRecommendationExplainer;
-import com.ec26b.shoppingagent.product.MockProductSourceProvider;
+import com.ec26b.shoppingagent.product.CompositeProductSourceProvider;
 import com.ec26b.shoppingagent.product.RecommendationExplainer;
 import com.ec26b.shoppingagent.product.RecommendationScorer;
 import com.ec26b.shoppingagent.product.ShoppingIntent;
@@ -23,11 +23,11 @@ class MockAgentFilterSummaryTest {
     void shouldHideDefaultFilterSummaryValues() {
         MockAgent agent = newAgent(new ShoppingIntent("耳机", 300.0, null,
                 false, false, false, false, false,
-                null, List.of("京东-mock", "拼多多-mock", "淘宝-mock"),
+                null, List.of("京东-mock", "拼多多-mock", "淘宝-mock", "天猫-mock"),
                 "recommended", 0.0,
                 false, null, "ark", false, List.of()));
 
-        var reply = agent.process(emptySession(), "推荐耳机", List.of(), List.of());
+        var reply = agent.process(emptySession(), "推荐耳机", List.of(), List.of(), null);
 
         assertEquals(List.of("品类：耳机", "预算≤300元"),
                 reply.cards().get(0).filterSummary());
@@ -41,7 +41,7 @@ class MockAgentFilterSummaryTest {
                 false, null, "ark", false, List.of()));
 
         var reply = agent.process(emptySession(), "只看京东索尼评分4.8以上的耳机按价格从低到高",
-                List.of(), List.of());
+                List.of(), List.of(), null);
 
         assertEquals(List.of("品类：耳机", "品牌：索尼", "平台：京东", "评分≥4.8", "排序：价格从低到高"),
                 reply.cards().get(0).filterSummary());
@@ -50,7 +50,7 @@ class MockAgentFilterSummaryTest {
     private MockAgent newAgent(ShoppingIntent intent) {
         ObjectMapper objectMapper = new ObjectMapper();
         return new MockAgent(
-                new MockProductSourceProvider(new RecommendationScorer()),
+                new CompositeProductSourceProvider(objectMapper, "../mock-data/mock-data.json", null, new RecommendationScorer()),
                 new FixedShoppingIntentParser(intent),
                 new RecommendationExplainer(),
                 new ArkRecommendationExplainer(new ArkClient(objectMapper, "", "", null), objectMapper),

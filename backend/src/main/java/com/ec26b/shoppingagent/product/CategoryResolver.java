@@ -115,18 +115,12 @@ public class CategoryResolver {
     private static CategoryResolver loadDefault() {
         ObjectMapper objectMapper = new ObjectMapper();
         for (Path path : taxonomyPaths()) {
-            if (!Files.exists(path)) {
-                continue;
-            }
+            if (!Files.exists(path)) continue;
             try {
                 List<CategoryEntry> entries = objectMapper.readValue(
                         path.toFile(), new TypeReference<>() {});
-                if (!entries.isEmpty()) {
-                    return new CategoryResolver(entries);
-                }
-            } catch (IOException ignored) {
-                // Fall through to built-in taxonomy so the app remains runnable.
-            }
+                if (!entries.isEmpty()) return new CategoryResolver(entries);
+            } catch (IOException ignored) {}
         }
         return new CategoryResolver(fallbackTaxonomy());
     }
@@ -134,8 +128,7 @@ public class CategoryResolver {
     private static List<Path> taxonomyPaths() {
         return List.of(
                 Path.of("mock-data", "category-taxonomy.json"),
-                Path.of("..", "mock-data", "category-taxonomy.json")
-        );
+                Path.of("..", "mock-data", "category-taxonomy.json"));
     }
 
     private static List<CategoryEntry> fallbackTaxonomy() {

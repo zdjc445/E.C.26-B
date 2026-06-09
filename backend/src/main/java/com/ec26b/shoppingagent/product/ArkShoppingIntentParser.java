@@ -12,7 +12,7 @@ public class ArkShoppingIntentParser implements ShoppingIntentParser {
 
     private final ArkClient arkClient;
     private final ObjectMapper objectMapper;
-    private static final List<String> SUPPORTED_PLATFORMS = List.of("京东-mock", "拼多多-mock", "淘宝-mock");
+    private static final List<String> SUPPORTED_PLATFORMS = List.of("京东-mock", "拼多多-mock", "淘宝-mock", "天猫-mock");
     private static final List<String> SUPPORTED_SORT = List.of(
             "recommended", "price_asc", "price_desc", "sales_desc", "rating_desc");
 

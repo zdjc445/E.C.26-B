@@ -49,7 +49,7 @@ final class ProductSearchResults {
             case "京东-mock" -> "自营保障，物流快";
             case "拼多多-mock" -> "价格优势明显";
             case "淘宝-mock" -> "品类丰富，选择多";
-            case PublicDatasetProductSourceProvider.PLATFORM -> "公开样例，含商品图片";
+            case "天猫-mock" -> "品牌旗舰，正品保障";
             default -> "";
         };
     }

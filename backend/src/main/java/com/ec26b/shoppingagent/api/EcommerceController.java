@@ -1,7 +1,5 @@
 package com.ec26b.shoppingagent.api;
 
-import com.ec26b.shoppingagent.product.PublicDatasetProductSourceProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -17,28 +15,16 @@ import java.util.Map;
 @RequestMapping("/api/ecommerce")
 public class EcommerceController {
 
-    private final String productSourceMode;
-
-    public EcommerceController(@Value("${app.product-source.mode:public-dataset}") String productSourceMode) {
-        this.productSourceMode = productSourceMode;
-    }
-
     @GetMapping("/status")
     public ResponseEntity<ApiResponse<Map<String, Object>>> status() {
         Map<String, Object> data = new LinkedHashMap<>();
-        boolean mockOnly = "mock".equalsIgnoreCase(productSourceMode);
-        data.put("activeProvider", mockOnly ? "mock" : "public-dataset+mock");
+        data.put("activeProvider", "mock-data");
         data.put("realProviderEnabled", false);
         data.put("realProviderActive", false);
         data.put("realProviderBaseUrl", null);
-        data.put("publicDatasetProvider", PublicDatasetProductSourceProvider.PLATFORM);
-        data.put("publicDatasetCategories", java.util.List.of("运动鞋", "耳机", "吹风机", "背包"));
-        data.put("mockPlatforms", java.util.List.of("京东-mock", "拼多多-mock", "淘宝-mock"));
-        data.put("mockCategories", java.util.List.of("运动鞋", "耳机", "吹风机", "背包", "智能手表"));
-        data.put("fallbackPolicy",
-                mockOnly
-                        ? "商品数据固定使用 MockProductSourceProvider，不调用真实电商接口。"
-                        : "优先合并公开 Flipkart 样例数据；旧 Mock 数据保留为演示和筛选回退。");
+        data.put("mockDataPlatforms", java.util.List.of("京东", "淘宝", "天猫", "拼多多"));
+        data.put("mockDataCategories", java.util.List.of("运动鞋", "耳机", "吹风机", "背包"));
+        data.put("fallbackPolicy", "商品数据使用本地 Mock 数据集，覆盖国内主流电商平台。");
         return ResponseEntity.ok(ApiResponse.success(data));
     }
 }

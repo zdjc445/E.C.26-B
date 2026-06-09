@@ -28,7 +28,7 @@ public class MockAgent {
 
     private static final Pattern SHOPPING_WORDS = Pattern.compile(
             "买|想买|想要|推荐|帮我找|找.*商品|多少钱|价格|便宜|优惠|性价比|官方|自营|旗舰|配送|物流|评价|评分|销量|预算|以内|不超过|以下");
-    private static final Set<String> DEFAULT_PLATFORM_SET = Set.of("京东-mock", "拼多多-mock", "淘宝-mock");
+    private static final Set<String> DEFAULT_PLATFORM_SET = Set.of("京东-mock", "拼多多-mock", "淘宝-mock", "天猫-mock");
 
     public MockAgent(ProductSourceProvider productSource,
                      ShoppingIntentParser intentParser,
@@ -45,21 +45,18 @@ public class MockAgent {
     }
 
     public AgentReply process(ChatStore.ChatSession session, String text,
-                              List<String> imageIds, List<String> selectedOptionIds) {
+                              List<String> imageIds, List<String> selectedOptionIds,
+                              Map<String, Object> profile) {
         boolean hasOptions = selectedOptionIds != null && !selectedOptionIds.isEmpty();
-        boolean hasImages = imageIds != null && !imageIds.isEmpty();
 
-        if (hasOptions || hasImages) {
-            if (hasOptions) {
-                MergedContext ctx = mergeContext(session, text);
-                List<String> mergedPrefs = mergePreferenceIds(ctx.preferenceIds(), selectedOptionIds);
-                return buildProductRecommendation(mergedPrefs,
-                        coalesce(text, ctx.effectiveText()),
-                        ctx.effectiveCategory(), ctx.color(), ctx.maxPrice(),
-                        ctx.brand(), ctx.platforms(), ctx.sortBy(), ctx.minRating(),
-                        selectedOptionIds);
-            }
-            return buildRecognitionReply(imageIds);
+        if (hasOptions) {
+            MergedContext ctx = mergeContext(session, text);
+            List<String> mergedPrefs = mergePreferenceIds(ctx.preferenceIds(), selectedOptionIds);
+            return buildProductRecommendation(mergedPrefs,
+                    coalesce(text, ctx.effectiveText()),
+                    ctx.effectiveCategory(), ctx.color(), ctx.maxPrice(),
+                    ctx.brand(), ctx.platforms(), ctx.sortBy(), ctx.minRating(),
+                    selectedOptionIds, profile);
         }
 
         boolean isRefinement = isRefinementText(text);
@@ -69,14 +66,15 @@ public class MockAgent {
             return buildProductRecommendation(ctx.preferenceIds(), ctx.effectiveText(),
                     ctx.effectiveCategory(), ctx.color(), ctx.maxPrice(),
                     ctx.brand(), ctx.platforms(), ctx.sortBy(), ctx.minRating(),
-                    List.of());
+                    List.of(), profile);
         }
         return buildClarification(null);
     }
 
     public AgentReply processWithRecognition(ChatStore.ChatSession session, String text,
                                              List<String> imageIds, List<String> selectedOptionIds,
-                                             RecognitionResult recResult) {
+                                             RecognitionResult recResult,
+                                             Map<String, Object> profile) {
         if (selectedOptionIds != null && !selectedOptionIds.isEmpty()) {
             MergedContext ctx = mergeContext(session, text);
             List<String> mergedPrefs = mergePreferenceIds(ctx.preferenceIds(), selectedOptionIds);
@@ -84,7 +82,7 @@ public class MockAgent {
                     coalesce(text, ctx.effectiveText()),
                     recResult.getCategory(), ctx.color(), ctx.maxPrice(),
                     ctx.brand(), ctx.platforms(), ctx.sortBy(), ctx.minRating(),
-                    selectedOptionIds);
+                    selectedOptionIds, profile);
         }
         return buildRecognitionReplyWithResult(recResult);
     }
@@ -231,7 +229,8 @@ public class MockAgent {
                                                    List<String> overridePlatforms,
                                                    String overrideSortBy,
                                                    Double overrideMinRating,
-                                                   List<String> selectedOptionIds) {
+                                                   List<String> selectedOptionIds,
+                                                   Map<String, Object> profile) {
         ShoppingIntent intent = intentParser.parse(text);
         boolean hasLowest = prefs != null && prefs.contains("lowest_price");
         boolean hasOfficial = prefs != null && prefs.contains("official_store");
@@ -275,7 +274,7 @@ public class MockAgent {
         ProductSearchResult sr = productSource.search(
                 new ProductSearchQuery(keyword, fullIntent.toPreferenceIds(), effectiveMaxPrice,
                         effectiveColor, effectiveBrand, effectivePlatforms,
-                        effectiveSortBy, effectiveMinRating));
+                        effectiveSortBy, effectiveMinRating, profile));
         List<Card> cards = new ArrayList<>();
 
         // Build product groups from search results.
@@ -718,6 +717,7 @@ public class MockAgent {
             case "京东-mock" -> "京东";
             case "拼多多-mock" -> "拼多多";
             case "淘宝-mock" -> "淘宝";
+            case "天猫-mock" -> "天猫";
             default -> platform;
         };
     }
@@ -738,31 +738,6 @@ public class MockAgent {
     }
 
     // ── Recognition ──────────────────────────────────────────
-
-    private AgentReply buildRecognitionReply(List<String> imageIds) {
-        // Search products for the recognized category to provide product_group_list
-        String category = "运动鞋";
-        String brand = "Mock 品牌";
-        List<ProductGroup> groups = quickSearchGroups(category, null, null, null);
-        String emptyReason = groups.isEmpty() ? "当前演示数据中暂无运动鞋商品。" : null;
-
-        // Merge recognition info into filterSummary — no separate recognition card
-        List<String> filterSummary = new ArrayList<>();
-        filterSummary.add("品类：" + category);
-        filterSummary.add("识别品牌：" + brand);
-        filterSummary.add("识别型号：Mock 型号");
-        filterSummary.add("置信度：82%");
-        Card pgCard = Card.productGroupList("匹配商品", groups, filterSummary, emptyReason);
-        // Carry recognition metadata on the product_group_list card for detail-page use
-        pgCard = pgCard.withRecognitionMeta(
-                imageIds.get(0), category, brand, "Mock 型号",
-                List.of("运动鞋", "白色", "跑步鞋"), Map.of("color", "白色", "style", "通勤运动鞋"),
-                0.82, "mock", false, "当前为演示识别结果。", null);
-
-        return new AgentReply(UUID.randomUUID().toString(), "product_recommendation",
-                "我已经识别了你的商品图片。你更看重哪一点？",
-                List.of(pgCard, buildSuggestionCard(category, null)));
-    }
 
     private AgentReply buildRecognitionReplyWithResult(RecognitionResult rec) {
         String category = CategoryResolver.defaultResolver().resolveName(rec.getCategory());

@@ -1,6 +1,7 @@
 package com.ec26b.shoppingagent.product;
 
 import java.util.List;
+import java.util.Map;
 
 public record ProductSearchQuery(
         String keyword,
@@ -10,7 +11,8 @@ public record ProductSearchQuery(
         String brand,
         List<String> platforms,
         String sortBy,
-        Double minRating
+        Double minRating,
+        Map<String, Object> profile
 ) {
     public ProductSearchQuery {
         preferences = preferences == null ? List.of() : List.copyOf(preferences);
@@ -18,10 +20,16 @@ public record ProductSearchQuery(
     }
 
     public ProductSearchQuery(String keyword, List<String> preferences, Double maxPrice) {
-        this(keyword, preferences, maxPrice, null, null, List.of(), null, null);
+        this(keyword, preferences, maxPrice, null, null, List.of(), null, null, null);
     }
 
     public ProductSearchQuery(String keyword, List<String> preferences, Double maxPrice, String color) {
-        this(keyword, preferences, maxPrice, color, null, List.of(), null, null);
+        this(keyword, preferences, maxPrice, color, null, List.of(), null, null, null);
+    }
+
+    public ProductSearchQuery(String keyword, List<String> preferences, Double maxPrice,
+                              String color, String brand, List<String> platforms,
+                              String sortBy, Double minRating) {
+        this(keyword, preferences, maxPrice, color, brand, platforms, sortBy, minRating, null);
     }
 }
