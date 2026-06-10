@@ -8,6 +8,9 @@
 
 ```text
 GET    /api/health
+POST   /api/auth/register
+POST   /api/auth/login
+GET    /api/auth/me
 POST   /api/images/upload
 POST   /api/chat/sessions
 GET    /api/chat/sessions
@@ -18,6 +21,14 @@ DELETE /api/chat/sessions/{sessionId}
 POST   /api/recognition
 PATCH  /api/recognition/{recognitionId}/attributes
 GET    /api/ecommerce/status
+POST   /api/favorites
+GET    /api/favorites
+DELETE /api/favorites/{productId}
+POST   /api/price-alerts
+GET    /api/price-alerts
+DELETE /api/price-alerts/{alertId}
+POST   /api/price-alerts/check
+POST   /api/voice/transcribe
 ```
 
 当前没有独立商品搜索 API。商品推荐通过聊天消息接口返回。
@@ -213,11 +224,11 @@ POST /api/chat/sessions/{sessionId}/messages
   "data": {
     "replyId": "uuid",
     "replyType": "product_recommendation",
-    "text": "找到 3 组匹配商品，你更看重哪一点？",
-    "cards": [
+        "text": "找到 3 组商品",
+        "cards": [
       {
         "cardType": "product_group_list",
-        "title": "匹配商品",
+        "title": "商品结果",
         "filterSummary": ["品类：耳机", "预算≤300元", "颜色：黑色", "品牌：索尼"],
         "groups": [
           {
@@ -258,7 +269,7 @@ POST /api/chat/sessions/{sessionId}/messages
       },
       {
         "cardType": "clarification",
-        "title": "你更看重哪一点？",
+        "title": "继续筛选「耳机」",
         "options": [
           {"optionId": "lowest_price", "label": "查看同款低价"},
           {"optionId": "official_store", "label": "只看官方旗舰店"},
@@ -271,7 +282,7 @@ POST /api/chat/sessions/{sessionId}/messages
 }
 ```
 
-`product_group_list.filterSummary` 为当前生效筛选条件摘要。前端用于展示 `当前条件：...`，字段缺失或为空数组时不展示该行。
+`product_group_list.filterSummary` 为当前生效筛选条件摘要。前端用于展示“本轮筛选”，并支持用户点击“修改”后提交新的自然语言筛选条件。字段缺失或为空数组时不展示该区域。
 
 新增字段：
 
@@ -326,13 +337,67 @@ PATCH /api/recognition/{recognitionId}/attributes
 }
 ```
 
+## 收藏商品
+
+```text
+POST /api/favorites
+GET /api/favorites
+DELETE /api/favorites/{productId}
+```
+
+收藏请求体示例：
+
+```json
+{
+  "productId": "product-001_京东",
+  "title": "样例商品标题",
+  "platform": "京东-mock",
+  "price": 299.0,
+  "shopName": "样例店铺",
+  "brand": "索尼",
+  "imageUrl": "https://example.com/image.jpg",
+  "productUrl": "https://example.com/item"
+}
+```
+
+## 价格提醒
+
+```text
+POST /api/price-alerts
+GET /api/price-alerts
+DELETE /api/price-alerts/{alertId}
+POST /api/price-alerts/check
+```
+
+创建请求体示例：
+
+```json
+{
+  "productId": "product-001_京东",
+  "title": "样例商品标题",
+  "platform": "京东-mock",
+  "targetPrice": 259.0,
+  "note": "从商品详情页创建"
+}
+```
+
+## 语音转写
+
+```text
+POST /api/voice/transcribe
+```
+
+请求：
+
+- `multipart/form-data`
+- 文件字段名固定为 `file`
+
+默认演示环境使用 Mock 转写 Provider，真实语音识别为后续扩展。
+
 ## 后续计划 API
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/auth/register` | 用户注册 |
-| POST | `/api/auth/login` | 用户登录 |
 | POST | `/api/search-tasks` | 独立商品搜索任务 |
 | POST | `/api/comparisons` | 独立比价任务 |
 | POST | `/api/recommendations` | 完整 Agent 推荐任务 |
-| GET | `/api/ecommerce/status` | 当前商品源状态 |

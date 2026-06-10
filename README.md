@@ -2,7 +2,7 @@
 
 本项目是面向 C 端消费者的聊天式购物 Agent。用户进入 APP 后，可以在首页对话框中输入购物需求、添加商品图片，Agent 通过识别、追问、同款分组、平台报价和推荐解释辅助用户完成购买决策。
 
-**当前阶段：聊天式 AI 识别 + 本地 mock-data 商品检索 + 多平台 Mock 比价 + 7 维度自然语言筛选 + 同款分组 + 动态建议卡。**
+**当前阶段：聊天式 AI 识别 + 公开样例商品检索 + 多平台样例比价 + 7 维度自然语言筛选 + 同款分组 + 动态建议卡 + 收藏 + 价格提醒 + 语音转写。**
 
 ## 技术栈
 
@@ -18,6 +18,7 @@
 - 手机 USB 调试下的核心演示闭环
 - 图片上传：`POST /api/images/upload`
 - 聊天会话创建、列表、历史读取、重命名、删除
+- 简易认证：注册、登录、当前用户查询
 - 聊天消息发送：文字需求、图片需求、追问选项
 - 图片识别：`POST /api/recognition`
 - 识别结果修正：`PATCH /api/recognition/{recognitionId}/attributes`
@@ -29,20 +30,26 @@
 - 多轮自然语言追加筛选：品类、预算、颜色、品牌、平台、排序、最低评分跨轮合并
 - 本地商品检索链路：查询拆解、规则扩展、本地向量/BM25 混合检索、多因子重排
 - 推荐解释增强：综合分、决策信号、证据摘要、风险提示、商品胜因/不足
-- `mock-data/mock-data.json` 商品目录：26 个基础商品，覆盖运动鞋、耳机、吹风机、背包 4 个品类和 24 个品牌
-- 多平台 Mock 报价生成：`京东-mock`、`淘宝-mock`、`天猫-mock`、`拼多多-mock`
+- 默认公开样例商品源：`backend/src/main/resources/data/public-product-offers.json`
+- 可切换 `mock-data/mock-data.json` 商品目录：26 个基础商品，覆盖运动鞋、耳机、吹风机、背包 4 个品类和 24 个品牌
+- 多平台样例报价生成：`京东-mock`、`淘宝-mock`、`天猫-mock`、`拼多多-mock`
 - 同款商品分组卡：展示跨平台价格区间、最低价、评价/销量、平台报价明细
+- 商品详情页：购买判断、评价概览、平台比价、精选评论、价格提醒和收藏入口
 - 商品卡显示品牌徽章、偏好命中徽章、价格走势 sparkline
 - 动态建议卡：根据识别 category 生成差异化的 6 个建议入口
 - 超预算时的空商品和空比价占位
 - 历史会话恢复完整 `agentReply` 卡片
+- 收藏商品：`POST /api/favorites`、`GET /api/favorites`、`DELETE /api/favorites/{productId}`
+- 价格提醒：`POST /api/price-alerts`、`GET /api/price-alerts`、`POST /api/price-alerts/check`
+- 语音转写：`POST /api/voice/transcribe`，默认 Mock，可切换 Provider
 
 ## 当前边界
 
 - 真实 AI 识别需要配置 Ark 环境变量后实测；未配置或调用失败时回退 Mock。
 - Ark 购物意图解析和推荐解释改写需要配置 Ark 环境变量；未配置或调用失败时回退规则解析与规则解释。
-- 商品搜索和比价使用本地 `mock-data` 目录生成演示数据，不调用真实电商接口；Mock 数据不代表真实平台商品、价格、库存或评价。
-- 真实认证、Postgres 持久化、真实语音识别、收藏、价格提醒仍为后续迭代。
+- 商品搜索和比价默认使用公开样例商品数据并生成平台样例报价，不调用真实电商接口；样例报价不代表真实平台商品、价格、库存或评价。
+- 认证、收藏、价格提醒和聊天历史支持内存 / Postgres 仓库切换，演示环境默认可用内存仓库。
+- 真实语音识别仍为后续迭代，当前默认返回 Mock 转写。
 - Agent 输出结构化解释摘要，不输出真实模型推理链。
 
 ## 本地启动
@@ -118,9 +125,9 @@ C:\flutter\flutter\bin\flutter.bat test
 
 当前记录：
 
-- 后端测试：134 tests，0 failures，0 errors
-- Flutter analyze：0 error / 0 warning，31 条 info
-- Flutter test：36 widget tests，全部通过
+- 后端测试：142 tests，0 failures，0 errors
+- Flutter analyze：0 error / 0 warning，33 条 info
+- Flutter test：39 widget tests，全部通过
 
 ## 自然语言筛选示例
 
@@ -154,6 +161,7 @@ C:\flutter\flutter\bin\flutter.bat test
 | [docs/10-AI使用总结.md](docs/10-AI使用总结.md) | AI 编排、Prompt 设计与 AI Coding 心得 |
 | [docs/11-项目分工说明.md](docs/11-项目分工说明.md) | 团队成员模块责任划分 |
 | [docs/12-答辩材料.md](docs/12-答辩材料.md) | 30 分钟答辩速查与问答口径 |
+| [docs/14-提交模板填报草稿.md](docs/14-提交模板填报草稿.md) | 最终提交模板填报草稿 |
 
 ## 工程结构
 
