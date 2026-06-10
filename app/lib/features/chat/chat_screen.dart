@@ -33,6 +33,7 @@ class ChatScreen extends ConsumerStatefulWidget {
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _textController = TextEditingController();
+  final _textFocusNode = FocusNode();
   final _scrollController = ScrollController();
   final _picker = ImagePicker();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -44,10 +45,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _textFocusNode.addListener(_onTextFocusChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(chatControllerProvider.notifier).loadSessions();
       _checkOnboarding();
     });
+  }
+
+  void _onTextFocusChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _checkOnboarding() async {
@@ -91,6 +99,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
+    _textFocusNode.removeListener(_onTextFocusChanged);
+    _textFocusNode.dispose();
     _textController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -102,9 +112,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final text = _textController.text.trim();
     final hasText = text.isNotEmpty;
     final hasImage = _uploadedImageId != null;
-    final hasPendingImageUpload =
-        _pendingImage != null && _uploadedImageId == null;
-    if (hasPendingImageUpload) return;
+    if (_imageUploadInProgress) return;
     if (!hasText && !hasImage) return;
     if (ref.read(chatControllerProvider).sending) return;
 
@@ -141,6 +149,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _imageUploadFailed = false;
     });
     _scrollToBottom();
+  }
+
+  bool get _imageUploadInProgress {
+    return _pendingImage != null &&
+        _uploadedImageId == null &&
+        !_imageUploadFailed;
+  }
+
+  bool _canSendMessage(bool sending, String draftText) {
+    if (sending || _imageUploadInProgress) {
+      return false;
+    }
+    return draftText.trim().isNotEmpty || _uploadedImageId != null;
   }
 
   void _onOptionSelected(String optionId) {
@@ -2670,15 +2691,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Widget _buildInputBar() {
     final sending = ref.watch(chatControllerProvider).sending;
+    final inputFocused = _textFocusNode.hasFocus;
 
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
         decoration: const BoxDecoration(
           color: AppColors.panel,
-          border:
-              Border(top: BorderSide(color: AppColors.line, width: 0.5)),
+          border: Border(top: BorderSide(color: AppColors.line, width: 0.5)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -2707,21 +2728,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           SizedBox(width: 4),
                           Text('已上传',
                               style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.good)),
+                                  fontSize: 12, color: AppColors.good)),
                         ],
                       )
                     else if (_imageUploadFailed)
                       const Text('上传失败',
                           style: TextStyle(
-                              fontSize: 12,
-                              color: AppColors.priceRed))
+                              fontSize: 12, color: AppColors.priceRed))
                     else
                       const SizedBox(
                           width: 14,
                           height: 14,
-                          child:
-                              CircularProgressIndicator(strokeWidth: 2)),
+                          child: CircularProgressIndicator(strokeWidth: 2)),
                     const Spacer(),
                     IconButton(
                       icon: const Icon(Icons.close, size: 16),
@@ -2731,8 +2749,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         _imageUploadFailed = false;
                       }),
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                          minWidth: 30, minHeight: 30),
+                      constraints:
+                          const BoxConstraints(minWidth: 30, minHeight: 30),
                     ),
                   ],
                 ),
@@ -2740,97 +2758,160 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.image_outlined, size: 21),
-                  color: AppColors.inkSoft,
+                _composerIconButton(
+                  icon: Icons.image_outlined,
+                  tooltip: '添加图片',
                   onPressed: sending ? null : _showImageSourceSheet,
-                  padding:
-                      const EdgeInsets.only(left: 4, right: 2, bottom: 6),
-                  constraints:
-                      const BoxConstraints(minWidth: 40, minHeight: 42),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.mic_none, size: 21),
-                  color: AppColors.inkSoft,
-                  onPressed: _onVoiceTap,
-                  padding:
-                      const EdgeInsets.only(left: 2, right: 4, bottom: 6),
-                  constraints:
-                      const BoxConstraints(minWidth: 36, minHeight: 42),
+                _composerIconButton(
+                  icon: Icons.mic_none,
+                  tooltip: '语音输入',
+                  onPressed: sending ? null : _onVoiceTap,
                 ),
                 Expanded(
-                  child: Container(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 140),
+                    curve: Curves.easeOut,
+                    constraints: const BoxConstraints(minHeight: 46),
                     decoration: BoxDecoration(
                       color: AppColors.panelSoft,
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(
-                          color: AppColors.line, width: 0.5),
+                        color: inputFocused
+                            ? AppColors.accent.withAlpha(130)
+                            : AppColors.line,
+                        width: inputFocused ? 1 : 0.5,
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withAlpha(5),
-                          blurRadius: 4,
+                          color: inputFocused
+                              ? AppColors.accent.withAlpha(16)
+                              : Colors.black.withAlpha(5),
+                          blurRadius: inputFocused ? 10 : 4,
                           offset: const Offset(0, 1),
                         ),
                       ],
                     ),
                     child: TextField(
+                      key: const Key('chat_input_field'),
                       controller: _textController,
+                      focusNode: _textFocusNode,
                       minLines: 1,
                       maxLines: 4,
-                      style: const TextStyle(
-                          fontSize: 14.5, height: 1.35),
+                      keyboardType: TextInputType.multiline,
+                      style: const TextStyle(fontSize: 14.5, height: 1.35),
                       decoration: const InputDecoration(
                         hintText: '搜商品、品牌或预算',
-                        hintStyle: TextStyle(
-                            fontSize: 14.5,
-                            color: AppColors.inkSoft),
+                        hintStyle:
+                            TextStyle(fontSize: 14.5, color: AppColors.inkSoft),
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
+                        contentPadding:
+                            EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                         isDense: true,
                         filled: true,
                         fillColor: Colors.transparent,
                       ),
                       textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _sendMessage(),
+                      onSubmitted: (_) {
+                        if (_canSendMessage(sending, _textController.text)) {
+                          _sendMessage();
+                        }
+                      },
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                Container(
-                  width: 42,
-                  height: 42,
-                  margin: const EdgeInsets.only(bottom: 2),
-                  decoration: BoxDecoration(
-                    gradient: sending
-                        ? null
-                        : const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              AppColors.userBubble,
-                              AppColors.userBubbleEnd
-                            ],
-                          ),
-                    color: sending ? AppColors.line : null,
-                    borderRadius: BorderRadius.circular(21),
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.arrow_upward,
-                        size: 20),
-                    color: sending
-                        ? AppColors.inkSoft
-                        : Colors.white,
-                    onPressed: sending ? null : _sendMessage,
-                    padding: EdgeInsets.zero,
-                    iconSize: 20,
-                  ),
+                const SizedBox(width: 8),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _textController,
+                  builder: (context, value, _) {
+                    final canSend = _canSendMessage(sending, value.text);
+                    return _sendButton(canSend: canSend);
+                  },
                 ),
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _composerIconButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+  }) {
+    final enabled = onPressed != null;
+    return Padding(
+      padding: const EdgeInsets.only(right: 6, bottom: 1),
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: IconButton(
+          tooltip: tooltip,
+          icon: Icon(icon, size: 21),
+          color: enabled ? AppColors.inkSoft : AppColors.lineStrong,
+          onPressed: onPressed,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          style: IconButton.styleFrom(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            backgroundColor: AppColors.panelSoft,
+            disabledBackgroundColor: AppColors.panelSoft,
+            shape: const CircleBorder(
+              side: BorderSide(color: AppColors.line, width: 0.5),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sendButton({required bool canSend}) {
+    return Semantics(
+      button: true,
+      enabled: canSend,
+      label: _imageUploadInProgress ? '图片上传中' : '发送消息',
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOut,
+        width: 46,
+        height: 46,
+        margin: const EdgeInsets.only(bottom: 1),
+        decoration: BoxDecoration(
+          gradient: canSend
+              ? const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.userBubble, AppColors.userBubbleEnd],
+                )
+              : null,
+          color: canSend ? null : AppColors.line,
+          borderRadius: BorderRadius.circular(23),
+          boxShadow: canSend
+              ? [
+                  BoxShadow(
+                    color: AppColors.userBubble.withAlpha(34),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ]
+              : null,
+        ),
+        child: IconButton(
+          key: const Key('chat_send_button'),
+          tooltip: '发送',
+          icon: Icon(
+            _imageUploadInProgress ? Icons.hourglass_top : Icons.arrow_upward,
+            size: 20,
+          ),
+          color: canSend ? Colors.white : AppColors.inkSoft,
+          onPressed: canSend ? _sendMessage : null,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 46, minHeight: 46),
+          iconSize: 20,
         ),
       ),
     );

@@ -560,6 +560,17 @@ Widget _wrapWithRouter({_TestOverrides? overrides}) {
   );
 }
 
+Future<void> _dragUntilFinderVisible(WidgetTester tester, Finder finder) async {
+  final scrollable = find.byType(Scrollable).first;
+  for (var i = 0; i < 8; i++) {
+    if (finder.evaluate().isNotEmpty) {
+      return;
+    }
+    await tester.drag(scrollable, const Offset(0, -320));
+    await tester.pumpAndSettle();
+  }
+}
+
 void main() {
   group('ChatScreen AppBar', () {
     testWidgets('has history, profile, image, mic, send buttons',
@@ -571,6 +582,25 @@ void main() {
       expect(find.byIcon(Icons.image_outlined), findsOneWidget);
       expect(find.byIcon(Icons.mic_none), findsOneWidget);
       expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
+    });
+
+    testWidgets('send button is enabled only after input has content',
+        (tester) async {
+      await tester.pumpWidget(_wrapChat(const ChatScreen()));
+
+      IconButton sendButton() => tester.widget<IconButton>(
+            find.byKey(const Key('chat_send_button')),
+          );
+
+      expect(sendButton().onPressed, isNull);
+
+      await tester.enterText(find.byKey(const Key('chat_input_field')), '耳机');
+      await tester.pump();
+      expect(sendButton().onPressed, isNotNull);
+
+      await tester.enterText(find.byKey(const Key('chat_input_field')), '');
+      await tester.pump();
+      expect(sendButton().onPressed, isNull);
     });
 
     testWidgets('image button opens bottom sheet', (tester) async {
@@ -1722,8 +1752,12 @@ void main() {
       expect(find.text('商品详情'), findsOneWidget);
       // Price section
       expect(find.textContaining('¥'), findsWidgets);
+      expect(find.text('购买判断'), findsOneWidget);
+      expect(find.textContaining('最低价'), findsWidgets);
+      expect(find.text('评分最高'), findsWidgets);
       // Platform comparison list
       expect(find.text('平台比价'), findsOneWidget);
+      await _dragUntilFinderVisible(tester, find.text('去看看'));
       // Platform cards show shop name and action buttons
       expect(find.text('去看看'), findsWidgets);
       expect(find.text('价格提醒'), findsWidgets);
@@ -1756,6 +1790,8 @@ void main() {
             tags: ['自营'],
             reasons: ['高评分'],
             title: '测试耳机 黑色 高音质',
+            priceHistory: [399, 369, 329, 299],
+            matchedPreferences: ['budget_match', 'high_rating'],
           ),
         ],
         highlights: ['最低 ¥299', '高评分'],
@@ -1772,6 +1808,10 @@ void main() {
       expect(tester.getSize(placeholder), const Size(88, 88));
       expect(find.textContaining('价格区间'), findsNothing);
       expect(find.textContaining('个平台有售'), findsOneWidget);
+      expect(find.text('购买判断'), findsOneWidget);
+      expect(find.text('推荐点'), findsOneWidget);
+      expect(find.text('预算匹配'), findsOneWidget);
+      expect(find.textContaining('价格走势'), findsOneWidget);
     });
 
     testWidgets('detail page back returns to chat', (tester) async {
@@ -1823,12 +1863,7 @@ void main() {
       expect(find.text('商品详情'), findsOneWidget);
 
       // Scroll to the first "价格提醒" button (may be off-screen)
-      await tester.scrollUntilVisible(
-        find.text('价格提醒').first,
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.pumpAndSettle();
+      await _dragUntilFinderVisible(tester, find.text('价格提醒'));
 
       // Tap "价格提醒" on first platform card
       await tester.tap(find.text('价格提醒').first);

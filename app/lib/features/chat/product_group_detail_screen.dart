@@ -23,14 +23,15 @@ class ProductGroupDetailScreen extends ConsumerWidget {
       final cheapest = group.platforms.isNotEmpty
           ? group.platforms.reduce((a, b) => a.price < b.price ? a : b)
           : null;
-      ref.read(behaviorRecorderProvider).record(BehaviorEventType.productView,
-        productId: group.groupId,
-        category: group.category,
-        brand: group.brand,
-        price: group.bestPrice,
-        platform: cheapest?.platform,
-        tags: cheapest?.tags,
-      );
+      ref.read(behaviorRecorderProvider).record(
+            BehaviorEventType.productView,
+            productId: group.groupId,
+            category: group.category,
+            brand: group.brand,
+            price: group.bestPrice,
+            platform: cheapest?.platform,
+            tags: cheapest?.tags,
+          );
     }
 
     return Scaffold(
@@ -44,13 +45,14 @@ class ProductGroupDetailScreen extends ConsumerWidget {
           _buildHeader(context),
           const SizedBox(height: 16),
           _buildPriceSection(),
+          const SizedBox(height: 14),
+          _buildDecisionSummary(),
           if (group.highlights.isNotEmpty) ...[
             const SizedBox(height: 14),
             _buildHighlights(),
           ],
           const SizedBox(height: 20),
-          const Text('平台比价',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+          _sectionHeading('平台比价', '按价格、评价、服务和历史价格看每个平台'),
           const SizedBox(height: 10),
           ...group.platforms.map((p) => _buildPlatformCard(context, ref, p)),
         ],
@@ -107,8 +109,7 @@ class ProductGroupDetailScreen extends ConsumerWidget {
         if (subtitleParts.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(subtitleParts.join(' · '),
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.inkSoft)),
+              style: const TextStyle(fontSize: 13, color: AppColors.inkSoft)),
         ],
       ],
     );
@@ -126,7 +127,8 @@ class ProductGroupDetailScreen extends ConsumerWidget {
     }
     if (group.platforms.isNotEmpty) {
       final platformUrl = group.platforms.first.imageUrl.trim();
-      if (platformUrl.startsWith('http://') || platformUrl.startsWith('https://')) {
+      if (platformUrl.startsWith('http://') ||
+          platformUrl.startsWith('https://')) {
         return platformUrl;
       }
     }
@@ -139,18 +141,23 @@ class ProductGroupDetailScreen extends ConsumerWidget {
       required double iconSize}) {
     final url = _bestThumbnailUrl;
     if (url.isNotEmpty) {
-      return Image.network(
-        url,
+      return Container(
         width: width,
         height: height,
-        fit: BoxFit.cover,
-        loadingBuilder: (_, child, progress) {
-          if (progress == null) return child;
-          return _thumbnailPlaceholder(
-              width: width, height: height, iconSize: iconSize);
-        },
-        errorBuilder: (_, __, ___) => _thumbnailPlaceholder(
-            width: width, height: height, iconSize: iconSize),
+        color: AppColors.panel,
+        child: Image.network(
+          url,
+          width: width,
+          height: height,
+          fit: BoxFit.contain,
+          loadingBuilder: (_, child, progress) {
+            if (progress == null) return child;
+            return _thumbnailPlaceholder(
+                width: width, height: height, iconSize: iconSize);
+          },
+          errorBuilder: (_, __, ___) => _thumbnailPlaceholder(
+              width: width, height: height, iconSize: iconSize),
+        ),
       );
     }
     return _thumbnailPlaceholder(
@@ -182,8 +189,8 @@ class ProductGroupDetailScreen extends ConsumerWidget {
           Positioned(
             right: -width * 0.1,
             bottom: -height * 0.05,
-            child: Icon(colors.icon, size: iconSize * 1.2,
-                color: Colors.white.withAlpha(25)),
+            child: Icon(colors.icon,
+                size: iconSize * 1.2, color: Colors.white.withAlpha(25)),
           ),
           Center(
             child: Column(
@@ -209,13 +216,19 @@ class ProductGroupDetailScreen extends ConsumerWidget {
   }
 
   _DetailThumbColors _detailThumbColors(String cat) => switch (cat) {
-    '运动鞋' => _DetailThumbColors(const Color(0xFF6366F1), const Color(0xFF818CF8), Icons.directions_run),
-    '耳机' => _DetailThumbColors(const Color(0xFF0EA5E9), const Color(0xFF38BDF8), Icons.headphones),
-    '吹风机' => _DetailThumbColors(const Color(0xFFF43F5E), const Color(0xFFFB7185), Icons.air),
-    '背包' => _DetailThumbColors(const Color(0xFFF59E0B), const Color(0xFFFBBF24), Icons.backpack),
-    '智能手表' => _DetailThumbColors(const Color(0xFF10B981), const Color(0xFF34D399), Icons.watch),
-    _ => _DetailThumbColors(const Color(0xFF6366F1), const Color(0xFF818CF8), Icons.shopping_bag_outlined),
-  };
+        '运动鞋' => _DetailThumbColors(const Color(0xFF6366F1),
+            const Color(0xFF818CF8), Icons.directions_run),
+        '耳机' => _DetailThumbColors(
+            const Color(0xFF0EA5E9), const Color(0xFF38BDF8), Icons.headphones),
+        '吹风机' => _DetailThumbColors(
+            const Color(0xFFF43F5E), const Color(0xFFFB7185), Icons.air),
+        '背包' => _DetailThumbColors(
+            const Color(0xFFF59E0B), const Color(0xFFFBBF24), Icons.backpack),
+        '智能手表' => _DetailThumbColors(
+            const Color(0xFF10B981), const Color(0xFF34D399), Icons.watch),
+        _ => _DetailThumbColors(const Color(0xFF6366F1),
+            const Color(0xFF818CF8), Icons.shopping_bag_outlined),
+      };
 
   Widget _buildPriceSection() {
     final priceRange = group.priceRange;
@@ -241,8 +254,7 @@ class ProductGroupDetailScreen extends ConsumerWidget {
           colors: [AppColors.panel, AppColors.primaryMuted],
         ),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-            color: AppColors.line.withAlpha(100)),
+        border: Border.all(color: AppColors.line.withAlpha(100)),
         boxShadow: [
           BoxShadow(
               color: Colors.black.withAlpha(7),
@@ -267,21 +279,17 @@ class ProductGroupDetailScreen extends ConsumerWidget {
               const Padding(
                 padding: EdgeInsets.only(bottom: 3),
                 child: Text('起',
-                    style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.inkSoft)),
+                    style: TextStyle(fontSize: 14, color: AppColors.inkSoft)),
               ),
               if (group.originalPrice > group.bestPrice) ...[
                 const SizedBox(width: 12),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                      '¥${group.originalPrice.toStringAsFixed(0)}',
+                  child: Text('¥${group.originalPrice.toStringAsFixed(0)}',
                       style: const TextStyle(
                           fontSize: 15,
                           color: AppColors.inkSoft,
-                          decoration:
-                              TextDecoration.lineThrough)),
+                          decoration: TextDecoration.lineThrough)),
                 ),
               ],
             ],
@@ -290,12 +298,121 @@ class ProductGroupDetailScreen extends ConsumerWidget {
           Text(
             '最低来自$cheapestPlatform · ${group.platformCount}个平台有售${showPriceRange ? " · 各平台 ¥${priceRange.min.toStringAsFixed(0)} - ¥${priceRange.max.toStringAsFixed(0)}" : ""}',
             style: const TextStyle(
-                fontSize: 12.5,
-                height: 1.4,
-                color: AppColors.inkSoft),
+                fontSize: 12.5, height: 1.4, color: AppColors.inkSoft),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDecisionSummary() {
+    final cheapest = _cheapestOffer();
+    if (cheapest == null) {
+      return const SizedBox.shrink();
+    }
+    final topRated = _topRatedOffer();
+    final mostReviewed = _mostReviewedOffer();
+    final priceRange = group.priceRange;
+    final priceGap = priceRange == null ? 0.0 : priceRange.max - priceRange.min;
+
+    final items = <Widget>[
+      _decisionRow(
+        Icons.savings_outlined,
+        '先看最低价',
+        '${_platformLabel(cheapest.platform)} ¥${cheapest.price.toStringAsFixed(0)} 起',
+        AppColors.priceRed,
+      ),
+    ];
+
+    if (topRated != null) {
+      items.add(_decisionRow(
+        Icons.star_border_rounded,
+        '评分最高',
+        '${_platformLabel(topRated.platform)} ${topRated.rating.toStringAsFixed(1)} 分',
+        AppColors.warn,
+      ));
+    }
+    if (mostReviewed != null) {
+      items.add(_decisionRow(
+        Icons.forum_outlined,
+        '评价最多',
+        '${_platformLabel(mostReviewed.platform)} ${_formatCount(mostReviewed.sales)} 条',
+        AppColors.accent,
+      ));
+    }
+    if (priceGap >= 1) {
+      items.add(_decisionRow(
+        Icons.compare_arrows_rounded,
+        '平台差价',
+        '最高与最低相差 ¥${priceGap.toStringAsFixed(0)}',
+        AppColors.inkSoft,
+      ));
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionHeading('购买判断', '先按关键差异缩小选择范围'),
+          const SizedBox(height: 10),
+          ...items,
+        ],
+      ),
+    );
+  }
+
+  Widget _decisionRow(IconData icon, String label, String value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: color.withAlpha(16),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 16, color: color),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 72,
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.inkBody)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 12.5, color: AppColors.inkSoft)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionHeading(String title, String subtitle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 3),
+        Text(subtitle,
+            style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
+      ],
     );
   }
 
@@ -320,7 +437,8 @@ class ProductGroupDetailScreen extends ConsumerWidget {
     // Compute discount label from price history (preferred) or original price comparison
     String? discountLabel;
     if (p.priceHistory.length >= 3) {
-      final avg = p.priceHistory.reduce((a, b) => a + b) / p.priceHistory.length;
+      final avg =
+          p.priceHistory.reduce((a, b) => a + b) / p.priceHistory.length;
       final min = p.priceHistory.reduce((a, b) => a < b ? a : b);
       final diffFromAvg = ((avg - p.price) / avg * 100).round();
       if (diffFromAvg >= 8) {
@@ -329,6 +447,9 @@ class ProductGroupDetailScreen extends ConsumerWidget {
         discountLabel = '近30天低价';
       }
     }
+    final roleBadges = _platformRoleBadges(p);
+    final sellingPoints = _sellingPoints(p);
+    final trendText = _priceTrendText(p);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -336,8 +457,7 @@ class ProductGroupDetailScreen extends ConsumerWidget {
       decoration: BoxDecoration(
         color: AppColors.panel,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-            color: AppColors.line.withAlpha(100)),
+        border: Border.all(color: AppColors.line.withAlpha(100)),
         boxShadow: [
           BoxShadow(
               color: Colors.black.withAlpha(6),
@@ -367,8 +487,7 @@ class ProductGroupDetailScreen extends ConsumerWidget {
                   decoration: BoxDecoration(
                     color: AppColors.priceRed.withAlpha(16),
                     borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                        color: AppColors.priceRed.withAlpha(60)),
+                    border: Border.all(color: AppColors.priceRed.withAlpha(60)),
                   ),
                   child: Text(discountLabel,
                       style: const TextStyle(
@@ -378,6 +497,14 @@ class ProductGroupDetailScreen extends ConsumerWidget {
                 ),
             ],
           ),
+          if (roleBadges.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: roleBadges,
+            ),
+          ],
           const SizedBox(height: 10),
           // Price row
           Row(
@@ -402,14 +529,21 @@ class ProductGroupDetailScreen extends ConsumerWidget {
               ],
             ],
           ),
+          if (p.title.isNotEmpty && p.title != group.displayTitle) ...[
+            const SizedBox(height: 8),
+            Text(p.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 12.5, height: 1.35, color: AppColors.inkBody)),
+          ],
           const SizedBox(height: 8),
           // Info pills: rating | reviews | shipping | after-sale
           Wrap(
             spacing: 6,
             runSpacing: 6,
             children: [
-              _infoPill(
-                  Icons.star, '${p.rating.toStringAsFixed(1)}分', null),
+              _infoPill(Icons.star, '${p.rating.toStringAsFixed(1)}分', null),
               _infoPill(null, '${_formatCount(p.sales)}条评价', null),
               _infoPill(null, shippingLabel, null),
               _infoPill(null, afterSaleLabel, null),
@@ -426,6 +560,30 @@ class ProductGroupDetailScreen extends ConsumerWidget {
                     .map((t) => _infoPill(null, t, AppColors.accent)),
             ],
           ),
+          if (sellingPoints.isNotEmpty || trendText != null) ...[
+            const SizedBox(height: 12),
+            Container(height: 1, color: AppColors.line.withAlpha(80)),
+            const SizedBox(height: 10),
+            if (sellingPoints.isNotEmpty) ...[
+              const Text('推荐点',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.inkBody)),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: sellingPoints
+                    .map((t) => _infoPill(null, t, AppColors.good))
+                    .toList(),
+              ),
+            ],
+            if (trendText != null) ...[
+              if (sellingPoints.isNotEmpty) const SizedBox(height: 8),
+              _detailLine(Icons.show_chart_rounded, trendText),
+            ],
+          ],
           const SizedBox(height: 12),
           // Action buttons — "去看看" primary, "价格提醒" subtle
           Row(
@@ -436,26 +594,20 @@ class ProductGroupDetailScreen extends ConsumerWidget {
                     gradient: const LinearGradient(
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.userBubble,
-                        AppColors.userBubbleEnd
-                      ],
+                      colors: [AppColors.userBubble, AppColors.userBubbleEnd],
                     ),
-                    borderRadius:
-                        BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: ElevatedButton(
                     onPressed: () {
-                      ref
-                          .read(behaviorRecorderProvider)
-                          .record(
-                        BehaviorEventType.platformJump,
-                        productId: p.productId,
-                        platform: p.platform,
-                        price: p.price,
-                        category: group.category,
-                        brand: p.brand,
-                      );
+                      ref.read(behaviorRecorderProvider).record(
+                            BehaviorEventType.platformJump,
+                            productId: p.productId,
+                            platform: p.platform,
+                            price: p.price,
+                            category: group.category,
+                            brand: p.brand,
+                          );
                       _showJumpNotice(context, p);
                     },
                     style: ElevatedButton.styleFrom(
@@ -464,13 +616,10 @@ class ProductGroupDetailScreen extends ConsumerWidget {
                       elevation: 0,
                       shadowColor: Colors.transparent,
                       shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 10),
+                          borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
-                    child: const Text('去看看',
-                        style: TextStyle(fontSize: 14)),
+                    child: const Text('去看看', style: TextStyle(fontSize: 14)),
                   ),
                 ),
               ),
@@ -478,10 +627,13 @@ class ProductGroupDetailScreen extends ConsumerWidget {
               TextButton.icon(
                 onPressed: () {
                   ref.read(behaviorRecorderProvider).record(
-                    BehaviorEventType.priceAlertCreate,
-                    productId: p.productId, platform: p.platform,
-                    price: p.price, category: group.category, brand: p.brand,
-                  );
+                        BehaviorEventType.priceAlertCreate,
+                        productId: p.productId,
+                        platform: p.platform,
+                        price: p.price,
+                        category: group.category,
+                        brand: p.brand,
+                      );
                   _showPriceAlert(context, ref, p);
                 },
                 icon: const Icon(Icons.notifications_outlined, size: 16),
@@ -515,18 +667,167 @@ class ProductGroupDetailScreen extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon,
-                size: 12,
-                color: accent ?? AppColors.inkSoft),
+            Icon(icon, size: 12, color: accent ?? AppColors.inkSoft),
             const SizedBox(width: 3),
           ],
           Text(text,
-              style: TextStyle(
-                  fontSize: 11,
-                  color: accent ?? AppColors.inkSoft)),
+              style:
+                  TextStyle(fontSize: 11, color: accent ?? AppColors.inkSoft)),
         ],
       ),
     );
+  }
+
+  List<Widget> _platformRoleBadges(PlatformOfferSummary p) {
+    final badges = <Widget>[];
+    if (_sameOffer(_cheapestOffer(), p)) {
+      badges.add(_roleBadge('最低价', AppColors.priceRed));
+    }
+    if (_sameOffer(_topRatedOffer(), p)) {
+      badges.add(_roleBadge('评分最高', AppColors.warn));
+    }
+    if (_sameOffer(_mostReviewedOffer(), p)) {
+      badges.add(_roleBadge('评价最多', AppColors.accent));
+    }
+    return badges;
+  }
+
+  Widget _roleBadge(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withAlpha(14),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withAlpha(55)),
+      ),
+      child: Text(text,
+          style: TextStyle(
+              fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+    );
+  }
+
+  List<String> _sellingPoints(PlatformOfferSummary p) {
+    final points = <String>[];
+    final seen = <String>{};
+    void add(String value) {
+      final label = _preferenceLabel(value.trim());
+      if (label.isNotEmpty && seen.add(label)) {
+        points.add(label);
+      }
+    }
+
+    for (final reason in p.reasons) {
+      add(reason);
+    }
+    for (final matched in p.matchedPreferences) {
+      add(matched);
+    }
+    if (_sameOffer(_cheapestOffer(), p)) {
+      add('当前最低价');
+    }
+    if (p.rating >= 4.8) {
+      add('评分较高');
+    }
+    if (p.sales >= 10000) {
+      add('评价量充足');
+    }
+    return points.take(4).toList();
+  }
+
+  String _preferenceLabel(String value) {
+    return switch (value) {
+      'low_price' => '低价优先',
+      'lowest_price' => '低价优先',
+      'budget_match' => '预算匹配',
+      'official_store' => '官方店铺',
+      'after_sale' => '售后保障',
+      'fast_delivery' => '配送更快',
+      'high_rating' => '高评分',
+      'high_sales' => '高销量',
+      'brand_match' => '品牌匹配',
+      'noise_cancel' => '降噪优先',
+      'high_power' => '大功率',
+      'portable' => '便携',
+      'large_capacity' => '大容量',
+      'business' => '商务款',
+      'long_battery' => '长续航',
+      'sports' => '运动款',
+      _ => value,
+    };
+  }
+
+  String? _priceTrendText(PlatformOfferSummary p) {
+    if (p.priceHistory.length < 2) {
+      return null;
+    }
+    final first = p.priceHistory.first;
+    final last = p.priceHistory.last;
+    final min = p.priceHistory.reduce((a, b) => a < b ? a : b);
+    final max = p.priceHistory.reduce((a, b) => a > b ? a : b);
+    final trend = last < first - 1
+        ? '近期走低'
+        : last > first + 1
+            ? '近期走高'
+            : '近期平稳';
+    return '价格走势：$trend · 近30天 ¥${min.toStringAsFixed(0)} - ¥${max.toStringAsFixed(0)}';
+  }
+
+  Widget _detailLine(IconData icon, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 15, color: AppColors.inkSoft),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(text,
+              style: const TextStyle(
+                  fontSize: 12, height: 1.35, color: AppColors.inkSoft)),
+        ),
+      ],
+    );
+  }
+
+  PlatformOfferSummary? _cheapestOffer() {
+    if (group.platforms.isEmpty) {
+      return null;
+    }
+    var result = group.platforms.first;
+    for (final p in group.platforms.skip(1)) {
+      if (p.price < result.price) {
+        result = p;
+      }
+    }
+    return result;
+  }
+
+  PlatformOfferSummary? _topRatedOffer() {
+    if (group.platforms.isEmpty) {
+      return null;
+    }
+    var result = group.platforms.first;
+    for (final p in group.platforms.skip(1)) {
+      if (p.rating > result.rating) {
+        result = p;
+      }
+    }
+    return result;
+  }
+
+  PlatformOfferSummary? _mostReviewedOffer() {
+    if (group.platforms.isEmpty) {
+      return null;
+    }
+    var result = group.platforms.first;
+    for (final p in group.platforms.skip(1)) {
+      if (p.sales > result.sales) {
+        result = p;
+      }
+    }
+    return result;
+  }
+
+  bool _sameOffer(PlatformOfferSummary? a, PlatformOfferSummary b) {
+    return a != null && a.productId == b.productId && a.platform == b.platform;
   }
 
   void _showJumpNotice(BuildContext context, PlatformOfferSummary p) {
@@ -559,7 +860,7 @@ class ProductGroupDetailScreen extends ConsumerWidget {
                       color: AppColors.priceRed)),
               const SizedBox(height: 12),
               const Text(
-                '当前演示使用 Mock 商品数据，不会打开真实电商页面。正式接入后将跳转到对应平台商品详情页。',
+                '当前演示使用样例商品数据，不会打开真实电商页面。正式接入后将跳转到对应平台商品详情页。',
                 style: TextStyle(
                     fontSize: 13, height: 1.45, color: AppColors.inkSoft),
               ),
@@ -668,7 +969,8 @@ class ProductGroupDetailScreen extends ConsumerWidget {
         border: Border.all(color: color.withAlpha(70)),
       ),
       child: Text(_platformLabel(platform),
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+          style: TextStyle(
+              fontSize: 11, fontWeight: FontWeight.w600, color: color)),
     );
   }
 
