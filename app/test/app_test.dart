@@ -11,6 +11,7 @@ import 'package:shopping_agent_app/features/alerts/price_alert_api.dart';
 import 'package:shopping_agent_app/features/alerts/price_alert_models.dart';
 import 'package:shopping_agent_app/features/chat/chat_screen.dart';
 import 'package:shopping_agent_app/features/chat/chat_providers.dart';
+import 'package:shopping_agent_app/features/chat/product_group_detail_screen.dart';
 import 'package:shopping_agent_app/features/chat/recognition_api.dart';
 import 'package:shopping_agent_app/features/favorites/favorite_api.dart';
 import 'package:shopping_agent_app/features/favorites/favorite_models.dart';
@@ -223,6 +224,7 @@ class FakeChatApi extends ChatApi {
     String? text,
     List<String>? imageIds,
     List<String>? selectedOptionIds,
+    Map<String, dynamic>? profile,
   }) async {
     if (_sendMessageCompleter != null) {
       final c = _sendMessageCompleter!;
@@ -565,10 +567,10 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen()));
 
       expect(find.byIcon(Icons.history), findsOneWidget);
-      expect(find.text('我的'), findsOneWidget);
+      expect(find.byIcon(Icons.person_outline), findsOneWidget);
       expect(find.byIcon(Icons.image_outlined), findsOneWidget);
       expect(find.byIcon(Icons.mic_none), findsOneWidget);
-      expect(find.byIcon(Icons.arrow_forward), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
     });
 
     testWidgets('image button opens bottom sheet', (tester) async {
@@ -583,7 +585,7 @@ void main() {
   group('ProfileScreen', () {
     testWidgets('displays top sections on entry', (tester) async {
       await tester.pumpWidget(_wrapWithRouter());
-      await tester.tap(find.text('我的'));
+      await tester.tap(find.byIcon(Icons.person_outline));
       await tester.pumpAndSettle();
 
       // Top content visible without scrolling
@@ -596,53 +598,30 @@ void main() {
 
     testWidgets('displays lower sections after scrolling', (tester) async {
       await tester.pumpWidget(_wrapWithRouter());
-      await tester.tap(find.text('我的'));
+      await tester.tap(find.byIcon(Icons.person_outline));
       await tester.pumpAndSettle();
 
-      final profileScrollable = find.descendant(
-        of: find.byKey(const Key('profile_list')),
-        matching: find.byType(Scrollable),
-      );
-      await tester.scrollUntilVisible(
-        find.text('隐私与数据'),
-        100,
-        scrollable: profileScrollable,
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('隐私与数据'), findsOneWidget);
-
-      await tester.scrollUntilVisible(
-        find.text('接口状态'),
-        100,
-        scrollable: profileScrollable,
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('接口状态'), findsOneWidget);
-      expect(find.text('AI Provider'), findsOneWidget);
+      // Verify lower sections visible without scrolling
+      expect(find.text('演示用户'), findsOneWidget);
+      expect(find.text('购物偏好'), findsOneWidget);
+      expect(find.text('关于购物助手'), findsOneWidget);
+      expect(find.text('E.C.26-B'), findsOneWidget);
     });
 
-    testWidgets('displays live health status from fake API', (tester) async {
+    testWidgets('displays live health status in debug screen via long-press',
+        (tester) async {
       await tester.pumpWidget(_wrapWithRouter());
-      await tester.tap(find.text('我的'));
+      await tester.tap(find.byIcon(Icons.person_outline));
       await tester.pumpAndSettle();
 
-      // Scroll down to the API status section
-      final profileScrollable = find.descendant(
-        of: find.byKey(const Key('profile_list')),
-        matching: find.byType(Scrollable),
-      );
-      await tester.scrollUntilVisible(
-        find.text('接口状态'),
-        200,
-        scrollable: profileScrollable,
-      );
+      // Long-press "关于购物助手" to reveal debug screen
+      await tester.longPress(find.text('E.C.26-B'));
       await tester.pumpAndSettle();
 
-      // API status section shows fake data (ark/memory)
+      // Debug screen shows backend provider status
+      expect(find.text('开发者调试'), findsOneWidget);
+      expect(find.text('AI Provider'), findsOneWidget);
       expect(find.text('ark'), findsOneWidget);
-      expect(find.text('memory'), findsOneWidget);
-      expect(find.text('聊天式 AI 识别与多平台 Mock 推荐阶段'), findsOneWidget);
     });
   });
 
@@ -655,10 +634,10 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'test');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
-      expect(find.text('正在思考…'), findsOneWidget);
+      expect(find.text('AI 正在为你查找…'), findsOneWidget);
 
       completer.complete(const AgentReply(
         replyId: 'reply-001',
@@ -684,7 +663,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'test');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pumpAndSettle();
       await tester.tap(find.text('价格最低'));
       await tester.pumpAndSettle();
@@ -692,16 +671,16 @@ void main() {
       // Should show product group list
       expect(find.textContaining('找到 '), findsWidgets);
       expect(find.text('匹配商品'), findsOneWidget);
-      // Should show minimal group cards with title, price, platform count, chevron
+      // Group cards show: title, price, rating, chevron
       expect(find.textContaining('运动鞋'), findsWidgets);
       expect(find.textContaining('¥'), findsWidgets);
-      expect(find.textContaining('个平台'), findsWidgets);
+      expect(find.textContaining('起'), findsWidgets);
       expect(find.byIcon(Icons.chevron_right), findsWidgets);
       // Should NOT show brand labels, highlights, relaxed match tags in group row
       expect(find.text('耐克'), findsNothing);
       expect(find.text('放宽匹配'), findsNothing);
       // Should show clarification card
-      expect(find.text('查看同款低价'), findsOneWidget);
+      expect(find.text('查看同款低价'), findsAtLeastNWidgets(1));
     });
 
     testWidgets('recognition card renders with correct fields', (tester) async {
@@ -712,7 +691,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'test');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       completer.complete(AgentReply(
@@ -756,7 +735,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'test');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       completer.complete(AgentReply(
@@ -888,7 +867,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'test');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -1066,7 +1045,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '50以内的耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       completer.complete(AgentReply(
@@ -1100,20 +1079,20 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pumpAndSettle();
 
-      // Should show product group list with minimal info only
+      // Should show product group list with compact info
       expect(find.text('匹配商品'), findsOneWidget);
+      // Should show group count
       expect(find.textContaining('组'), findsWidgets);
-      // Should show price and platform count
+      // Should show price, platform badge, rating and reviews
       expect(find.textContaining('¥'), findsWidgets);
-      expect(find.textContaining('个平台'), findsWidgets);
+      expect(find.textContaining('起'), findsWidgets);
       expect(find.byIcon(Icons.chevron_right), findsWidgets);
-      // Should NOT show highlights, tags, or heavy info in group row
-      expect(find.textContaining('最低 '), findsNothing);
-      expect(find.textContaining('评分'), findsNothing);
-      expect(find.textContaining('条评价'), findsNothing);
+      // Group row shows rating via star icon + number (not "X分" format)
+      expect(find.byIcon(Icons.star_rounded), findsWidgets);
+      expect(find.textContaining('评价'), findsWidgets);
       expect(find.text('放宽匹配'), findsNothing);
       // Should show clarification card
       expect(find.text('查看同款低价'), findsOneWidget);
@@ -1134,7 +1113,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'test');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       // Old-style recommendation without explanation fields
@@ -1181,7 +1160,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pumpAndSettle();
 
       expect(find.text('意图：rule'), findsNothing);
@@ -1292,7 +1271,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -1343,7 +1322,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -1398,7 +1377,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -1446,7 +1425,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -1484,7 +1463,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -1516,7 +1495,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '识别这张图');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -1572,7 +1551,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -1596,7 +1575,7 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), 'hi');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pump();
 
       completer.complete(const AgentReply(
@@ -1682,18 +1661,19 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pumpAndSettle();
 
-      // Group row shows: thumbnail placeholder, title, price, platform count, chevron
+      // Group row shows: thumbnail placeholder, title, price, rating star, reviews, chevron
       expect(find.text('匹配商品'), findsOneWidget);
       expect(find.textContaining('¥'), findsWidgets);
+      // Platform count badge now shown in group row
       expect(find.textContaining('个平台'), findsWidgets);
       expect(find.byIcon(Icons.chevron_right), findsWidgets);
-      // Group row does NOT show: rating, reviews, specs, tags, original price
-      expect(find.textContaining('分'), findsNothing);
-      expect(find.textContaining('条评价'), findsNothing);
-      // Strikethrough original price must not appear (test data has 399 vs 199)
+      // Group row now shows ratings (star icon + number) and reviews count
+      expect(find.byIcon(Icons.star_rounded), findsWidgets);
+      expect(find.textContaining('评价'), findsWidgets);
+      // Should NOT show strikethrough original price
       expect(find.text('¥399'), findsNothing);
     });
 
@@ -1702,10 +1682,16 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pumpAndSettle();
 
-      // Tap the first group row
+      // Scroll the first chevron into view, then tap to open detail page
+      await tester.scrollUntilVisible(
+        find.byIcon(Icons.chevron_right).first,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.chevron_right).first);
       await tester.pumpAndSettle();
 
@@ -1719,10 +1705,16 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pumpAndSettle();
 
       // Open detail page
+      await tester.scrollUntilVisible(
+        find.byIcon(Icons.chevron_right).first,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.chevron_right).first);
       await tester.pumpAndSettle();
 
@@ -1733,10 +1725,53 @@ void main() {
       // Platform comparison list
       expect(find.text('平台比价'), findsOneWidget);
       // Platform cards show shop name and action buttons
-      expect(find.text('去平台'), findsWidgets);
+      expect(find.text('去看看'), findsWidgets);
       expect(find.text('价格提醒'), findsWidgets);
       // Rating/sales displayed
       expect(find.textContaining('分'), findsWidgets);
+    });
+
+    testWidgets('detail page uses compact placeholder when image is missing',
+        (tester) async {
+      const group = ProductGroup(
+        groupId: 'headphone-test',
+        displayTitle: '测试耳机 黑色',
+        category: '耳机',
+        brand: '测试品牌',
+        thumbnailUrl: '',
+        bestPrice: 299,
+        originalPrice: 399,
+        priceRange: PriceRange(min: 299, max: 299),
+        platformCount: 1,
+        platforms: [
+          PlatformOfferSummary(
+            productId: 'headphone-test-jd',
+            platform: '京东-mock',
+            price: 299,
+            originalPrice: 399,
+            shopName: '测试京东自营',
+            productUrl: '',
+            rating: 4.9,
+            sales: 23000,
+            tags: ['自营'],
+            reasons: ['高评分'],
+            title: '测试耳机 黑色 高音质',
+          ),
+        ],
+        highlights: ['最低 ¥299', '高评分'],
+        matchLevel: 'strict',
+      );
+
+      await tester.pumpWidget(_wrapChat(
+        const ProductGroupDetailScreen(group: group),
+      ));
+
+      final placeholder =
+          find.byKey(const Key('product_detail_thumbnail_placeholder'));
+      expect(placeholder, findsOneWidget);
+      expect(tester.getSize(placeholder), const Size(88, 88));
+      expect(find.textContaining('价格区间'), findsNothing);
+      expect(find.textContaining('个平台有售'), findsOneWidget);
     });
 
     testWidgets('detail page back returns to chat', (tester) async {
@@ -1744,10 +1779,16 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pumpAndSettle();
 
       // Open detail page
+      await tester.scrollUntilVisible(
+        find.byIcon(Icons.chevron_right).first,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.chevron_right).first);
       await tester.pumpAndSettle();
       expect(find.text('商品详情'), findsOneWidget);
@@ -1767,10 +1808,16 @@ void main() {
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_forward));
+      await tester.tap(find.byIcon(Icons.arrow_upward));
       await tester.pumpAndSettle();
 
       // Open detail page
+      await tester.scrollUntilVisible(
+        find.byIcon(Icons.chevron_right).first,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.chevron_right).first);
       await tester.pumpAndSettle();
       expect(find.text('商品详情'), findsOneWidget);

@@ -89,6 +89,7 @@ class ChatApi {
     String? text,
     List<String>? imageIds,
     List<String>? selectedOptionIds,
+    Map<String, dynamic>? profile,
   }) async {
     final uri =
         Uri.parse('$baseUrl/api/chat/sessions/$sessionId/messages');
@@ -96,6 +97,7 @@ class ChatApi {
       'text': text ?? '',
       'imageIds': imageIds ?? [],
       'selectedOptionIds': selectedOptionIds ?? [],
+      if (profile != null) 'profile': profile,
     };
     final response = await http.post(
       uri,

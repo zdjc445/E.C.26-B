@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../auth/auth_controller.dart';
+import '../memory/behavior_events.dart';
 import 'chat_models.dart';
 import 'chat_providers.dart';
 
@@ -12,8 +13,26 @@ class ProductGroupDetailScreen extends ConsumerWidget {
 
   const ProductGroupDetailScreen({super.key, required this.group});
 
+  // Track viewed products in-session to avoid duplicate productView events
+  static final _viewedThisSession = <String>{};
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Record product view event once per session
+    if (_viewedThisSession.add(group.groupId)) {
+      final cheapest = group.platforms.isNotEmpty
+          ? group.platforms.reduce((a, b) => a.price < b.price ? a : b)
+          : null;
+      ref.read(behaviorRecorderProvider).record(BehaviorEventType.productView,
+        productId: group.groupId,
+        category: group.category,
+        brand: group.brand,
+        price: group.bestPrice,
+        platform: cheapest?.platform,
+        tags: cheapest?.tags,
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -40,83 +59,196 @@ class ProductGroupDetailScreen extends ConsumerWidget {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final hasThumbnail = _hasRemoteThumbnail();
+    if (!hasThumbnail) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: _buildThumbnail(width: 88, height: 88, iconSize: 34),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _buildHeaderText(),
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Large thumbnail
         ClipRRect(
           borderRadius: BorderRadius.circular(10),
-          child: _buildThumbnail(),
+          child: _buildThumbnail(height: 184, iconSize: 56),
         ),
         const SizedBox(height: 14),
-        // Product title
-        Text(group.displayTitle,
-            style: const TextStyle(
-                fontSize: 20, fontWeight: FontWeight.w700, height: 1.3)),
-        const SizedBox(height: 8),
-        // Category and brand
-        Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: [
-            if (group.category != null && group.category!.isNotEmpty)
-              _infoChip('品类：${group.category}'),
-            if (group.brand != null && group.brand!.isNotEmpty)
-              _infoChip('品牌：${group.brand}'),
-          ],
-        ),
+        _buildHeaderText(),
       ],
     );
   }
 
-  Widget _buildThumbnail() {
-    final url = group.thumbnailUrl?.trim() ?? '';
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return Image.network(
-        url,
-        width: double.infinity,
-        height: 220,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _thumbnailPlaceholder(),
-      );
+  Widget _buildHeaderText() {
+    // Build a natural subtitle: "Nike · 跑步鞋" instead of template chips
+    final subtitleParts = <String>[];
+    if (group.brand != null && group.brand!.isNotEmpty) {
+      subtitleParts.add(group.brand!);
     }
-    return _thumbnailPlaceholder();
-  }
-
-  Widget _thumbnailPlaceholder() {
-    final accent = switch (group.category ?? '') {
-      '耳机' => const Color(0xFF2F343B),
-      '吹风机' => const Color(0xFFB23A48),
-      '背包' => const Color(0xFFC27A2C),
-      '智能手表' => const Color(0xFF4A6FA5),
-      _ => AppColors.accent,
-    };
-    final icon = switch (group.category ?? '') {
-      '耳机' => Icons.headphones,
-      '吹风机' => Icons.air,
-      '背包' => Icons.backpack,
-      '智能手表' => Icons.watch,
-      _ => Icons.shopping_bag_outlined,
-    };
-    return Container(
-      width: double.infinity,
-      height: 220,
-      decoration: BoxDecoration(
-        color: accent.withAlpha(15),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Icon(icon, size: 64, color: accent.withAlpha(120)),
+    if (group.category != null && group.category!.isNotEmpty) {
+      subtitleParts.add(group.category!);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(group.displayTitle,
+            style: const TextStyle(
+                fontSize: 20, fontWeight: FontWeight.w700, height: 1.25)),
+        if (subtitleParts.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(subtitleParts.join(' · '),
+              style: const TextStyle(
+                  fontSize: 13, color: AppColors.inkSoft)),
+        ],
+      ],
     );
   }
 
-  Widget _buildPriceSection() {
+  bool _hasRemoteThumbnail() {
+    return _bestThumbnailUrl.isNotEmpty;
+  }
+
+  String get _bestThumbnailUrl {
+    // Prefer the group's thumbnailUrl, then the first platform's imageUrl.
+    final groupUrl = group.thumbnailUrl?.trim() ?? '';
+    if (groupUrl.startsWith('http://') || groupUrl.startsWith('https://')) {
+      return groupUrl;
+    }
+    if (group.platforms.isNotEmpty) {
+      final platformUrl = group.platforms.first.imageUrl.trim();
+      if (platformUrl.startsWith('http://') || platformUrl.startsWith('https://')) {
+        return platformUrl;
+      }
+    }
+    return '';
+  }
+
+  Widget _buildThumbnail(
+      {double width = double.infinity,
+      required double height,
+      required double iconSize}) {
+    final url = _bestThumbnailUrl;
+    if (url.isNotEmpty) {
+      return Image.network(
+        url,
+        width: width,
+        height: height,
+        fit: BoxFit.cover,
+        loadingBuilder: (_, child, progress) {
+          if (progress == null) return child;
+          return _thumbnailPlaceholder(
+              width: width, height: height, iconSize: iconSize);
+        },
+        errorBuilder: (_, __, ___) => _thumbnailPlaceholder(
+            width: width, height: height, iconSize: iconSize),
+      );
+    }
+    return _thumbnailPlaceholder(
+        width: width, height: height, iconSize: iconSize);
+  }
+
+  Widget _thumbnailPlaceholder(
+      {required double width,
+      required double height,
+      required double iconSize}) {
+    final colors = _detailThumbColors(group.category ?? '');
+    final brand = group.brand ?? '';
+    final initial = brand.isNotEmpty ? brand[0] : '商';
+
     return Container(
-      padding: const EdgeInsets.all(14),
+      key: const Key('product_detail_thumbnail_placeholder'),
+      width: width,
+      height: height,
       decoration: BoxDecoration(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(12),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [colors.bg, colors.bg2],
+        ),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -width * 0.1,
+            bottom: -height * 0.05,
+            child: Icon(colors.icon, size: iconSize * 1.2,
+                color: Colors.white.withAlpha(25)),
+          ),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(initial,
+                    style: TextStyle(
+                        fontSize: iconSize * 0.55,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white)),
+                if (brand.length > 1)
+                  Text(brand,
+                      style: TextStyle(
+                          fontSize: iconSize * 0.2,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withAlpha(200))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  _DetailThumbColors _detailThumbColors(String cat) => switch (cat) {
+    '运动鞋' => _DetailThumbColors(const Color(0xFF6366F1), const Color(0xFF818CF8), Icons.directions_run),
+    '耳机' => _DetailThumbColors(const Color(0xFF0EA5E9), const Color(0xFF38BDF8), Icons.headphones),
+    '吹风机' => _DetailThumbColors(const Color(0xFFF43F5E), const Color(0xFFFB7185), Icons.air),
+    '背包' => _DetailThumbColors(const Color(0xFFF59E0B), const Color(0xFFFBBF24), Icons.backpack),
+    '智能手表' => _DetailThumbColors(const Color(0xFF10B981), const Color(0xFF34D399), Icons.watch),
+    _ => _DetailThumbColors(const Color(0xFF6366F1), const Color(0xFF818CF8), Icons.shopping_bag_outlined),
+  };
+
+  Widget _buildPriceSection() {
+    final priceRange = group.priceRange;
+    final showPriceRange =
+        priceRange != null && (priceRange.max - priceRange.min).abs() >= 1;
+
+    // Find the cheapest platform
+    String cheapestPlatform = '';
+    double minPrice = double.infinity;
+    for (final p in group.platforms) {
+      if (p.price < minPrice) {
+        minPrice = p.price;
+        cheapestPlatform = _platformLabel(p.platform);
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.panel, AppColors.primaryMuted],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+            color: AppColors.line.withAlpha(100)),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withAlpha(7),
+              blurRadius: 12,
+              offset: const Offset(0, 3)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,38 +258,42 @@ class ProductGroupDetailScreen extends ConsumerWidget {
             children: [
               Text('¥${group.bestPrice.toStringAsFixed(0)}',
                   style: const TextStyle(
-                      fontSize: 28,
+                      fontSize: 32,
                       height: 1,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.priceRed)),
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.priceRed,
+                      letterSpacing: -0.8)),
+              const SizedBox(width: 8),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 3),
+                child: Text('起',
+                    style: TextStyle(
+                        fontSize: 14,
+                        color: AppColors.inkSoft)),
+              ),
               if (group.originalPrice > group.bestPrice) ...[
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 3),
-                  child: Text('¥${group.originalPrice.toStringAsFixed(0)}',
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                      '¥${group.originalPrice.toStringAsFixed(0)}',
                       style: const TextStyle(
-                          fontSize: 14,
+                          fontSize: 15,
                           color: AppColors.inkSoft,
-                          decoration: TextDecoration.lineThrough)),
+                          decoration:
+                              TextDecoration.lineThrough)),
                 ),
               ],
             ],
           ),
-          if (group.priceRange != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              '价格区间：¥${group.priceRange!.min.toStringAsFixed(0)} - ¥${group.priceRange!.max.toStringAsFixed(0)}',
-              style: const TextStyle(fontSize: 12, color: AppColors.inkSoft),
-            ),
-          ],
-          const SizedBox(height: 6),
-          Text('${group.platformCount} 个平台有售',
-              style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
-          if (group.matchLevel != null && group.matchLevel!.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text('匹配状态：${group.matchLevel == "strict" ? "严格匹配" : "放宽匹配"}',
-                style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
-          ],
+          const SizedBox(height: 8),
+          Text(
+            '最低来自$cheapestPlatform · ${group.platformCount}个平台有售${showPriceRange ? " · 各平台 ¥${priceRange.min.toStringAsFixed(0)} - ¥${priceRange.max.toStringAsFixed(0)}" : ""}',
+            style: const TextStyle(
+                fontSize: 12.5,
+                height: 1.4,
+                color: AppColors.inkSoft),
+          ),
         ],
       ),
     );
@@ -173,18 +309,46 @@ class ProductGroupDetailScreen extends ConsumerWidget {
 
   Widget _buildPlatformCard(
       BuildContext context, WidgetRef ref, PlatformOfferSummary p) {
+    // Platform-specific info
+    final (shippingLabel, afterSaleLabel) = switch (p.platform) {
+      '京东-mock' => ('京仓发货', '上门换新'),
+      '天猫-mock' => ('菜鸟配送', '7天无理由'),
+      '淘宝-mock' => ('浙江发货', '7天无理由'),
+      '拼多多-mock' => ('包邮', '放心退'),
+      _ => ('平台发货', '7天无理由'),
+    };
+    // Compute discount label from price history (preferred) or original price comparison
+    String? discountLabel;
+    if (p.priceHistory.length >= 3) {
+      final avg = p.priceHistory.reduce((a, b) => a + b) / p.priceHistory.length;
+      final min = p.priceHistory.reduce((a, b) => a < b ? a : b);
+      final diffFromAvg = ((avg - p.price) / avg * 100).round();
+      if (diffFromAvg >= 8) {
+        discountLabel = '比30天均价低$diffFromAvg%';
+      } else if ((p.price - min).abs() < 1) {
+        discountLabel = '近30天低价';
+      }
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.panel,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+            color: AppColors.line.withAlpha(100)),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withAlpha(6),
+              blurRadius: 8,
+              offset: const Offset(0, 2)),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Platform + shop
+          // Header: platform badge + shop name
           Row(
             children: [
               _platformBadge(p.platform),
@@ -194,35 +358,44 @@ class ProductGroupDetailScreen extends ConsumerWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600)),
+                        fontSize: 14, fontWeight: FontWeight.w600)),
               ),
+              if (discountLabel != null)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.priceRed.withAlpha(16),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                        color: AppColors.priceRed.withAlpha(60)),
+                  ),
+                  child: Text(discountLabel,
+                      style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.priceRed)),
+                ),
             ],
           ),
-          const SizedBox(height: 6),
-          // Product title
-          if (p.title.isNotEmpty)
-            Text(p.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, height: 1.35)),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           // Price row
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text('¥${p.price.toStringAsFixed(0)}',
                   style: const TextStyle(
-                      fontSize: 20,
+                      fontSize: 22,
                       height: 1,
                       fontWeight: FontWeight.w700,
                       color: AppColors.priceRed)),
               if (p.originalPrice > p.price) ...[
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 Padding(
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Text('¥${p.originalPrice.toStringAsFixed(0)}',
                       style: const TextStyle(
-                          fontSize: 12,
+                          fontSize: 13,
                           color: AppColors.inkSoft,
                           decoration: TextDecoration.lineThrough)),
                 ),
@@ -230,79 +403,127 @@ class ProductGroupDetailScreen extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 8),
-          // Rating and sales
-          Row(
+          // Info pills: rating | reviews | shipping | after-sale
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
             children: [
-              Text(p.rating > 0 ? '${p.rating.toStringAsFixed(1)}分' : '暂无评分',
-                  style:
-                      const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
-              const SizedBox(width: 10),
-              Text(p.sales > 0 ? '${_formatCount(p.sales)}条评价' : '暂无评价',
-                  style:
-                      const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
+              _infoPill(
+                  Icons.star, '${p.rating.toStringAsFixed(1)}分', null),
+              _infoPill(null, '${_formatCount(p.sales)}条评价', null),
+              _infoPill(null, shippingLabel, null),
+              _infoPill(null, afterSaleLabel, null),
+              if (p.tags.isNotEmpty)
+                ...p.tags
+                    .where((t) =>
+                        t != '包邮' &&
+                        t != '正品保障' &&
+                        t != '京东物流' &&
+                        t != '7天无理由' &&
+                        t != '放心退' &&
+                        t != '先用后付')
+                    .take(2)
+                    .map((t) => _infoPill(null, t, AppColors.accent)),
             ],
           ),
-          // Specs
-          if (p.specs.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 10,
-              runSpacing: 4,
-              children: p.specs.map((spec) {
-                return Text('${spec.label}：${spec.value}',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.inkSoft));
-              }).toList(),
-            ),
-          ],
-          // Tags
-          if (p.tags.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 4,
-              runSpacing: 4,
-              children: p.tags.map((t) => _tagBadge(t)).toList(),
-            ),
-          ],
-          // Reasons
-          if (p.reasons.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(p.reasons.join(' · '),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
-          ],
           const SizedBox(height: 12),
-          // Action buttons
+          // Action buttons — "去看看" primary, "价格提醒" subtle
           Row(
             children: [
               Expanded(
-                child: OutlinedButton(
-                  onPressed: () => _showJumpNotice(context, p),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.accent,
-                    side: const BorderSide(color: AppColors.accent),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.userBubble,
+                        AppColors.userBubbleEnd
+                      ],
+                    ),
+                    borderRadius:
+                        BorderRadius.circular(10),
                   ),
-                  child: const Text('去平台', style: TextStyle(fontSize: 13)),
+                  child: ElevatedButton(
+                    onPressed: () {
+                      ref
+                          .read(behaviorRecorderProvider)
+                          .record(
+                        BehaviorEventType.platformJump,
+                        productId: p.productId,
+                        platform: p.platform,
+                        price: p.price,
+                        category: group.category,
+                        brand: p.brand,
+                      );
+                      _showJumpNotice(context, p);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 10),
+                    ),
+                    child: const Text('去看看',
+                        style: TextStyle(fontSize: 14)),
+                  ),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => _showPriceAlert(context, ref, p),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.inkMain,
-                    side: const BorderSide(color: AppColors.line),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                  child: const Text('价格提醒', style: TextStyle(fontSize: 13)),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: () {
+                  ref.read(behaviorRecorderProvider).record(
+                    BehaviorEventType.priceAlertCreate,
+                    productId: p.productId, platform: p.platform,
+                    price: p.price, category: group.category, brand: p.brand,
+                  );
+                  _showPriceAlert(context, ref, p);
+                },
+                icon: const Icon(Icons.notifications_outlined, size: 16),
+                label: const Text('价格提醒'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.inkSoft,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Compact info pill for platform card details.
+  Widget _infoPill(IconData? icon, String text, Color? accent) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: accent != null ? accent.withAlpha(12) : AppColors.panelSoft,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+            color: accent != null ? accent.withAlpha(50) : AppColors.line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon,
+                size: 12,
+                color: accent ?? AppColors.inkSoft),
+            const SizedBox(width: 3),
+          ],
+          Text(text,
+              style: TextStyle(
+                  fontSize: 11,
+                  color: accent ?? AppColors.inkSoft)),
         ],
       ),
     );
@@ -418,19 +639,6 @@ class ProductGroupDetailScreen extends ConsumerWidget {
     }
   }
 
-  Widget _infoChip(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.panelSoft,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Text(text,
-          style: const TextStyle(fontSize: 12, color: AppColors.inkMain)),
-    );
-  }
-
   Widget _tagBadge(String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
@@ -445,15 +653,22 @@ class ProductGroupDetailScreen extends ConsumerWidget {
   }
 
   Widget _platformBadge(String platform) {
+    final color = switch (platform) {
+      '京东-mock' => const Color(0xFFC41A22),
+      '拼多多-mock' => const Color(0xFFE53A30),
+      '淘宝-mock' => const Color(0xFFFF5000),
+      '天猫-mock' => const Color(0xFFFF0033),
+      _ => AppColors.inkSoft,
+    };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: AppColors.panelSoft,
+        color: color.withAlpha(18),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: AppColors.line),
+        border: Border.all(color: color.withAlpha(70)),
       ),
       child: Text(_platformLabel(platform),
-          style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
     );
   }
 
@@ -462,6 +677,7 @@ class ProductGroupDetailScreen extends ConsumerWidget {
       '京东-mock' => '京东',
       '拼多多-mock' => '拼多多',
       '淘宝-mock' => '淘宝',
+      '天猫-mock' => '天猫',
       _ => platform,
     };
   }
@@ -470,4 +686,10 @@ class ProductGroupDetailScreen extends ConsumerWidget {
     if (value >= 10000) return '${(value / 10000).toStringAsFixed(1)}万';
     return value.toString();
   }
+}
+
+class _DetailThumbColors {
+  final Color bg, bg2;
+  final IconData icon;
+  const _DetailThumbColors(this.bg, this.bg2, this.icon);
 }

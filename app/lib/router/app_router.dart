@@ -7,6 +7,7 @@ import '../features/chat/chat_screen.dart';
 import '../features/comparison/comparison_placeholder.dart';
 import '../features/favorites/favorites_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/memory/preferences_screen.dart';
 import '../features/recognition/recognition_placeholder.dart';
 import '../features/recommendation/recommendation_placeholder.dart';
 import '../features/search/search_placeholder.dart';
@@ -55,6 +56,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/recommendation',
         builder: (context, state) => const RecommendationPlaceholder(),
+      ),
+      GoRoute(
+        path: '/preferences',
+        builder: (context, state) => const PreferencesScreen(),
       ),
     ],
   );

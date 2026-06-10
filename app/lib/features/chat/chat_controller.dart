@@ -114,7 +114,8 @@ class ChatController extends ChangeNotifier {
   // ── Send text message ─────────────────────────────────────
 
   Future<void> sendTextMessage(String text,
-      {List<String>? imageIds, List<String>? imagePaths}) async {
+      {List<String>? imageIds, List<String>? imagePaths,
+       Map<String, dynamic>? profile}) async {
     if (text.trim().isEmpty && (imageIds == null || imageIds.isEmpty)) {
       return;
     }
@@ -144,6 +145,7 @@ class ChatController extends ChangeNotifier {
         sessionId: _currentSessionId!,
         text: text.trim().isEmpty ? null : text.trim(),
         imageIds: imageIds,
+        profile: profile,
       );
 
       _messages.removeWhere((m) => m.id == loadingMsg.id);
@@ -170,7 +172,8 @@ class ChatController extends ChangeNotifier {
 
   // ── Select option ─────────────────────────────────────────
 
-  Future<void> selectOption(String optionId) async {
+  Future<void> selectOption(String optionId,
+      {Map<String, dynamic>? profile}) async {
     if (_sending || _currentSessionId == null) return;
 
     final optionLabel = _optionLabel(optionId);
@@ -194,6 +197,7 @@ class ChatController extends ChangeNotifier {
       final reply = await _api.sendMessage(
         sessionId: _currentSessionId!,
         selectedOptionIds: [optionId],
+        profile: profile,
       );
 
       _messages.removeWhere((m) => m.id == loadingMsg.id);

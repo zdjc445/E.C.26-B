@@ -12,6 +12,11 @@ import 'chat_controller.dart';
 import 'chat_history_drawer.dart';
 import 'chat_models.dart';
 import 'chat_providers.dart';
+import '../memory/behavior_events.dart';
+import '../memory/memory_store.dart';
+import '../memory/onboarding_dialog.dart';
+import '../memory/query_keywords.dart';
+import '../memory/user_profile.dart';
 import 'product_group_detail_screen.dart';
 
 final voiceApiProvider = Provider<VoiceApi>((ref) {
@@ -41,7 +46,47 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(chatControllerProvider.notifier).loadSessions();
+      _checkOnboarding();
     });
+  }
+
+  void _checkOnboarding() async {
+    final store = ref.read(memoryStoreProvider);
+    final privacyAccepted = await store.isPrivacyAccepted();
+    if (!privacyAccepted && mounted) {
+      final accepted = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _PrivacyNoticeDialog(),
+      );
+      if (accepted == true) {
+        await store.setPrivacyAccepted();
+      } else {
+        // User skipped — disable personalization and skip onboarding
+        await ref.read(userProfileProvider.notifier).setPersonalizationEnabled(false);
+        await store.setOnboardingDone();
+        return;
+      }
+    }
+    final onboarded = await store.isOnboardingDone();
+    if (!onboarded && mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const OnboardingDialog(),
+      );
+    }
+  }
+
+  /// Build the profile payload to send with chat requests.
+  /// Only includes profile when personalization is enabled.
+  Map<String, dynamic>? _profileForRequest() {
+    final profile = ref.read(userProfileProvider);
+    if (!profile.personalizationEnabled) return null;
+    final p = profile.toJson();
+    // Remove control flags before sending
+    p.remove('personalizationEnabled');
+    return p.isEmpty ? null : p;
   }
 
   @override
@@ -70,7 +115,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           hasText ? text : '',
           imageIds: imageIds,
           imagePaths: imagePaths,
+          profile: _profileForRequest(),
         );
+
+    // Record search behavior event and refresh inferred profile.
+    // Enrich with structured signals (category, brand, price) so the
+    // profile engine can extract useful inferences from search queries.
+    if (hasText) {
+      final recorder = ref.read(behaviorRecorderProvider);
+      final kw = const QueryKeywordExtractor().extract(text);
+      recorder.record(
+        BehaviorEventType.search,
+        query: text,
+        category: kw.category,
+        brand: kw.brand,
+        price: kw.priceMax,
+      );
+      ref.read(userProfileProvider.notifier).refreshInferred();
+    }
 
     _textController.clear();
     setState(() {
@@ -82,7 +144,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _onOptionSelected(String optionId) {
-    ref.read(chatControllerProvider.notifier).selectOption(optionId);
+    ref.read(chatControllerProvider.notifier).selectOption(optionId,
+        profile: _profileForRequest());
+    ref.read(behaviorRecorderProvider).record(BehaviorEventType.filterApply,
+        optionId: optionId);
     _scrollToBottom();
   }
 
@@ -493,14 +558,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
-      }
+      _animateToBottom();
+      Future<void>.delayed(const Duration(milliseconds: 120), () {
+        if (!mounted) return;
+        _animateToBottom();
+      });
     });
+  }
+
+  void _animateToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   // ── Build ──────────────────────────────────────────────────
@@ -509,39 +582,47 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Widget build(BuildContext context) {
     final controller = ref.watch(chatControllerProvider);
     final messages = controller.messages;
+    ref.listen(chatControllerProvider, (previous, next) {
+      final previousCount = previous?.messages.length ?? 0;
+      final shouldScroll = previousCount != next.messages.length ||
+          (previous?.sending == true && !next.sending);
+      if (shouldScroll) {
+        _scrollToBottom();
+      }
+    });
 
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.chatBackground,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.history),
           tooltip: '历史对话',
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Text('购物助手'),
-            SizedBox(height: 2),
-            Text(
-              '拍照识物 · 多平台比价',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w400,
-                color: AppColors.inkSoft,
-              ),
-            ),
+            Text('购物助手',
+                style: TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.w700,
+                    letterSpacing: -0.3)),
+            SizedBox(width: 8),
+            Text('拍照识物 · 比价',
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w400,
+                    color: AppColors.inkSoft)),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => context.go('/me'),
-            child: const Text('我的',
-                style: TextStyle(
-                    color: AppColors.accent,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600)),
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: IconButton(
+              icon: const Icon(Icons.person_outline, size: 22),
+              color: AppColors.inkBody,
+              onPressed: () => context.go('/me'),
+            ),
           ),
         ],
       ),
@@ -560,7 +641,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 : ListView.builder(
                     key: const Key('chat_message_list'),
                     controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 14),
                     itemCount: messages.length,
                     itemBuilder: (context, index) =>
                         _buildMessage(messages[index]),
@@ -575,48 +656,66 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Widget _buildEmpty() {
     final examples = ['300以内的黑色耳机', '拍照识别同款', '京东索尼评分4.8以上'];
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.search, size: 36, color: AppColors.inkSoft),
-          const SizedBox(height: 12),
-          const Text(
-            '说出商品、预算和偏好',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '例如平台、品牌、价格、颜色、评分',
-            style:
-                Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 13),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            alignment: WrapAlignment.center,
-            children: examples.map((text) {
-              return OutlinedButton(
-                onPressed: () {
-                  _textController.text = text;
-                  _textController.selection = TextSelection.fromPosition(
-                    TextPosition(offset: _textController.text.length),
-                  );
-                },
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  side: const BorderSide(color: AppColors.line),
-                  foregroundColor: AppColors.inkMain,
-                  backgroundColor: AppColors.panel,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [AppColors.userBubble, AppColors.userBubbleEnd],
                 ),
-                child: Text(text, style: const TextStyle(fontSize: 12)),
-              );
-            }).toList(),
-          ),
-        ],
+                borderRadius: BorderRadius.circular(22),
+              ),
+              child: const Icon(Icons.shopping_bag_outlined,
+                  size: 34, color: Colors.white),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              '说出你想买什么',
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '告诉我品类、品牌、预算或偏好\n我会帮你跨平台比价',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 14, height: 1.5, color: AppColors.inkSoft),
+            ),
+            const SizedBox(height: 24),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: examples.map((text) {
+                return ActionChip(
+                  label: Text(text, style: const TextStyle(fontSize: 13)),
+                  onPressed: () {
+                    _textController.text = text;
+                    _textController.selection = TextSelection.fromPosition(
+                      TextPosition(offset: _textController.text.length),
+                    );
+                  },
+                  backgroundColor: AppColors.panel,
+                  side: const BorderSide(color: AppColors.lineStrong),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 4, vertical: 2),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -630,64 +729,102 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildLoadingBubble() {
-    return const Padding(
-      padding: EdgeInsets.only(bottom: 12),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10, left: 4),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(width: 2),
-          SizedBox(
-            width: 16,
-            height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.panel,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(6),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 15,
+                  height: 15,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 8),
+                const Text('AI 正在为你查找…',
+                    style:
+                        TextStyle(fontSize: 13, color: AppColors.inkSoft)),
+              ],
+            ),
           ),
-          SizedBox(width: 8),
-          Text('正在思考…',
-              style: TextStyle(fontSize: 13, color: AppColors.inkSoft)),
         ],
       ),
     );
   }
 
   Widget _buildUserMessage(ChatMessage msg) {
+    final hasImage = msg.imagePaths.isNotEmpty;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Flexible(
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.76,
+                maxWidth: MediaQuery.of(context).size.width * 0.78,
               ),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                decoration: const BoxDecoration(
-                  color: AppColors.accent,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(12),
-                    topRight: Radius.circular(4),
-                    bottomLeft: Radius.circular(12),
-                    bottomRight: Radius.circular(12),
+                padding: EdgeInsets.fromLTRB(
+                    hasImage ? 3 : 15, hasImage ? 3 : 12, 15, hasImage ? 3 : 12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppColors.userBubble, AppColors.userBubbleEnd],
                   ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(18),
+                    topRight: Radius.circular(18),
+                    bottomLeft: Radius.circular(18),
+                    bottomRight: Radius.circular(5),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.userBubble.withAlpha(40),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     if (msg.text != null && msg.text!.isNotEmpty)
-                      Text(msg.text!,
-                          style: const TextStyle(
-                              fontSize: 15, height: 1.35, color: Colors.white)),
-                    if (msg.imagePaths.isNotEmpty) ...[
-                      const SizedBox(height: 6),
+                      Padding(
+                        padding: hasImage
+                            ? const EdgeInsets.fromLTRB(9, 6, 9, 6)
+                            : EdgeInsets.zero,
+                        child: Text(msg.text!,
+                            style: const TextStyle(
+                                fontSize: 15,
+                                height: 1.35,
+                                color: Colors.white)),
+                      ),
+                    if (hasImage) ...[
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(14),
                         child: Image.file(
                           File(msg.imagePaths.first),
-                          width: 120,
-                          height: 120,
+                          width: 130,
+                          height: 130,
                           fit: BoxFit.cover,
                         ),
                       ),
@@ -705,22 +842,39 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Widget _buildAssistantMessage(ChatMessage msg) {
     final reply = msg.agentReply;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 10, left: 0, right: 8),
       child: Align(
         alignment: Alignment.centerLeft,
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width - 24,
+            maxWidth: MediaQuery.of(context).size.width - 16,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (msg.text != null)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(msg.text!,
-                      style: const TextStyle(
-                          fontSize: 13, height: 1.4, color: AppColors.inkSoft)),
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.panel,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withAlpha(6),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Text(msg.text!,
+                        style: const TextStyle(
+                            fontSize: 14,
+                            height: 1.45,
+                            color: AppColors.inkBody)),
+                  ),
                 ),
               if (reply != null)
                 ...reply.cards.map((card) => _buildCard(card, reply.cards)),
@@ -769,33 +923,40 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.panel,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withAlpha(6),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(card.title,
-              style:
-                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 12),
+          if (card.title.isNotEmpty) ...[
+            Text(card.title,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w600,
+                    color: AppColors.inkBody)),
+            const SizedBox(height: 10),
+          ],
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: options.map((opt) {
-              return OutlinedButton(
+              return ActionChip(
+                label: Text(opt.label,
+                    style: const TextStyle(fontSize: 13)),
                 onPressed: () => _onOptionSelected(opt.optionId),
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  foregroundColor: AppColors.inkMain,
-                  side: const BorderSide(color: AppColors.line),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                backgroundColor: AppColors.panelSoft,
+                side: const BorderSide(color: AppColors.line),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text(opt.label, style: const TextStyle(fontSize: 13)),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 4, vertical: 2),
               );
             }).toList(),
           ),
@@ -2223,110 +2384,276 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildGroupRow(ProductGroup group) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.line),
-      ),
+    // Find cheapest platform and build price summary for others
+    final platforms = group.platforms;
+    PlatformOfferSummary? cheapest;
+    double minPrice = double.infinity;
+    for (final p in platforms) {
+      if (p.price < minPrice) {
+        minPrice = p.price;
+        cheapest = p;
+      }
+    }
+    // Other platform prices (distinct platforms, not the cheapest one)
+    final otherPrices = <String, double>{};
+    for (final p in platforms) {
+      if (p.platform != (cheapest?.platform ?? '')) {
+        final existing = otherPrices[p.platform];
+        if (existing == null || p.price < existing) {
+          otherPrices[p.platform] = p.price;
+        }
+      }
+    }
+    // Top rating
+    final topRating = platforms
+        .map((p) => p.rating)
+        .reduce((a, b) => a > b ? a : b);
+    final totalReviews = platforms
+        .map((p) => p.sales)
+        .fold<int>(0, (a, b) => a + b);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
       child: InkWell(
         onTap: () {
+          ref.read(behaviorRecorderProvider).record(
+            BehaviorEventType.productClick,
+            productId: group.groupId,
+            category: group.category,
+            brand: group.brand,
+            price: group.bestPrice,
+          );
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => ProductGroupDetailScreen(group: group),
             ),
           );
         },
-        borderRadius: BorderRadius.circular(8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _groupThumb(group),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.panel,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.line.withAlpha(120)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withAlpha(6),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Top row: image + title + arrow
+              Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(group.displayTitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 14,
-                          height: 1.35,
-                          fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text('¥${group.bestPrice.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                              fontSize: 18,
-                              height: 1,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.priceRed)),
-                      const Spacer(),
-                      Text(
-                        '${group.platformCount} 个平台',
-                        style: const TextStyle(
-                            fontSize: 11, color: AppColors.inkSoft),
-                      ),
-                    ],
+                  _groupThumb(group, size: 72),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(group.displayTitle,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 15,
+                                height: 1.3,
+                                fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 6),
+                        // Rating + reviews + badges
+                        Row(
+                          children: [
+                            Icon(Icons.star_rounded,
+                                size: 15,
+                                color: AppColors.warn.withAlpha(220)),
+                            const SizedBox(width: 2),
+                            Text(topRating.toStringAsFixed(1),
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.inkMain)),
+                            const SizedBox(width: 4),
+                            Text('${_formatCount(totalReviews)}评价',
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.inkSoft)),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.panelSoft,
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(
+                                  '${group.platformCount}个平台',
+                                  style: const TextStyle(
+                                      fontSize: 10,
+                                      color: AppColors.inkSoft,
+                                      fontWeight: FontWeight.w500)),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: Icon(Icons.chevron_right,
+                        size: 20, color: AppColors.inkSoft),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(width: 4),
-            const Icon(Icons.chevron_right, size: 18, color: AppColors.inkSoft),
-          ],
+              const SizedBox(height: 10),
+              // Price row — platform badge + best price
+              if (cheapest != null)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryMuted.withAlpha(40),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: platformColor(cheapest.platform)
+                              .withAlpha(22),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Text(
+                            _platformLabel(cheapest.platform),
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: platformColor(
+                                    cheapest.platform))),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                          '¥${cheapest.price.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                              fontSize: 20,
+                              height: 1,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.priceRed)),
+                      const SizedBox(width: 4),
+                      const Text('起',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.inkSoft)),
+                      const Spacer(),
+                      if (otherPrices.isNotEmpty)
+                        ...otherPrices.entries.take(2).map(
+                              (e) => Padding(
+                                padding:
+                                    const EdgeInsets.only(left: 10),
+                                child: Text(
+                                  '${_platformLabel(e.key)} ¥${e.value.toStringAsFixed(0)}',
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.inkSoft),
+                                ),
+                              ),
+                            ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _groupThumb(ProductGroup group) {
-    final imageUrl = group.thumbnailUrl?.trim() ?? '';
+  Widget _groupThumb(ProductGroup group, {double size = 56}) {
+    // Prefer group thumbnailUrl, fallback to first platform's imageUrl
+    String imageUrl = group.thumbnailUrl?.trim() ?? '';
+    if (imageUrl.isEmpty && group.platforms.isNotEmpty) {
+      imageUrl = group.platforms.first.imageUrl.trim();
+    }
     if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(6),
         child: Image.network(
           imageUrl,
-          width: 56,
-          height: 56,
+          width: size,
+          height: size,
           fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _groupThumbPlaceholder(group),
+          errorBuilder: (_, __, ___) => _groupThumbPlaceholder(group, size),
         ),
       );
     }
-    return _groupThumbPlaceholder(group);
+    return _groupThumbPlaceholder(group, size);
   }
 
-  Widget _groupThumbPlaceholder(ProductGroup group) {
-    final accent = switch (group.category ?? '') {
-      '耳机' => const Color(0xFF2F343B),
-      '吹风机' => const Color(0xFFB23A48),
-      '背包' => const Color(0xFFC27A2C),
-      '智能手表' => const Color(0xFF4A6FA5),
-      _ => AppColors.accent,
-    };
-    final icon = switch (group.category ?? '') {
-      '耳机' => Icons.headphones,
-      '吹风机' => Icons.air,
-      '背包' => Icons.backpack,
-      '智能手表' => Icons.watch,
-      _ => Icons.shopping_bag_outlined,
-    };
+  Widget _groupThumbPlaceholder(ProductGroup group, double size) {
+    final colors = _thumbColors(group.category ?? '');
+    final brand = group.brand ?? '';
+    final initial = brand.isNotEmpty ? brand[0] : '商';
+
     return Container(
-      width: 56,
-      height: 56,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
-        color: accent.withAlpha(15),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(10),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [colors.bg, colors.bg2],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colors.bg.withAlpha(60),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: Icon(icon, size: 24, color: accent.withAlpha(150)),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -size * 0.15,
+            bottom: -size * 0.1,
+            child: Icon(colors.icon, size: size * 0.55,
+                color: Colors.white.withAlpha(30)),
+          ),
+          Center(
+            child: Text(initial,
+                style: TextStyle(
+                    fontSize: size * 0.32,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white)),
+          ),
+        ],
+      ),
     );
+  }
+
+  _ThumbColors _thumbColors(String category) {
+    return switch (category) {
+      '运动鞋' => _ThumbColors(
+          const Color(0xFF6366F1), const Color(0xFF818CF8), Icons.directions_run),
+      '耳机' => _ThumbColors(
+          const Color(0xFF0EA5E9), const Color(0xFF38BDF8), Icons.headphones),
+      '吹风机' => _ThumbColors(
+          const Color(0xFFF43F5E), const Color(0xFFFB7185), Icons.air),
+      '背包' => _ThumbColors(
+          const Color(0xFFF59E0B), const Color(0xFFFBBF24), Icons.backpack),
+      '智能手表' => _ThumbColors(
+          const Color(0xFF10B981), const Color(0xFF34D399), Icons.watch),
+      _ => _ThumbColors(
+          const Color(0xFF6366F1), const Color(0xFF818CF8), Icons.shopping_bag_outlined),
+    };
   }
 
   String _platformLabel(String platform) {
@@ -2334,6 +2661,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       '京东-mock' => '京东',
       '拼多多-mock' => '拼多多',
       '淘宝-mock' => '淘宝',
+      '天猫-mock' => '天猫',
       _ => platform,
     };
   }
@@ -2346,118 +2674,158 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return SafeArea(
       top: false,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
         decoration: const BoxDecoration(
           color: AppColors.panel,
-          border: Border(top: BorderSide(color: AppColors.line)),
+          border:
+              Border(top: BorderSide(color: AppColors.line, width: 0.5)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (_pendingImage != null)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8, left: 4),
+                padding: const EdgeInsets.only(bottom: 8, left: 6),
                 child: Row(
                   children: [
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(10),
                       child: Image.file(
                         _pendingImage!,
-                        width: 60,
-                        height: 60,
+                        width: 52,
+                        height: 52,
                         fit: BoxFit.cover,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     if (_uploadedImageId != null)
-                      const Icon(Icons.check_circle,
-                          size: 16, color: AppColors.good)
+                      const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check_circle,
+                              size: 15, color: AppColors.good),
+                          SizedBox(width: 4),
+                          Text('已上传',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.good)),
+                        ],
+                      )
                     else if (_imageUploadFailed)
-                      const Icon(Icons.error,
-                          size: 16, color: AppColors.priceRed)
+                      const Text('上传失败',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.priceRed))
                     else
                       const SizedBox(
                           width: 14,
                           height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2)),
+                          child:
+                              CircularProgressIndicator(strokeWidth: 2)),
                     const Spacer(),
                     IconButton(
-                      icon: const Icon(Icons.close, size: 18),
+                      icon: const Icon(Icons.close, size: 16),
                       onPressed: () => setState(() {
                         _pendingImage = null;
                         _uploadedImageId = null;
                         _imageUploadFailed = false;
                       }),
                       padding: EdgeInsets.zero,
-                      constraints:
-                          const BoxConstraints(minWidth: 32, minHeight: 32),
+                      constraints: const BoxConstraints(
+                          minWidth: 30, minHeight: 30),
                     ),
                   ],
                 ),
               ),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.image_outlined, size: 22),
+                  icon: const Icon(Icons.image_outlined, size: 21),
                   color: AppColors.inkSoft,
                   onPressed: sending ? null : _showImageSourceSheet,
-                  padding: EdgeInsets.zero,
+                  padding:
+                      const EdgeInsets.only(left: 4, right: 2, bottom: 6),
                   constraints:
-                      const BoxConstraints(minWidth: 40, minHeight: 40),
+                      const BoxConstraints(minWidth: 40, minHeight: 42),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.mic_none, size: 22),
+                  icon: const Icon(Icons.mic_none, size: 21),
                   color: AppColors.inkSoft,
                   onPressed: _onVoiceTap,
-                  padding: EdgeInsets.zero,
+                  padding:
+                      const EdgeInsets.only(left: 2, right: 4, bottom: 6),
                   constraints:
-                      const BoxConstraints(minWidth: 40, minHeight: 40),
+                      const BoxConstraints(minWidth: 36, minHeight: 42),
                 ),
                 Expanded(
-                  child: TextField(
-                    controller: _textController,
-                    minLines: 1,
-                    maxLines: 4,
-                    style: const TextStyle(fontSize: 14, height: 1.35),
-                    decoration: InputDecoration(
-                      hintText: '搜商品、品牌或预算',
-                      hintStyle: const TextStyle(
-                          fontSize: 14, color: AppColors.inkSoft),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: AppColors.line),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: AppColors.line),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: const BorderSide(color: AppColors.accent),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 9),
-                      isDense: true,
-                      filled: true,
-                      fillColor: AppColors.panelSoft,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.panelSoft,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                          color: AppColors.line, width: 0.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withAlpha(5),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
                     ),
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _sendMessage(),
+                    child: TextField(
+                      controller: _textController,
+                      minLines: 1,
+                      maxLines: 4,
+                      style: const TextStyle(
+                          fontSize: 14.5, height: 1.35),
+                      decoration: const InputDecoration(
+                        hintText: '搜商品、品牌或预算',
+                        hintStyle: TextStyle(
+                            fontSize: 14.5,
+                            color: AppColors.inkSoft),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 10),
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.transparent,
+                      ),
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _sendMessage(),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 6),
-                DecoratedBox(
+                Container(
+                  width: 42,
+                  height: 42,
+                  margin: const EdgeInsets.only(bottom: 2),
                   decoration: BoxDecoration(
-                    color: sending ? AppColors.line : AppColors.accent,
-                    borderRadius: BorderRadius.circular(10),
+                    gradient: sending
+                        ? null
+                        : const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              AppColors.userBubble,
+                              AppColors.userBubbleEnd
+                            ],
+                          ),
+                    color: sending ? AppColors.line : null,
+                    borderRadius: BorderRadius.circular(21),
                   ),
                   child: IconButton(
-                    icon: const Icon(Icons.arrow_forward, size: 20),
-                    color: sending ? AppColors.inkSoft : Colors.white,
+                    icon: const Icon(Icons.arrow_upward,
+                        size: 20),
+                    color: sending
+                        ? AppColors.inkSoft
+                        : Colors.white,
                     onPressed: sending ? null : _sendMessage,
                     padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 40, minHeight: 40),
+                    iconSize: 20,
                   ),
                 ),
               ],
@@ -2673,6 +3041,43 @@ class _ProductThumbPainter extends CustomPainter {
         oldDelegate.lineColor != lineColor ||
         oldDelegate.text != text;
   }
+}
+
+/// Privacy notice shown before onboarding on first launch.
+class _PrivacyNoticeDialog extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('隐私与个性化推荐'),
+      content: const Text(
+        '为了给你更相关的商品推荐，购物助手会：\n\n'
+        '• 记录你搜索、点击、查看的商品信息\n'
+        '• 根据使用行为推断你的购物偏好\n'
+        '• 使用偏好优化商品排序\n\n'
+        '原始行为事件仅存储在手机本地，不会上传服务器；\n'
+        '开启个性化后，推断出的偏好画像（品类、品牌、价位等）会随聊天请求发送至服务器用于排序。\n\n'
+        '你可以随时在「我的 → 推荐记忆与隐私」中查看、管理或删除这些数据。',
+        style: TextStyle(fontSize: 14, height: 1.6),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('同意并继续'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('跳过', style: TextStyle(color: AppColors.inkSoft)),
+        ),
+      ],
+    );
+  }
+}
+
+class _ThumbColors {
+  final Color bg;
+  final Color bg2;
+  final IconData icon;
+  const _ThumbColors(this.bg, this.bg2, this.icon);
 }
 
 class _AttrRow {
