@@ -15,91 +15,132 @@ class OnboardingDialog extends ConsumerStatefulWidget {
 
 class _OnboardingDialogState extends ConsumerState<OnboardingDialog> {
   final _platforms = <String>{};
-  final _categories = <String>{};
   final _factors = <String>{};
-  int _step = 0;
 
   static const _allPlatforms = ['拼多多', '淘宝', '天猫', '京东'];
-  static const _allCategories = ['运动鞋', '耳机', '数码配件', '服饰', '日用品'];
   static const _allFactors = {
     'low_price': '低价优先',
-    'official_store': '官方店铺',
+    'high_rating': '评分高',
+    'official_store': '官方/自营',
     'after_sale': '售后保障',
     'fast_delivery': '配送速度',
-    'high_rating': '评价数量',
     'brand_match': '偏好品牌',
   };
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Row(children: [
-        const Icon(Icons.tune, size: 20, color: AppColors.accent),
-        const SizedBox(width: 8),
-        Text(_step == 0 ? '定制你的购物偏好' : _step == 1 ? '常买品类' : '你更看重什么'),
+      title: const Row(children: [
+        Icon(Icons.tune, size: 20, color: AppColors.accent),
+        SizedBox(width: 8),
+        Text('个性化购物偏好'),
       ]),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: _step == 0 ? _buildPlatformStep() : _step == 1 ? _buildCategoryStep() : _buildFactorStep(),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 420),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '可跳过，后续也能在我的偏好中修改。',
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.4,
+                  color: AppColors.inkSoft,
+                ),
+              ),
+              const SizedBox(height: 18),
+              _sectionTitle('你买东西更看重什么？'),
+              _buildFactorChips(),
+              const SizedBox(height: 18),
+              _sectionTitle('常用平台'),
+              _buildPlatformChips(),
+            ],
+          ),
+        ),
       ),
       actions: [
         TextButton(
           onPressed: _skip,
-          child: Text(_step < 2 ? '跳过' : '完成'),
+          child: const Text('跳过'),
         ),
-        if (_step < 2)
-          ElevatedButton(
-            onPressed: () => setState(() => _step++),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
-            child: const Text('下一步'),
-          )
-        else
-          ElevatedButton(
-            onPressed: _save,
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
-            child: const Text('保存'),
-          ),
+        ElevatedButton(
+          onPressed: _save,
+          style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
+          child: const Text('保存偏好'),
+        ),
       ],
     );
   }
 
-  Widget _buildPlatformStep() {
-    return Wrap(
-      spacing: 8, runSpacing: 8,
-      children: _allPlatforms.map((p) => FilterChip(
-        label: Text(p),
-        selected: _platforms.contains(p),
-        selectedColor: AppColors.accent.withAlpha(30),
-        checkmarkColor: AppColors.accent,
-        onSelected: (v) => setState(() => v ? _platforms.add(p) : _platforms.remove(p)),
-      )).toList(),
+  Widget _sectionTitle(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w700,
+          color: AppColors.inkMain,
+        ),
+      ),
     );
   }
 
-  Widget _buildCategoryStep() {
+  Widget _buildFactorChips() {
     return Wrap(
-      spacing: 8, runSpacing: 8,
-      children: _allCategories.map((c) => FilterChip(
-        label: Text(c),
-        selected: _categories.contains(c),
-        selectedColor: AppColors.accent.withAlpha(30),
-        checkmarkColor: AppColors.accent,
-        onSelected: (v) => setState(() => v ? _categories.add(c) : _categories.remove(c)),
-      )).toList(),
+      spacing: 8,
+      runSpacing: 8,
+      children: _allFactors.entries
+          .map((e) => _filterChip(
+                label: e.value,
+                selected: _factors.contains(e.key),
+                onSelected: (v) => setState(
+                  () => v ? _factors.add(e.key) : _factors.remove(e.key),
+                ),
+              ))
+          .toList(),
     );
   }
 
-  Widget _buildFactorStep() {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: _allFactors.entries.map((e) => CheckboxListTile(
-        title: Text(e.value, style: const TextStyle(fontSize: 14)),
-        value: _factors.contains(e.key),
-        onChanged: (v) => setState(() => v! ? _factors.add(e.key) : _factors.remove(e.key)),
-        dense: true,
-        contentPadding: EdgeInsets.zero,
-        activeColor: AppColors.accent,
-      )).toList(),
+  Widget _buildPlatformChips() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        _filterChip(
+          label: '不限',
+          selected: _platforms.isEmpty,
+          onSelected: (_) => setState(_platforms.clear),
+        ),
+        ..._allPlatforms.map(
+          (p) => _filterChip(
+            label: p,
+            selected: _platforms.contains(p),
+            onSelected: (v) => setState(
+              () => v ? _platforms.add(p) : _platforms.remove(p),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _filterChip({
+    required String label,
+    required bool selected,
+    required ValueChanged<bool> onSelected,
+  }) {
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      selectedColor: AppColors.accent.withAlpha(30),
+      checkmarkColor: AppColors.accent,
+      onSelected: onSelected,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+      ),
     );
   }
 
@@ -110,9 +151,8 @@ class _OnboardingDialogState extends ConsumerState<OnboardingDialog> {
 
   void _save() async {
     final notifier = ref.read(userProfileProvider.notifier);
-    if (_platforms.isNotEmpty) await notifier.setPreferredPlatforms(_platforms.toList());
-    if (_categories.isNotEmpty) await notifier.setPreferredCategories(_categories.toList());
-    if (_factors.isNotEmpty) await notifier.setDecisionFactors(_factors.toList());
+    await notifier.setPreferredPlatforms(_platforms.toList());
+    await notifier.setDecisionFactors(_factors.toList());
     await ref.read(memoryStoreProvider).setOnboardingDone();
     if (mounted) Navigator.of(context).pop();
   }

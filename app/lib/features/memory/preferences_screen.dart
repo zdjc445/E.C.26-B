@@ -238,7 +238,7 @@ class PreferencesScreen extends ConsumerWidget {
       'official_store': '官方店铺',
       'after_sale': '售后保障',
       'fast_delivery': '配送速度',
-      'high_rating': '评价数量',
+      'high_rating': '评分高',
       'brand_match': '偏好品牌',
     };
     _multiSelect(
@@ -346,7 +346,7 @@ class PreferencesScreen extends ConsumerWidget {
     'official_store' => '官方店铺',
     'after_sale' => '售后保障',
     'fast_delivery' => '配送速度',
-    'high_rating' => '评价数量',
+    'high_rating' => '评分高',
     'brand_match' => '偏好品牌',
     _ => key,
   };

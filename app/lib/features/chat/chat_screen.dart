@@ -730,67 +730,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildEmpty() {
-    final examples = ['300以内的黑色耳机', '拍照识别同款', '京东索尼评分4.8以上'];
-    return Center(
+    return const Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [AppColors.userBubble, AppColors.userBubbleEnd],
-                ),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: const Icon(Icons.shopping_bag_outlined,
-                  size: 34, color: Colors.white),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              '说出你想买什么',
-              style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '告诉我品类、品牌、预算或偏好\n我会帮你跨平台比价',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  fontSize: 14, height: 1.5, color: AppColors.inkSoft),
-            ),
-            const SizedBox(height: 24),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              alignment: WrapAlignment.center,
-              children: examples.map((text) {
-                return ActionChip(
-                  label: Text(text, style: const TextStyle(fontSize: 13)),
-                  onPressed: () {
-                    _textController.text = text;
-                    _textController.selection = TextSelection.fromPosition(
-                      TextPosition(offset: _textController.text.length),
-                    );
-                  },
-                  backgroundColor: AppColors.panel,
-                  side: const BorderSide(color: AppColors.lineStrong),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                );
-              }).toList(),
-            ),
-          ],
+        padding: EdgeInsets.symmetric(horizontal: 32),
+        child: Text(
+          '告诉我你想买什么',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: AppColors.inkMain,
+          ),
         ),
       ),
     );
