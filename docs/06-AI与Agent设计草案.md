@@ -2,7 +2,7 @@
 
 ## 概述
 
-当前项目已具备 Mock/Ark 图片识别路径、规则/Ark 购物意图解析路径、规则/Ark 推荐解释路径、多轮自然语言追加筛选、`mock-data` 本地商品检索、多平台 Mock 报价和聊天式 Agent 卡片输出。AI 与 Agent 设计遵循两个原则：
+当前项目已具备 Mock/Ark 图片识别路径、规则/Ark 购物意图解析路径、规则/Ark 推荐解释路径、多轮自然语言追加筛选、公开样例商品检索、多平台样例报价和聊天式 Agent 卡片输出。AI 与 Agent 设计遵循两个原则：
 
 - 对外展示结构化结果和解释摘要，不展示真实模型推理链。
 - 外部服务不可用时保持 Mock 降级，保证演示闭环可运行。
@@ -102,11 +102,9 @@ MockAgent 读取会话上下文
         ↓
 CategoryResolver 通过 mock-data/category-taxonomy.json 归一标准品类
         ↓
-CompositeProductSourceProvider 读取 mock-data/mock-data.json
-ArkQueryDecomposer / QueryRewriter 拆解并扩展查询
-ProductVectorIndex / HybridRetriever 做本地向量 + BM25 混合检索
-CompositeProductSourceProvider 生成四平台 Mock 报价
-ResultReRanker 做多因子重排和多样性控制
+CompositeProductSourceProvider 按 app.product-source.mode 选择商品源
+默认 public-dataset-platforms 读取公开样例商品
+PublicDatasetProductSourceProvider 生成四平台样例报价
         ↓
 按预算、颜色、品牌、平台、最低评分过滤；按 sortBy 排序
         ↓
@@ -172,7 +170,7 @@ product_group_list 携带 filterSummary，前端显式展示当前生效条件
 - `decisionScore`：综合分。
 - `decisionSignals`：意图匹配、价格、店铺信誉、渠道可信、风险。
 - `evidence`：预算、颜色、品牌、平台、最低评分、排序方式、价格等证据摘要。
-- `risks`：样例/Mock 数据、配送时效等风险提示。
+- `risks`：样例数据、配送时效等风险提示。
 - `productAnalyses`：商品胜因/不足和排序分数。
 - `intentProvider` / `intentFallbackUsed`：意图解析来源。
 - `explanationProvider` / `explanationFallbackUsed`：解释生成来源。
@@ -189,7 +187,7 @@ product_group_list 携带 filterSummary，前端显式展示当前生效条件
 | 低价 | `低价`、`便宜`、`价格低`、`价格最低` |
 | 高评分 | `评分高`、`好评`、`评价高` |
 | 高销量 | `销量高`、`爆款`、`热销` |
-| 品牌 | 覆盖 Nike、Adidas、Sony、戴森、小米等 24 个当前商品目录品牌；规则解析保留中英文常见品牌映射 |
+| 品牌 | 规则解析保留 Nike、Adidas、Sony、戴森、小米等中英文常见品牌映射；商品结果取决于当前商品源 |
 | 平台 | `京东`/`拼多多`/`淘宝`/`天猫`/JD/PDD 等，后端平台值为 `京东-mock`、`拼多多-mock`、`淘宝-mock`、`天猫-mock` |
 | 排序方式 | `价格从低到高`、`价格升序`、`价格从高到低`、`销量优先`、`好评率最高`、`综合推荐` |
 | 最低评分 | `评分4.8以上`、`4.5星以上`、`4.5分起` |
