@@ -48,15 +48,15 @@ class ProductGroupDetailScreen extends ConsumerWidget {
           const SizedBox(height: 14),
           _buildDecisionSummary(),
           if (group.platforms.isNotEmpty) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             _buildReviewSummary(),
           ],
           if (group.highlights.isNotEmpty) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             _buildHighlights(),
           ],
-          const SizedBox(height: 20),
-          _sectionHeading('平台比价', '按价格、评价、服务和历史价格看每个平台'),
+          const SizedBox(height: 18),
+          _sectionHeading('平台比价', '每个平台只保留价格、评价和服务重点'),
           const SizedBox(height: 10),
           ...group.platforms.map((p) => _buildPlatformCard(context, ref, p)),
         ],
@@ -82,15 +82,17 @@ class ProductGroupDetailScreen extends ConsumerWidget {
       );
     }
 
-    return Column(
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(10),
-          child: _buildThumbnail(height: 184, iconSize: 56),
+          child: _buildThumbnail(width: 112, height: 112, iconSize: 42),
         ),
-        const SizedBox(height: 14),
-        _buildHeaderText(),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _buildHeaderText(),
+        ),
       ],
     );
   }
@@ -319,9 +321,7 @@ class ProductGroupDetailScreen extends ConsumerWidget {
     final priceRange = group.priceRange;
     final priceGap = priceRange == null ? 0.0 : priceRange.max - priceRange.min;
 
-    final summary = priceGap >= 1
-        ? '各平台价差 ¥${priceGap.toStringAsFixed(0)}，先看最低价，再用评分、评价量和服务做二次确认。'
-        : '各平台价格接近，优先比较评分、评价量和服务保障。';
+    final summary = _decisionText(cheapest, topRated, mostReviewed, priceGap);
     final metrics = <_DetailMetricData>[
       _DetailMetricData(
         icon: Icons.savings_outlined,
@@ -374,7 +374,7 @@ class ProductGroupDetailScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeading('购买判断', '先按关键差异缩小选择范围'),
+          _sectionHeading('购买判断', '先看结论，再看平台细节'),
           const SizedBox(height: 8),
           Text(summary,
               style: const TextStyle(
@@ -397,8 +397,8 @@ class ProductGroupDetailScreen extends ConsumerWidget {
         group.platforms.length;
 
     final reviewNote = totalReviews > 0
-        ? '样例评价量合计 ${_reviewCountText(totalReviews)}，重点看评分高的平台和评价量更充分的平台。'
-        : '当前样例数据评价量较少，先用评分、价格和服务标签辅助判断。';
+        ? '合计 ${_reviewCountText(totalReviews)}，优先看评分和评价量同时靠前的平台。'
+        : '评价量较少，先用评分、价格和服务标签辅助判断。';
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -410,7 +410,7 @@ class ProductGroupDetailScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionHeading('评价概览', '按评分、评价量和样例口碑整理'),
+          _sectionHeading('评价概览', '评分和样例口碑集中看'),
           const SizedBox(height: 8),
           Text(reviewNote,
               style: const TextStyle(
@@ -441,6 +441,28 @@ class ProductGroupDetailScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _decisionText(
+      PlatformOfferSummary cheapest,
+      PlatformOfferSummary? topRated,
+      PlatformOfferSummary? mostReviewed,
+      double priceGap) {
+    final cheapestName = _platformLabel(cheapest.platform);
+    final topRatedName =
+        topRated == null ? null : _platformLabel(topRated.platform);
+    final reviewedName =
+        mostReviewed == null ? null : _platformLabel(mostReviewed.platform);
+    if (priceGap >= 1 && topRatedName != null && cheapestName == topRatedName) {
+      return '$cheapestName 同时占最低价和高评分，优先看这个平台。';
+    }
+    if (priceGap >= 1) {
+      return '先看 $cheapestName 的低价；如果更重视口碑，再对比 ${topRatedName ?? cheapestName}。';
+    }
+    if (reviewedName != null) {
+      return '各平台价格接近，优先看 $reviewedName 的评价量和售后服务。';
+    }
+    return '各平台价格接近，优先比较评分和服务保障。';
   }
 
   Widget _metricGrid(List<_DetailMetricData> metrics) {
@@ -592,6 +614,17 @@ class ProductGroupDetailScreen extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                             fontSize: 14, fontWeight: FontWeight.w700)),
+                    if (p.title.isNotEmpty &&
+                        p.title != group.displayTitle) ...[
+                      const SizedBox(height: 4),
+                      Text(p.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12.5,
+                              height: 1.3,
+                              color: AppColors.inkSoft)),
+                    ],
                   ],
                 ),
               ),
@@ -617,16 +650,8 @@ class ProductGroupDetailScreen extends ConsumerWidget {
               ),
             ],
           ),
-          if (p.title.isNotEmpty && p.title != group.displayTitle) ...[
-            const SizedBox(height: 8),
-            Text(p.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontSize: 12.5, height: 1.35, color: AppColors.inkBody)),
-          ],
           const SizedBox(height: 12),
-          _metricGrid([
+          _compactMetricRow([
             _DetailMetricData(
               icon: Icons.payments_outlined,
               label: '到手价',
@@ -636,17 +661,10 @@ class ProductGroupDetailScreen extends ConsumerWidget {
             ),
             _DetailMetricData(
               icon: Icons.star_border_rounded,
-              label: '评分',
+              label: '口碑',
               value: p.rating.toStringAsFixed(1),
-              note: _ratingNote(p),
+              note: '${_reviewCountText(p.sales)}评价',
               color: AppColors.warn,
-            ),
-            _DetailMetricData(
-              icon: Icons.forum_outlined,
-              label: '评价',
-              value: _reviewCountText(p.sales),
-              note: _reviewNote(p),
-              color: AppColors.accent,
             ),
             _DetailMetricData(
               icon: Icons.local_shipping_outlined,
@@ -658,18 +676,29 @@ class ProductGroupDetailScreen extends ConsumerWidget {
           ]),
           if (sellingPoints.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const Text('推荐点',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.inkBody)),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: sellingPoints
-                  .map((t) => _infoPill(null, t, AppColors.good))
-                  .toList(),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 3),
+                  child: Text('推荐点',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.inkBody)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: sellingPoints
+                        .take(3)
+                        .map((t) => _infoPill(null, t, AppColors.good))
+                        .toList(),
+                  ),
+                ),
+              ],
             ),
           ],
           const SizedBox(height: 12),
@@ -677,15 +706,6 @@ class ProductGroupDetailScreen extends ConsumerWidget {
           if (trendText != null) ...[
             const SizedBox(height: 10),
             _detailLine(Icons.show_chart_rounded, trendText),
-          ],
-          if (p.tags.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children:
-                  p.tags.take(4).map((t) => _infoPill(null, t, null)).toList(),
-            ),
           ],
           const SizedBox(height: 12),
           Row(
@@ -727,19 +747,6 @@ class ProductGroupDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               TextButton.icon(
-                onPressed: () => _addOfferToFavorites(context, ref, p),
-                icon: const Icon(Icons.favorite_border, size: 16),
-                label: const Text('收藏'),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.inkSoft,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-              const SizedBox(width: 4),
-              TextButton.icon(
                 onPressed: () {
                   ref.read(behaviorRecorderProvider).record(
                         BehaviorEventType.priceAlertCreate,
@@ -756,13 +763,82 @@ class ProductGroupDetailScreen extends ConsumerWidget {
                 style: TextButton.styleFrom(
                   foregroundColor: AppColors.inkSoft,
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 10),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8)),
                 ),
               ),
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: '收藏',
+                onPressed: () => _addOfferToFavorites(context, ref, p),
+                icon: const Icon(Icons.favorite_border, size: 20),
+                color: AppColors.inkSoft,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
+              ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _compactMetricRow(List<_DetailMetricData> metrics) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final itemWidth = (constraints.maxWidth - 16) / 3;
+      return Row(
+        children: metrics
+            .map((metric) => Padding(
+                  padding:
+                      EdgeInsets.only(right: metric == metrics.last ? 0 : 8),
+                  child: SizedBox(
+                    width: itemWidth,
+                    child: _compactMetricTile(metric),
+                  ),
+                ))
+            .toList(),
+      );
+    });
+  }
+
+  Widget _compactMetricTile(_DetailMetricData metric) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+      decoration: BoxDecoration(
+        color: metric.color.withAlpha(9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: metric.color.withAlpha(34)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(metric.icon, size: 14, color: metric.color),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(metric.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 10.5, color: AppColors.inkSoft)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(metric.value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.inkBody)),
+          const SizedBox(height: 2),
+          Text(metric.note,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, color: AppColors.inkSoft)),
         ],
       ),
     );
@@ -862,32 +938,6 @@ class ProductGroupDetailScreen extends ConsumerWidget {
       return '本组最低价';
     }
     return '比最低价高 ¥${delta.toStringAsFixed(0)}';
-  }
-
-  String _ratingNote(PlatformOfferSummary p) {
-    if (p.rating <= 0) {
-      return '暂无评分';
-    }
-    if (_sameOffer(_topRatedOffer(), p)) {
-      return '本组最高';
-    }
-    if (p.rating >= 4.8) {
-      return '高评分';
-    }
-    return '可参考';
-  }
-
-  String _reviewNote(PlatformOfferSummary p) {
-    if (p.sales <= 0) {
-      return '评价量较少';
-    }
-    if (_sameOffer(_mostReviewedOffer(), p)) {
-      return '本组最多';
-    }
-    if (p.sales >= 10000) {
-      return '评价量充足';
-    }
-    return '可参考';
   }
 
   String _reviewCountText(int value) {
@@ -995,6 +1045,7 @@ class ProductGroupDetailScreen extends ConsumerWidget {
       'fast_delivery' => '配送更快',
       'high_rating' => '高评分',
       'high_sales' => '高销量',
+      'top_rated' => '评分领先',
       'brand_match' => '品牌匹配',
       'noise_cancel' => '降噪优先',
       'high_power' => '大功率',
