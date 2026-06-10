@@ -2748,66 +2748,76 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     color: AppColors.primaryMuted.withAlpha(40),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color:
-                              platformColor(bestOffer.platform).withAlpha(22),
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: Text(_platformLabel(bestOffer.platform),
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: platformColor(bestOffer.platform))),
-                      ),
-                      const SizedBox(width: 8),
-                      Text('¥${bestOffer.price.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                              fontSize: 20,
-                              height: 1,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.priceRed)),
-                      const SizedBox(width: 4),
-                      const Text('起',
-                          style: TextStyle(
-                              fontSize: 11, color: AppColors.inkSoft)),
-                      const Spacer(),
-                      if (otherPrices.isNotEmpty)
-                        ...otherPrices.entries.take(2).map(
-                              (e) => Padding(
-                                padding: const EdgeInsets.only(left: 10),
-                                child: Text(
-                                  '${_platformLabel(e.key)} ¥${e.value.toStringAsFixed(0)}',
-                                  style: const TextStyle(
-                                      fontSize: 11, color: AppColors.inkSoft),
-                                ),
-                              ),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: platformColor(bestOffer.platform)
+                                  .withAlpha(22),
+                              borderRadius: BorderRadius.circular(5),
                             ),
-                      const SizedBox(width: 8),
-                      TextButton.icon(
-                        key: Key('favorite_group_${bestOffer.productId}'),
-                        onPressed: () => _addPlatformOfferToFavorites(bestOffer,
-                            group: group),
-                        icon: Icon(
-                            isFavorite ? Icons.favorite : Icons.favorite_border,
-                            size: 15),
-                        label: Text(isFavorite ? '已收藏' : '收藏',
-                            style: const TextStyle(fontSize: 12)),
-                        style: TextButton.styleFrom(
-                          foregroundColor: isFavorite
-                              ? AppColors.priceRed
-                              : AppColors.inkSoft,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 4),
-                          minimumSize: const Size(0, 30),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
+                            child: Text(_platformLabel(bestOffer.platform),
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: platformColor(bestOffer.platform))),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('¥${bestOffer.price.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                  fontSize: 20,
+                                  height: 1,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.priceRed)),
+                          const SizedBox(width: 4),
+                          const Text('起',
+                              style: TextStyle(
+                                  fontSize: 11, color: AppColors.inkSoft)),
+                          const Spacer(),
+                          TextButton.icon(
+                            key: Key('favorite_group_${bestOffer.productId}'),
+                            onPressed: () => _addPlatformOfferToFavorites(
+                                bestOffer,
+                                group: group),
+                            icon: Icon(
+                                isFavorite
+                                    ? Icons.favorite
+                                    : Icons.favorite_border,
+                                size: 15),
+                            label: Text(isFavorite ? '已收藏' : '收藏',
+                                style: const TextStyle(fontSize: 12)),
+                            style: TextButton.styleFrom(
+                              foregroundColor: isFavorite
+                                  ? AppColors.priceRed
+                                  : AppColors.inkSoft,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 4),
+                              minimumSize: const Size(0, 30),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                          ),
+                        ],
                       ),
+                      if (otherPrices.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 10,
+                          runSpacing: 4,
+                          children: otherPrices.entries.take(2).map((e) {
+                            return Text(
+                              '${_platformLabel(e.key)} ¥${e.value.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                  fontSize: 11, color: AppColors.inkSoft),
+                            );
+                          }).toList(),
+                        ),
+                      ],
                     ],
                   ),
                 ),
