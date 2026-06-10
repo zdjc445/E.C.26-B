@@ -58,6 +58,12 @@ class PreferenceExtensionTests {
         assertTrue(p.platforms().contains("淘宝-mock"));
     }
 
+    @Test
+    void shouldExtractTmallPlatform() {
+        var p = preferenceParser.parse("只看天猫的耳机");
+        assertEquals(List.of("天猫-mock"), p.platforms());
+    }
+
     // ── Sort parsing ────────────────────────────────────────
 
     @Test

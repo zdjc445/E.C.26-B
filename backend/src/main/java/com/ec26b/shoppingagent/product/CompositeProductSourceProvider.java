@@ -2,6 +2,7 @@ package com.ec26b.shoppingagent.product;
 
 import com.ec26b.shoppingagent.ai.ArkClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -13,9 +14,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Primary product source — reads mock data and generates domestic
- * (Chinese) e-commerce platform offers with realistic prices per platform
- * for a genuine shopping comparison experience.
+ * Primary product source with configurable dataset mode.
  */
 @Primary
 @Component
@@ -40,18 +39,28 @@ public class CompositeProductSourceProvider implements ProductSourceProvider {
     private final ResultReRanker reRanker;
     private final ArkQueryDecomposer queryDecomposer;
     private final HybridRetriever hybridRetriever;
+    private final PublicDatasetProductSourceProvider publicDataset;
+    private final String mode;
 
     /**
      * Primary constructor — used by Spring with injected {@link RecommendationScorer}.
      */
+    @Autowired
     public CompositeProductSourceProvider(ObjectMapper objectMapper,
                                           @Value("${app.product-source.mock-resource:mock-data/mock-data.json}")
                                           String resourcePath,
+                                          @Value("${app.product-source.public-resource:data/public-product-offers.json}")
+                                          String publicResourcePath,
+                                          @Value("${app.product-source.mode:public-dataset}")
+                                          String mode,
                                           ArkClient arkClient,
                                           RecommendationScorer scorer) {
         this.catalog = loadCatalog(objectMapper, resourcePath);
         this.queryDecomposer = new ArkQueryDecomposer(arkClient);
         this.reRanker = new ResultReRanker(scorer);
+        this.publicDataset = new PublicDatasetProductSourceProvider(
+                scorer, objectMapper, publicResourcePath);
+        this.mode = mode == null || mode.isBlank() ? "public-dataset" : mode.trim();
 
         // Build product maps for hybrid retrieval
         List<Map<String, String>> productMaps = catalog.stream()
@@ -61,11 +70,38 @@ public class CompositeProductSourceProvider implements ProductSourceProvider {
         this.hybridRetriever = new HybridRetriever(productMaps, arkClient);
     }
 
+    public CompositeProductSourceProvider(ObjectMapper objectMapper,
+                                          String resourcePath,
+                                          ArkClient arkClient,
+                                          RecommendationScorer scorer) {
+        this(objectMapper, resourcePath, "data/public-product-offers.json",
+                "mock-data", arkClient, scorer);
+    }
 
     // ── Search ─────────────────────────────────────────────────
 
     @Override
     public ProductSearchResult search(ProductSearchQuery query) {
+        String normalizedMode = mode.toLowerCase(Locale.ROOT);
+        if ("mock".equals(normalizedMode) || "mock-data".equals(normalizedMode)) {
+            return searchMockData(query);
+        }
+        if ("public-dataset-only".equals(normalizedMode)) {
+            return publicDataset.search(query);
+        }
+        if ("public-dataset-platforms".equals(normalizedMode)) {
+            return publicDataset.searchWithPlatformVariants(query, DOMESTIC_PLATFORMS);
+        }
+
+        ProductSearchResult publicResult = publicDataset.search(query);
+        ProductSearchResult mockResult = searchMockData(query);
+        List<ProductOffer> products = new ArrayList<>();
+        products.addAll(publicResult.products());
+        products.addAll(mockResult.products());
+        return ProductSearchResults.fromProducts(products, query.sortBy());
+    }
+
+    private ProductSearchResult searchMockData(ProductSearchQuery query) {
         String rawQuery = query.keyword();
 
         // === RAG Stage 1: Query Decomposition (LLM + rule fallback) ===
@@ -221,7 +257,17 @@ public class CompositeProductSourceProvider implements ProductSourceProvider {
 
     @Override
     public String sourceName() {
-        return "mock-data";
+        String normalizedMode = mode.toLowerCase(Locale.ROOT);
+        if ("mock".equals(normalizedMode) || "mock-data".equals(normalizedMode)) {
+            return "mock-data";
+        }
+        if ("public-dataset-only".equals(normalizedMode)) {
+            return publicDataset.sourceName();
+        }
+        if ("public-dataset-platforms".equals(normalizedMode)) {
+            return "public-dataset-platforms";
+        }
+        return "public-dataset+mock-data";
     }
 
     // ── Filters ────────────────────────────────────────────────

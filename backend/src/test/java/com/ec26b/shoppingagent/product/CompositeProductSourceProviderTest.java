@@ -92,4 +92,57 @@ class CompositeProductSourceProviderTest {
                     "Products should be sorted by price ascending");
         }
     }
+
+    @Test
+    void shouldSwitchToPublicDatasetOnly() {
+        CompositeProductSourceProvider provider = new CompositeProductSourceProvider(
+                new ObjectMapper(), "../mock-data/mock-data.json",
+                "data/public-product-offers.json", "public-dataset-only",
+                null, new RecommendationScorer());
+
+        ProductSearchResult result = provider.search(new ProductSearchQuery("耳机", List.of(), null));
+
+        assertFalse(result.products().isEmpty());
+        assertEquals("public-dataset", provider.sourceName());
+        for (ProductOffer p : result.products()) {
+            assertEquals(PublicDatasetProductSourceProvider.PLATFORM, p.platform());
+            assertTrue(p.imageUrl().startsWith("http"));
+        }
+    }
+
+    @Test
+    void shouldMergePublicDatasetAndMockData() {
+        CompositeProductSourceProvider provider = new CompositeProductSourceProvider(
+                new ObjectMapper(), "../mock-data/mock-data.json",
+                "data/public-product-offers.json", "public-dataset",
+                null, new RecommendationScorer());
+
+        ProductSearchResult result = provider.search(new ProductSearchQuery("耳机", List.of(), null));
+        Set<String> platforms = result.products().stream()
+                .map(ProductOffer::platform)
+                .collect(Collectors.toSet());
+
+        assertEquals("public-dataset+mock-data", provider.sourceName());
+        assertTrue(platforms.contains(PublicDatasetProductSourceProvider.PLATFORM));
+        assertTrue(platforms.contains("京东-mock"));
+    }
+
+    @Test
+    void shouldUsePublicDatasetWithGeneratedPlatforms() {
+        CompositeProductSourceProvider provider = new CompositeProductSourceProvider(
+                new ObjectMapper(), "../mock-data/mock-data.json",
+                "data/public-product-offers.json", "public-dataset-platforms",
+                null, new RecommendationScorer());
+
+        ProductSearchResult result = provider.search(new ProductSearchQuery("耳机", List.of(), null));
+        Set<String> platforms = result.products().stream()
+                .map(ProductOffer::platform)
+                .collect(Collectors.toSet());
+
+        assertEquals("public-dataset-platforms", provider.sourceName());
+        assertTrue(platforms.contains("京东-mock"));
+        assertTrue(platforms.contains("拼多多-mock"));
+        assertFalse(platforms.contains(PublicDatasetProductSourceProvider.PLATFORM));
+        assertTrue(result.products().stream().allMatch(p -> p.imageUrl().startsWith("http")));
+    }
 }

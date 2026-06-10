@@ -97,7 +97,8 @@ public class UserPreferenceParser {
         List<String> result = new ArrayList<>();
         if (text.contains("京东") || text.contains("JD") || text.contains("jd")) result.add("京东-mock");
         if (text.contains("拼多多") || text.contains("PDD") || text.contains("pdd")) result.add("拼多多-mock");
-        if (text.contains("淘宝") || text.contains("天猫")) result.add("淘宝-mock");
+        if (text.contains("淘宝")) result.add("淘宝-mock");
+        if (text.contains("天猫")) result.add("天猫-mock");
         return result;
     }
 

@@ -16,7 +16,7 @@ spring:
 app:
   upload-dir: ${UPLOAD_DIR:../uploads}
   product-source:
-    mode: ${PRODUCT_SOURCE_MODE:public-dataset}
+    mode: ${PRODUCT_SOURCE_MODE:public-dataset-platforms}
     public-resource: ${PUBLIC_PRODUCT_RESOURCE:data/public-product-offers.json}
   ai:
     provider: ${AI_PROVIDER:mock}
