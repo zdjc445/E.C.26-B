@@ -66,7 +66,8 @@ class FakeHealthApi extends HealthApi {
     return const HealthStatus(
       status: 'ok',
       app: 'shopping-agent',
-      stage: '聊天式 AI 识别与多平台 Mock 推荐阶段',
+      stage:
+          '聊天式 AI 识别 + 公开样例数据多平台比价 + 7 维度自然语言筛选 + 动态建议卡 + 持久化 + 认证 + 收藏 + 价格提醒 + 语音转写阶段',
       aiProvider: 'ark',
       chatHistoryStore: 'memory',
       authEnabled: false,
@@ -154,6 +155,7 @@ class FakeChatApi extends ChatApi {
   FakeChatApi() : super(baseUrl: 'http://test');
 
   Completer<AgentReply>? _sendMessageCompleter;
+  final List<Map<String, dynamic>> sendRequests = [];
   final List<ChatSessionSummary> _sessions = [];
   final Map<String, List<Map<String, dynamic>>> _storedMessages = {};
   int _sessionCounter = 0;
@@ -226,6 +228,13 @@ class FakeChatApi extends ChatApi {
     List<String>? selectedOptionIds,
     Map<String, dynamic>? profile,
   }) async {
+    sendRequests.add({
+      'sessionId': sessionId,
+      'text': text,
+      'imageIds': imageIds ?? [],
+      'selectedOptionIds': selectedOptionIds ?? [],
+      if (profile != null) 'profile': profile,
+    });
     if (_sendMessageCompleter != null) {
       final c = _sendMessageCompleter!;
       _sendMessageCompleter = null;
@@ -263,11 +272,11 @@ class FakeChatApi extends ChatApi {
       return AgentReply(
         replyId: 'reply-002',
         replyType: 'product_recommendation',
-        text: '找到 5 组匹配商品，你更看重哪一点？',
+        text: '找到 5 组商品',
         cards: [
           const ReplyCard(
             cardType: 'product_group_list',
-            title: '匹配商品',
+            title: '商品结果',
             filterSummary: ['品类：运动鞋', '全部平台'],
             groups: [
               ProductGroup(
@@ -429,7 +438,7 @@ class FakeChatApi extends ChatApi {
           ),
           ReplyCard(
             cardType: 'product_group_list',
-            title: '匹配商品',
+            title: '商品结果',
             filterSummary: ['品类：运动鞋'],
             groups: [
               ProductGroup(
@@ -475,7 +484,7 @@ class FakeChatApi extends ChatApi {
           ),
           ReplyCard(
             cardType: 'clarification',
-            title: '你更看重哪一点？',
+            title: '继续筛选',
             options: [
               ClarificationOption(optionId: 'lowest_price', label: '价格最低'),
               ClarificationOption(optionId: 'official_store', label: '官方店铺'),
@@ -488,18 +497,18 @@ class FakeChatApi extends ChatApi {
     return const AgentReply(
       replyId: 'reply-001',
       replyType: 'clarification',
-      text: '我已经收到你的需求。你更看重哪一点？',
+      text: '找到 0 组商品',
       cards: [
         ReplyCard(
           cardType: 'product_group_list',
-          title: '匹配商品',
+          title: '商品结果',
           filterSummary: ['品类：运动鞋'],
           groups: [],
           emptyReason: '请输入你想要的商品关键词以开始搜索。',
         ),
         ReplyCard(
           cardType: 'clarification',
-          title: '你更看重哪一点？',
+          title: '继续筛选',
           options: [
             ClarificationOption(optionId: 'lowest_price', label: '价格最低'),
             ClarificationOption(optionId: 'official_store', label: '官方店铺'),
@@ -563,11 +572,29 @@ Widget _wrapWithRouter({_TestOverrides? overrides}) {
 Future<void> _dragUntilFinderVisible(WidgetTester tester, Finder finder) async {
   final scrollable = find.byType(Scrollable).first;
   for (var i = 0; i < 8; i++) {
-    if (finder.evaluate().isNotEmpty) {
+    final center = _finderCenter(tester, finder);
+    final screenSize = tester.view.physicalSize / tester.view.devicePixelRatio;
+    if (center != null &&
+        center.dx >= 0 &&
+        center.dy >= 48 &&
+        center.dx <= screenSize.width &&
+        center.dy <= screenSize.height - 24) {
       return;
     }
-    await tester.drag(scrollable, const Offset(0, -320));
+    final dy = center != null && center.dy < 48 ? 180.0 : -320.0;
+    await tester.drag(scrollable, Offset(0, dy));
     await tester.pumpAndSettle();
+  }
+}
+
+Offset? _finderCenter(WidgetTester tester, Finder finder) {
+  if (finder.evaluate().isEmpty) {
+    return null;
+  }
+  try {
+    return tester.getCenter(finder.first);
+  } catch (_) {
+    return null;
   }
 }
 
@@ -672,11 +699,11 @@ void main() {
       completer.complete(const AgentReply(
         replyId: 'reply-001',
         replyType: 'clarification',
-        text: '我已经收到你的需求。你更看重哪一点？',
+        text: '请选择筛选条件',
         cards: [
           ReplyCard(
             cardType: 'clarification',
-            title: '你更看重哪一点？',
+            title: '继续筛选',
             options: [
               ClarificationOption(optionId: 'lowest_price', label: '价格最低'),
             ],
@@ -700,7 +727,7 @@ void main() {
 
       // Should show product group list
       expect(find.textContaining('找到 '), findsWidgets);
-      expect(find.text('匹配商品'), findsOneWidget);
+      expect(find.textContaining('组商品'), findsOneWidget);
       // Group cards show: title, price, rating, chevron
       expect(find.textContaining('运动鞋'), findsWidgets);
       expect(find.textContaining('¥'), findsWidgets);
@@ -1085,13 +1112,13 @@ void main() {
         cards: const [
           ReplyCard(
             cardType: 'product_group_list',
-            title: '匹配商品',
+            title: '商品结果',
             groups: [],
             emptyReason: '当前预算下暂无合适的 Mock 商品，请放宽条件。',
           ),
           ReplyCard(
             cardType: 'clarification',
-            title: '你更看重哪一点？',
+            title: '继续筛选',
             options: [
               ClarificationOption(optionId: 'lowest_price', label: '价格最低'),
             ],
@@ -1100,7 +1127,7 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      expect(find.text('匹配商品'), findsOneWidget);
+      expect(find.text('暂未找到商品'), findsOneWidget);
       expect(find.text('当前预算下暂无合适的 Mock 商品，请放宽条件。'), findsOneWidget);
     });
 
@@ -1113,7 +1140,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Should show product group list with compact info
-      expect(find.text('匹配商品'), findsOneWidget);
+      expect(find.textContaining('组商品'), findsOneWidget);
       // Should show group count
       expect(find.textContaining('组'), findsWidgets);
       // Should show price, platform badge, rating and reviews
@@ -1503,7 +1530,7 @@ void main() {
         cards: [
           ReplyCard(
             cardType: 'product_group_list',
-            title: '匹配商品',
+            title: '商品结果',
             filterSummary: ['品类：耳机', '预算≤300元', '颜色：黑色'],
             groups: [],
           ),
@@ -1514,6 +1541,48 @@ void main() {
       expect(find.text('黑色耳机'), findsOneWidget);
       expect(find.text('¥300以内'), findsOneWidget);
       expect(find.text('全部平台'), findsOneWidget);
+    });
+
+    testWidgets('product group filter editor submits modified text',
+        (tester) async {
+      final ov = _TestOverrides();
+      final completer = Completer<AgentReply>();
+      ov.chatApi.stubSendMessage(completer);
+
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), '推荐耳机');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_upward));
+      await tester.pump();
+
+      completer.complete(const AgentReply(
+        replyId: 'reply-filter-edit',
+        replyType: 'product_recommendation',
+        text: '找到 1 组商品',
+        cards: [
+          ReplyCard(
+            cardType: 'product_group_list',
+            title: '商品结果',
+            filterSummary: ['品类：耳机', '预算≤300元', '颜色：黑色'],
+            groups: [],
+          ),
+        ],
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('本轮筛选'), findsOneWidget);
+      expect(find.text('提交修改'), findsNothing);
+
+      await tester.tap(find.text('修改'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField), '索尼黑色耳机 500以内 只看京东');
+      await tester.pumpAndSettle();
+
+      expect(find.text('提交修改'), findsOneWidget);
+      await tester.tap(find.text('提交修改'));
+      await tester.pumpAndSettle();
+
+      expect(ov.chatApi.sendRequests.last['text'], '索尼黑色耳机 500以内 只看京东');
     });
 
     testWidgets('product group list shows recognition result box',
@@ -1531,11 +1600,11 @@ void main() {
       completer.complete(const AgentReply(
         replyId: 'reply-rec-groups',
         replyType: 'product_recommendation',
-        text: '我已经识别了你的商品图片。你更看重哪一点？',
+        text: '找到 0 组商品',
         cards: [
           ReplyCard(
             cardType: 'product_group_list',
-            title: '匹配商品',
+            title: '商品结果',
             imageId: 'test-image-id',
             category: '运动鞋',
             brand: 'Mock 品牌',
@@ -1552,7 +1621,7 @@ void main() {
           ),
           ReplyCard(
             cardType: 'clarification',
-            title: '你更看重哪一点？',
+            title: '继续筛选',
             options: [
               ClarificationOption(optionId: 'lowest_price', label: '查看同款低价'),
             ],
@@ -1568,7 +1637,7 @@ void main() {
       expect(find.text('型号：Mock 型号'), findsOneWidget);
       expect(find.text('置信度 82%'), findsOneWidget);
       expect(find.text('修正'), findsOneWidget);
-      expect(find.text('匹配商品'), findsOneWidget);
+      expect(find.text('暂未找到商品'), findsOneWidget);
       expect(find.text('查看同款低价'), findsOneWidget);
     });
 
@@ -1589,7 +1658,7 @@ void main() {
         replyType: 'product_recommendation',
         text: '推荐结果',
         cards: [
-          ReplyCard(cardType: 'product_group_list', title: '匹配商品', groups: []),
+          ReplyCard(cardType: 'product_group_list', title: '商品结果', groups: []),
         ],
       ));
       await tester.pumpAndSettle();
@@ -1613,7 +1682,7 @@ void main() {
         replyType: 'clarification',
         text: '请选择',
         cards: [
-          ReplyCard(cardType: 'clarification', title: '你更看重哪一点？', options: [
+          ReplyCard(cardType: 'clarification', title: '继续筛选', options: [
             ClarificationOption(optionId: 'lowest_price', label: '查看同款低价'),
             ClarificationOption(optionId: 'style_similar', label: '相似风格推荐'),
             ClarificationOption(optionId: 'price_history', label: '查看历史价格走势'),
@@ -1695,7 +1764,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Group row shows: thumbnail placeholder, title, price, rating star, reviews, chevron
-      expect(find.text('匹配商品'), findsOneWidget);
+      expect(find.textContaining('组商品'), findsOneWidget);
       expect(find.textContaining('¥'), findsWidgets);
       // Platform count badge now shown in group row
       expect(find.textContaining('个平台'), findsWidgets);
@@ -1705,6 +1774,25 @@ void main() {
       expect(find.textContaining('评价'), findsWidgets);
       // Should NOT show strikethrough original price
       expect(find.text('¥399'), findsNothing);
+    });
+
+    testWidgets('group row favorite saves cheapest platform offer',
+        (tester) async {
+      final ov = _TestOverrides();
+      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
+      await tester.enterText(find.byType(TextField), '推荐耳机');
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.arrow_upward));
+      await tester.pumpAndSettle();
+
+      final favoriteButton = find.byKey(const Key('favorite_group_pdd-001'));
+      await _dragUntilFinderVisible(tester, favoriteButton);
+      await tester.tap(favoriteButton);
+      await tester.pumpAndSettle();
+
+      expect(ov.favoriteApi.addedPayloads, hasLength(1));
+      expect(ov.favoriteApi.addedPayloads.single['productId'], 'pdd-001');
+      expect(ov.favoriteApi.addedPayloads.single['platform'], '拼多多-mock');
     });
 
     testWidgets('tapping group row opens 商品详情 page', (tester) async {
@@ -1727,6 +1815,7 @@ void main() {
 
       // Should be on detail page
       expect(find.text('商品详情'), findsOneWidget);
+      await _dragUntilFinderVisible(tester, find.text('平台比价'));
       expect(find.text('平台比价'), findsOneWidget);
     });
 
@@ -1753,12 +1842,18 @@ void main() {
       // Price section
       expect(find.textContaining('¥'), findsWidgets);
       expect(find.text('购买判断'), findsOneWidget);
+      expect(find.text('评价概览'), findsOneWidget);
+      expect(find.text('平均评分'), findsOneWidget);
       expect(find.textContaining('最低价'), findsWidgets);
       expect(find.text('评分最高'), findsWidgets);
       // Platform comparison list
+      await _dragUntilFinderVisible(tester, find.text('平台比价'));
       expect(find.text('平台比价'), findsOneWidget);
       await _dragUntilFinderVisible(tester, find.text('去看看'));
       // Platform cards show shop name and action buttons
+      expect(find.text('到手价'), findsWidgets);
+      expect(find.text('精选评论'), findsWidgets);
+      expect(find.text('样例口碑摘要'), findsWidgets);
       expect(find.text('去看看'), findsWidgets);
       expect(find.text('价格提醒'), findsWidgets);
       // Rating/sales displayed
@@ -1809,7 +1904,11 @@ void main() {
       expect(find.textContaining('价格区间'), findsNothing);
       expect(find.textContaining('个平台有售'), findsOneWidget);
       expect(find.text('购买判断'), findsOneWidget);
+      expect(find.text('评价概览'), findsOneWidget);
+      await _dragUntilFinderVisible(tester, find.text('推荐点'));
       expect(find.text('推荐点'), findsOneWidget);
+      expect(find.text('精选评论'), findsOneWidget);
+      expect(find.text('样例口碑摘要'), findsOneWidget);
       expect(find.text('预算匹配'), findsOneWidget);
       expect(find.textContaining('价格走势'), findsOneWidget);
     });
@@ -1838,7 +1937,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Back on chat screen
-      expect(find.text('匹配商品'), findsOneWidget);
+      expect(find.textContaining('组商品'), findsOneWidget);
       expect(find.text('查看同款低价'), findsOneWidget);
     });
 

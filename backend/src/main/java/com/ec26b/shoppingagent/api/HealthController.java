@@ -31,7 +31,7 @@ public class HealthController {
         this.voiceProvider = voiceProvider;
         this.currentUser = currentUser;
         this.productSourceProvider = productSourceProvider;
-        this.stage = "聊天式 AI 识别 + 多平台 Mock 推荐 + 7 维度自然语言筛选 + 动态建议卡"
+        this.stage = "聊天式 AI 识别 + 公开样例数据多平台比价 + 7 维度自然语言筛选 + 动态建议卡"
                 + " + 持久化 + 认证 + 收藏 + 价格提醒 + 语音转写阶段";
     }
 

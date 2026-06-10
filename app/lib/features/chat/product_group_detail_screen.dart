@@ -47,6 +47,10 @@ class ProductGroupDetailScreen extends ConsumerWidget {
           _buildPriceSection(),
           const SizedBox(height: 14),
           _buildDecisionSummary(),
+          if (group.platforms.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _buildReviewSummary(),
+          ],
           if (group.highlights.isNotEmpty) ...[
             const SizedBox(height: 14),
             _buildHighlights(),
@@ -315,37 +319,48 @@ class ProductGroupDetailScreen extends ConsumerWidget {
     final priceRange = group.priceRange;
     final priceGap = priceRange == null ? 0.0 : priceRange.max - priceRange.min;
 
-    final items = <Widget>[
-      _decisionRow(
-        Icons.savings_outlined,
-        '先看最低价',
-        '${_platformLabel(cheapest.platform)} ¥${cheapest.price.toStringAsFixed(0)} 起',
-        AppColors.priceRed,
+    final summary = priceGap >= 1
+        ? '各平台价差 ¥${priceGap.toStringAsFixed(0)}，先看最低价，再用评分、评价量和服务做二次确认。'
+        : '各平台价格接近，优先比较评分、评价量和服务保障。';
+    final metrics = <_DetailMetricData>[
+      _DetailMetricData(
+        icon: Icons.savings_outlined,
+        label: '最低价',
+        value:
+            '${_platformLabel(cheapest.platform)} ¥${cheapest.price.toStringAsFixed(0)}',
+        note: '优先核对优惠和规格',
+        color: AppColors.priceRed,
       ),
     ];
 
     if (topRated != null) {
-      items.add(_decisionRow(
-        Icons.star_border_rounded,
-        '评分最高',
-        '${_platformLabel(topRated.platform)} ${topRated.rating.toStringAsFixed(1)} 分',
-        AppColors.warn,
+      metrics.add(_DetailMetricData(
+        icon: Icons.star_border_rounded,
+        label: '评分最高',
+        value:
+            '${_platformLabel(topRated.platform)} ${topRated.rating.toStringAsFixed(1)}',
+        note: '口碑优先看这里',
+        color: AppColors.warn,
       ));
     }
     if (mostReviewed != null) {
-      items.add(_decisionRow(
-        Icons.forum_outlined,
-        '评价最多',
-        '${_platformLabel(mostReviewed.platform)} ${_formatCount(mostReviewed.sales)} 条',
-        AppColors.accent,
+      metrics.add(_DetailMetricData(
+        icon: Icons.forum_outlined,
+        label: mostReviewed.sales > 0 ? '评价最多' : '评价量',
+        value: mostReviewed.sales > 0
+            ? '${_platformLabel(mostReviewed.platform)} ${_reviewCountText(mostReviewed.sales)}'
+            : '暂无有效评价',
+        note: mostReviewed.sales > 0 ? '样本量更充分' : '下单前补看评论区',
+        color: AppColors.accent,
       ));
     }
     if (priceGap >= 1) {
-      items.add(_decisionRow(
-        Icons.compare_arrows_rounded,
-        '平台差价',
-        '最高与最低相差 ¥${priceGap.toStringAsFixed(0)}',
-        AppColors.inkSoft,
+      metrics.add(_DetailMetricData(
+        icon: Icons.compare_arrows_rounded,
+        label: '平台差价',
+        value: '¥${priceGap.toStringAsFixed(0)}',
+        note: '差价来自样例报价',
+        color: AppColors.inkSoft,
       ));
     }
 
@@ -360,44 +375,129 @@ class ProductGroupDetailScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _sectionHeading('购买判断', '先按关键差异缩小选择范围'),
-          const SizedBox(height: 10),
-          ...items,
+          const SizedBox(height: 8),
+          Text(summary,
+              style: const TextStyle(
+                  fontSize: 12.5, height: 1.45, color: AppColors.inkSoft)),
+          const SizedBox(height: 12),
+          _metricGrid(metrics),
         ],
       ),
     );
   }
 
-  Widget _decisionRow(IconData icon, String label, String value, Color color) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
+  Widget _buildReviewSummary() {
+    final topRated = _topRatedOffer();
+    final mostReviewed = _mostReviewedOffer();
+    final totalReviews =
+        group.platforms.fold<int>(0, (sum, p) => sum + p.sales);
+    final averageRating = group.platforms
+            .map((p) => p.rating)
+            .fold<double>(0, (sum, rating) => sum + rating) /
+        group.platforms.length;
+
+    final reviewNote = totalReviews > 0
+        ? '样例评价量合计 ${_reviewCountText(totalReviews)}，重点看评分高的平台和评价量更充分的平台。'
+        : '当前样例数据评价量较少，先用评分、价格和服务标签辅助判断。';
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: color.withAlpha(16),
-              borderRadius: BorderRadius.circular(8),
+          _sectionHeading('评价概览', '按评分、评价量和样例口碑整理'),
+          const SizedBox(height: 8),
+          Text(reviewNote,
+              style: const TextStyle(
+                  fontSize: 12.5, height: 1.45, color: AppColors.inkSoft)),
+          const SizedBox(height: 12),
+          _metricGrid([
+            _DetailMetricData(
+              icon: Icons.star_half_rounded,
+              label: '平均评分',
+              value: averageRating.toStringAsFixed(1),
+              note: topRated == null
+                  ? '暂无最高评分'
+                  : '最高 ${_platformLabel(topRated.platform)}',
+              color: AppColors.warn,
             ),
-            child: Icon(icon, size: 16, color: color),
+            _DetailMetricData(
+              icon: Icons.forum_outlined,
+              label: '评价量',
+              value: _reviewCountText(totalReviews),
+              note: totalReviews <= 0
+                  ? '暂无有效评价量'
+                  : mostReviewed == null
+                      ? '暂无平台数据'
+                      : '${_platformLabel(mostReviewed.platform)} 最多',
+              color: AppColors.accent,
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Widget _metricGrid(List<_DetailMetricData> metrics) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final itemWidth = (constraints.maxWidth - 8) / 2;
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: metrics
+            .map((metric) => SizedBox(
+                  width: itemWidth,
+                  child: _metricTile(metric),
+                ))
+            .toList(),
+      );
+    });
+  }
+
+  Widget _metricTile(_DetailMetricData metric) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: metric.color.withAlpha(10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: metric.color.withAlpha(42)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(metric.icon, size: 15, color: metric.color),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(metric.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.inkSoft)),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 72,
-            child: Text(label,
-                style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.inkBody)),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style:
-                    const TextStyle(fontSize: 12.5, color: AppColors.inkSoft)),
-          ),
+          const SizedBox(height: 7),
+          Text(metric.value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.inkBody)),
+          const SizedBox(height: 3),
+          Text(metric.note,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10.5, color: AppColors.inkSoft)),
         ],
       ),
     );
@@ -450,6 +550,8 @@ class ProductGroupDetailScreen extends ConsumerWidget {
     final roleBadges = _platformRoleBadges(p);
     final sellingPoints = _sellingPoints(p);
     final trendText = _priceTrendText(p);
+    final priceNote = _priceNote(p, discountLabel);
+    final reviewSnippets = _reviewSnippets(p, shippingLabel, afterSaleLabel);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -468,65 +570,51 @@ class ProductGroupDetailScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header: platform badge + shop name
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _platformBadge(p.platform),
-              const SizedBox(width: 8),
               Expanded(
-                child: Text(p.shopName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _platformBadge(p.platform),
+                        ...roleBadges,
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(p.shopName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w700)),
+                  ],
+                ),
               ),
-              if (discountLabel != null)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.priceRed.withAlpha(16),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: AppColors.priceRed.withAlpha(60)),
-                  ),
-                  child: Text(discountLabel,
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('¥${p.price.toStringAsFixed(0)}',
                       style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 23,
+                          height: 1,
+                          fontWeight: FontWeight.w800,
                           color: AppColors.priceRed)),
-                ),
-            ],
-          ),
-          if (roleBadges.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: roleBadges,
-            ),
-          ],
-          const SizedBox(height: 10),
-          // Price row
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text('¥${p.price.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                      fontSize: 22,
-                      height: 1,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.priceRed)),
-              if (p.originalPrice > p.price) ...[
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Text('¥${p.originalPrice.toStringAsFixed(0)}',
-                      style: const TextStyle(
-                          fontSize: 13,
-                          color: AppColors.inkSoft,
-                          decoration: TextDecoration.lineThrough)),
-                ),
-              ],
+                  if (p.originalPrice > p.price) ...[
+                    const SizedBox(height: 3),
+                    Text('¥${p.originalPrice.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.inkSoft,
+                            decoration: TextDecoration.lineThrough)),
+                  ],
+                ],
+              ),
             ],
           ),
           if (p.title.isNotEmpty && p.title != group.displayTitle) ...[
@@ -537,55 +625,69 @@ class ProductGroupDetailScreen extends ConsumerWidget {
                 style: const TextStyle(
                     fontSize: 12.5, height: 1.35, color: AppColors.inkBody)),
           ],
-          const SizedBox(height: 8),
-          // Info pills: rating | reviews | shipping | after-sale
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _infoPill(Icons.star, '${p.rating.toStringAsFixed(1)}分', null),
-              _infoPill(null, '${_formatCount(p.sales)}条评价', null),
-              _infoPill(null, shippingLabel, null),
-              _infoPill(null, afterSaleLabel, null),
-              if (p.tags.isNotEmpty)
-                ...p.tags
-                    .where((t) =>
-                        t != '包邮' &&
-                        t != '正品保障' &&
-                        t != '京东物流' &&
-                        t != '7天无理由' &&
-                        t != '放心退' &&
-                        t != '先用后付')
-                    .take(2)
-                    .map((t) => _infoPill(null, t, AppColors.accent)),
-            ],
-          ),
-          if (sellingPoints.isNotEmpty || trendText != null) ...[
+          const SizedBox(height: 12),
+          _metricGrid([
+            _DetailMetricData(
+              icon: Icons.payments_outlined,
+              label: '到手价',
+              value: '¥${p.price.toStringAsFixed(0)}',
+              note: priceNote,
+              color: AppColors.priceRed,
+            ),
+            _DetailMetricData(
+              icon: Icons.star_border_rounded,
+              label: '评分',
+              value: p.rating.toStringAsFixed(1),
+              note: _ratingNote(p),
+              color: AppColors.warn,
+            ),
+            _DetailMetricData(
+              icon: Icons.forum_outlined,
+              label: '评价',
+              value: _reviewCountText(p.sales),
+              note: _reviewNote(p),
+              color: AppColors.accent,
+            ),
+            _DetailMetricData(
+              icon: Icons.local_shipping_outlined,
+              label: '服务',
+              value: shippingLabel,
+              note: afterSaleLabel,
+              color: AppColors.good,
+            ),
+          ]),
+          if (sellingPoints.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Container(height: 1, color: AppColors.line.withAlpha(80)),
-            const SizedBox(height: 10),
-            if (sellingPoints.isNotEmpty) ...[
-              const Text('推荐点',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.inkBody)),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: sellingPoints
-                    .map((t) => _infoPill(null, t, AppColors.good))
-                    .toList(),
-              ),
-            ],
-            if (trendText != null) ...[
-              if (sellingPoints.isNotEmpty) const SizedBox(height: 8),
-              _detailLine(Icons.show_chart_rounded, trendText),
-            ],
+            const Text('推荐点',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.inkBody)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: sellingPoints
+                  .map((t) => _infoPill(null, t, AppColors.good))
+                  .toList(),
+            ),
           ],
           const SizedBox(height: 12),
-          // Action buttons — "去看看" primary, "价格提醒" subtle
+          _buildReviewBlock(reviewSnippets),
+          if (trendText != null) ...[
+            const SizedBox(height: 10),
+            _detailLine(Icons.show_chart_rounded, trendText),
+          ],
+          if (p.tags.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children:
+                  p.tags.take(4).map((t) => _infoPill(null, t, null)).toList(),
+            ),
+          ],
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -624,6 +726,19 @@ class ProductGroupDetailScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: () => _addOfferToFavorites(context, ref, p),
+                icon: const Icon(Icons.favorite_border, size: 16),
+                label: const Text('收藏'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.inkSoft,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(width: 4),
               TextButton.icon(
                 onPressed: () {
                   ref.read(behaviorRecorderProvider).record(
@@ -732,6 +847,142 @@ class ProductGroupDetailScreen extends ConsumerWidget {
       add('评价量充足');
     }
     return points.take(4).toList();
+  }
+
+  String _priceNote(PlatformOfferSummary p, String? discountLabel) {
+    if (discountLabel != null) {
+      return discountLabel;
+    }
+    final cheapest = _cheapestOffer();
+    if (cheapest == null) {
+      return '样例报价';
+    }
+    final delta = p.price - cheapest.price;
+    if (delta.abs() < 1) {
+      return '本组最低价';
+    }
+    return '比最低价高 ¥${delta.toStringAsFixed(0)}';
+  }
+
+  String _ratingNote(PlatformOfferSummary p) {
+    if (p.rating <= 0) {
+      return '暂无评分';
+    }
+    if (_sameOffer(_topRatedOffer(), p)) {
+      return '本组最高';
+    }
+    if (p.rating >= 4.8) {
+      return '高评分';
+    }
+    return '可参考';
+  }
+
+  String _reviewNote(PlatformOfferSummary p) {
+    if (p.sales <= 0) {
+      return '评价量较少';
+    }
+    if (_sameOffer(_mostReviewedOffer(), p)) {
+      return '本组最多';
+    }
+    if (p.sales >= 10000) {
+      return '评价量充足';
+    }
+    return '可参考';
+  }
+
+  String _reviewCountText(int value) {
+    if (value <= 0) {
+      return '暂无';
+    }
+    return '${_formatCount(value)}条';
+  }
+
+  Widget _buildReviewBlock(List<_ReviewSnippet> snippets) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.panelSoft,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.rate_review_outlined,
+                  size: 14, color: AppColors.inkSoft),
+              SizedBox(width: 5),
+              Text('精选评论',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.inkBody)),
+              SizedBox(width: 6),
+              Text('样例口碑摘要',
+                  style: TextStyle(fontSize: 11, color: AppColors.inkSoft)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...snippets.map(_reviewRow),
+        ],
+      ),
+    );
+  }
+
+  Widget _reviewRow(_ReviewSnippet snippet) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 46,
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppColors.panel,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: AppColors.line),
+            ),
+            child: Text(snippet.label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 10.5, color: AppColors.inkSoft)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(snippet.text,
+                style: const TextStyle(
+                    fontSize: 12, height: 1.35, color: AppColors.inkBody)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<_ReviewSnippet> _reviewSnippets(
+      PlatformOfferSummary p, String shippingLabel, String afterSaleLabel) {
+    final delta = p.price - (_cheapestOffer()?.price ?? p.price);
+    final priceText = delta.abs() < 1
+        ? '价格是本组最低，适合先加入对比清单。'
+        : '价格比最低价高 ¥${delta.toStringAsFixed(0)}，重点看店铺和服务是否值得。';
+    final ratingText = p.rating >= 4.8
+        ? '评分 ${p.rating.toStringAsFixed(1)}，口碑表现靠前。'
+        : p.rating > 0
+            ? '评分 ${p.rating.toStringAsFixed(1)}，下单前建议再看实拍和追评。'
+            : '暂无评分，建议下单前补看平台评价区。';
+    final serviceText = p.tags.any((t) => t.contains('自营') || t.contains('官方'))
+        ? '$shippingLabel，$afterSaleLabel，店铺标签偏官方渠道。'
+        : '$shippingLabel，$afterSaleLabel，下单前重点核对退换和发货说明。';
+
+    return [
+      _ReviewSnippet('价格', priceText),
+      _ReviewSnippet('口碑', ratingText),
+      _ReviewSnippet('服务', serviceText),
+    ];
   }
 
   String _preferenceLabel(String value) {
@@ -879,6 +1130,42 @@ class ProductGroupDetailScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _addOfferToFavorites(
+      BuildContext context, WidgetRef ref, PlatformOfferSummary p) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final token = ref.read(authControllerProvider).session?.token;
+      await ref.read(favoriteApiInChatProvider).add({
+        'productId': p.productId,
+        'title': p.title.isNotEmpty ? p.title : group.displayTitle,
+        'platform': p.platform,
+        'price': p.price,
+        'shopName': p.shopName,
+        'brand': p.brand.isNotEmpty ? p.brand : group.brand,
+        'imageUrl': p.imageUrl.isNotEmpty ? p.imageUrl : group.thumbnailUrl,
+        'productUrl': p.productUrl,
+      }, token: token);
+      ref.read(behaviorRecorderProvider).record(
+            BehaviorEventType.favorite,
+            productId: p.productId,
+            platform: p.platform,
+            price: p.price,
+            category: group.category,
+            brand: p.brand.isNotEmpty ? p.brand : group.brand,
+            tags: p.tags,
+          );
+      if (context.mounted) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('已收藏，可在「我的收藏」查看')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('收藏失败：$e')));
+      }
+    }
+  }
+
   Future<void> _showPriceAlert(
       BuildContext context, WidgetRef ref, PlatformOfferSummary p) async {
     final controller = TextEditingController(
@@ -994,4 +1281,27 @@ class _DetailThumbColors {
   final Color bg, bg2;
   final IconData icon;
   const _DetailThumbColors(this.bg, this.bg2, this.icon);
+}
+
+class _DetailMetricData {
+  final IconData icon;
+  final String label;
+  final String value;
+  final String note;
+  final Color color;
+
+  const _DetailMetricData({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.note,
+    required this.color,
+  });
+}
+
+class _ReviewSnippet {
+  final String label;
+  final String text;
+
+  const _ReviewSnippet(this.label, this.text);
 }

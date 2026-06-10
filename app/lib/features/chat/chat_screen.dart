@@ -38,6 +38,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _picker = ImagePicker();
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final Set<String> _favoriteProductIds = <String>{};
+  final Set<String> _editingFilterKeys = <String>{};
+  final Map<String, String> _filterDrafts = <String, String>{};
   File? _pendingImage;
   String? _uploadedImageId;
   bool _imageUploadFailed = false;
@@ -71,7 +73,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         await store.setPrivacyAccepted();
       } else {
         // User skipped — disable personalization and skip onboarding
-        await ref.read(userProfileProvider.notifier).setPersonalizationEnabled(false);
+        await ref
+            .read(userProfileProvider.notifier)
+            .setPersonalizationEnabled(false);
         await store.setOnboardingDone();
         return;
       }
@@ -165,10 +169,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _onOptionSelected(String optionId) {
-    ref.read(chatControllerProvider.notifier).selectOption(optionId,
-        profile: _profileForRequest());
-    ref.read(behaviorRecorderProvider).record(BehaviorEventType.filterApply,
-        optionId: optionId);
+    ref
+        .read(chatControllerProvider.notifier)
+        .selectOption(optionId, profile: _profileForRequest());
+    ref
+        .read(behaviorRecorderProvider)
+        .record(BehaviorEventType.filterApply, optionId: optionId);
     _scrollToBottom();
   }
 
@@ -301,6 +307,54 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       setState(() {
         _favoriteProductIds.add(product.productId);
       });
+      messenger.showSnackBar(
+        const SnackBar(content: Text('已收藏，可在「我的收藏」查看')),
+      );
+    } catch (e) {
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('收藏失败：$e')));
+      }
+    }
+  }
+
+  Future<void> _addPlatformOfferToFavorites(PlatformOfferSummary offer,
+      {ProductGroup? group}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (_favoriteProductIds.contains(offer.productId)) {
+      messenger.showSnackBar(const SnackBar(content: Text('已收藏')));
+      return;
+    }
+
+    final payload = <String, dynamic>{
+      'productId': offer.productId,
+      'title': offer.title.isNotEmpty
+          ? offer.title
+          : (group?.displayTitle ?? '推荐商品'),
+      'platform': offer.platform,
+      'price': offer.price,
+      'shopName': offer.shopName,
+      'brand': offer.brand.isNotEmpty ? offer.brand : group?.brand,
+      'imageUrl': offer.imageUrl.isNotEmpty
+          ? offer.imageUrl
+          : (group?.thumbnailUrl ?? ''),
+      'productUrl': offer.productUrl,
+    };
+    try {
+      final token = ref.read(authControllerProvider).session?.token;
+      await ref.read(favoriteApiInChatProvider).add(payload, token: token);
+      if (!mounted) return;
+      setState(() {
+        _favoriteProductIds.add(offer.productId);
+      });
+      await ref.read(behaviorRecorderProvider).record(
+            BehaviorEventType.favorite,
+            productId: offer.productId,
+            platform: offer.platform,
+            price: offer.price,
+            category: group?.category,
+            brand: offer.brand.isNotEmpty ? offer.brand : group?.brand,
+            tags: offer.tags,
+          );
       messenger.showSnackBar(
         const SnackBar(content: Text('已收藏，可在「我的收藏」查看')),
       );
@@ -626,7 +680,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           children: [
             Text('购物助手',
                 style: TextStyle(
-                    fontSize: 17, fontWeight: FontWeight.w700,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: -0.3)),
             SizedBox(width: 8),
             Text('拍照识物 · 比价',
@@ -730,8 +785,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 4, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 );
               }).toList(),
             ),
@@ -756,8 +811,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: AppColors.panel,
               borderRadius: BorderRadius.circular(16),
@@ -779,8 +833,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 ),
                 const SizedBox(width: 8),
                 const Text('AI 正在为你查找…',
-                    style:
-                        TextStyle(fontSize: 13, color: AppColors.inkSoft)),
+                    style: TextStyle(fontSize: 13, color: AppColors.inkSoft)),
               ],
             ),
           ),
@@ -803,8 +856,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 maxWidth: MediaQuery.of(context).size.width * 0.78,
               ),
               child: Container(
-                padding: EdgeInsets.fromLTRB(
-                    hasImage ? 3 : 15, hasImage ? 3 : 12, 15, hasImage ? 3 : 12),
+                padding: EdgeInsets.fromLTRB(hasImage ? 3 : 15,
+                    hasImage ? 3 : 12, 15, hasImage ? 3 : 12),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
                     begin: Alignment.topLeft,
@@ -862,6 +915,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Widget _buildAssistantMessage(ChatMessage msg) {
     final reply = msg.agentReply;
+    final showText = msg.text != null &&
+        msg.text!.isNotEmpty &&
+        !_hasProductGroupList(reply);
     return Padding(
       padding: const EdgeInsets.only(bottom: 10, left: 0, right: 8),
       child: Align(
@@ -873,7 +929,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (msg.text != null)
+              if (showText)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Container(
@@ -904,6 +960,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
       ),
     );
+  }
+
+  bool _hasProductGroupList(AgentReply? reply) {
+    if (reply == null) {
+      return false;
+    }
+    return reply.cards.any((card) => card.cardType == 'product_group_list');
   }
 
   Widget _buildCard(ReplyCard card, List<ReplyCard> siblingCards) {
@@ -959,7 +1022,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           if (card.title.isNotEmpty) ...[
             Text(card.title,
                 style: const TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                     color: AppColors.inkBody)),
             const SizedBox(height: 10),
           ],
@@ -968,16 +1032,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             runSpacing: 8,
             children: options.map((opt) {
               return ActionChip(
-                label: Text(opt.label,
-                    style: const TextStyle(fontSize: 13)),
+                label: Text(opt.label, style: const TextStyle(fontSize: 13)),
                 onPressed: () => _onOptionSelected(opt.optionId),
                 backgroundColor: AppColors.panelSoft,
                 side: const BorderSide(color: AppColors.line),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
                 ),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 4, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               );
             }).toList(),
           ),
@@ -2238,7 +2300,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Widget _buildProductGroupListCard(ReplyCard card) {
     final groups = card.groups ?? [];
     final emptyReason = card.emptyReason;
-    final filterSummary = card.filterSummary;
     final showRecognitionBox = _hasRecognitionMeta(card);
 
     return Container(
@@ -2251,24 +2312,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             _buildRecognitionResultBox(card),
             const SizedBox(height: 10),
           ],
-          Row(
-            children: [
-              const Icon(Icons.category_outlined,
-                  size: 17, color: AppColors.accent),
-              const SizedBox(width: 6),
-              Text(card.title,
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w700)),
-              const Spacer(),
-              if (groups.isNotEmpty)
-                Text('${groups.length} 组',
-                    style: const TextStyle(
-                        fontSize: 12, color: AppColors.inkSoft)),
-            ],
-          ),
-          if (filterSummary.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            _buildFilterBar(card, []),
+          _buildProductResultHeader(card, groups),
+          if (card.filterSummary.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _buildEditableFilterSummary(card),
           ],
           const SizedBox(height: 8),
           if (groups.isEmpty && emptyReason != null)
@@ -2298,6 +2345,169 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildProductResultHeader(ReplyCard card, List<ProductGroup> groups) {
+    final title = groups.isEmpty ? '暂未找到商品' : '找到 ${groups.length} 组商品';
+    return Row(
+      children: [
+        const Icon(Icons.category_outlined, size: 17, color: AppColors.accent),
+        const SizedBox(width: 6),
+        Text(title,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        const Spacer(),
+        if (card.emptyReason == null && groups.isNotEmpty)
+          Text('可继续筛选',
+              style: const TextStyle(fontSize: 12, color: AppColors.inkSoft)),
+      ],
+    );
+  }
+
+  Widget _buildEditableFilterSummary(ReplyCard card) {
+    final key = _filterEditorKey(card);
+    final editing = _editingFilterKeys.contains(key);
+    final originalText = _editableFilterText(card);
+    final draft = _filterDrafts[key] ?? originalText;
+    final changed = draft.trim().isNotEmpty && draft.trim() != originalText;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.tune, size: 15, color: AppColors.accent),
+              const SizedBox(width: 5),
+              const Text('本轮筛选',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.inkBody)),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    if (editing) {
+                      _editingFilterKeys.remove(key);
+                      _filterDrafts.remove(key);
+                    } else {
+                      _editingFilterKeys.add(key);
+                      _filterDrafts[key] = originalText;
+                    }
+                  });
+                },
+                icon: Icon(editing ? Icons.close : Icons.edit, size: 14),
+                label: Text(editing ? '取消' : '修改'),
+                style: TextButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  minimumSize: const Size(0, 28),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (!editing)
+            _buildFilterBar(card, [])
+          else ...[
+            TextFormField(
+              key: Key('filter_editor_$key'),
+              initialValue: draft,
+              minLines: 1,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                hintText: '例如：索尼黑色耳机 300以内 只看京东 评分4.8以上',
+                isDense: true,
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+              ),
+              style: const TextStyle(fontSize: 13),
+              onChanged: (value) {
+                setState(() {
+                  _filterDrafts[key] = value;
+                });
+              },
+              onFieldSubmitted: (_) {
+                if (changed) {
+                  _submitFilterEdit(key);
+                }
+              },
+            ),
+            if (changed) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: ElevatedButton.icon(
+                  key: Key('filter_submit_$key'),
+                  onPressed: () => _submitFilterEdit(key),
+                  icon: const Icon(Icons.send, size: 14),
+                  label: const Text('提交修改'),
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(0, 34),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    textStyle: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _filterEditorKey(ReplyCard card) {
+    final groupKey =
+        (card.groups ?? []).map((group) => group.groupId).take(3).join('|');
+    return '${card.filterSummary.join('|')}::$groupKey';
+  }
+
+  String _editableFilterText(ReplyCard card) {
+    final parts = <String>[];
+    for (final raw in card.filterSummary) {
+      final value = raw.trim();
+      if (value.startsWith('品类：')) {
+        parts.add(value.substring('品类：'.length));
+      } else if (value.startsWith('颜色：')) {
+        parts.add(value.substring('颜色：'.length));
+      } else if (value.startsWith('预算≤')) {
+        final amount = value.substring('预算≤'.length).replaceAll('元', '').trim();
+        if (amount.isNotEmpty) parts.add('$amount以内');
+      } else if (value.startsWith('品牌：')) {
+        parts.add(value.substring('品牌：'.length));
+      } else if (value.startsWith('平台：')) {
+        parts.add('只看${value.substring('平台：'.length)}');
+      } else if (value.startsWith('排序：')) {
+        parts.add(value.substring('排序：'.length));
+      } else if (value.startsWith('偏好：')) {
+        parts.add(value.substring('偏好：'.length).replaceAll('、', ' '));
+      }
+    }
+    return parts.where((part) => part.trim().isNotEmpty).join(' ');
+  }
+
+  void _submitFilterEdit(String key) {
+    final text = _filterDrafts[key]?.trim() ?? '';
+    if (text.isEmpty) {
+      return;
+    }
+    setState(() {
+      _editingFilterKeys.remove(key);
+    });
+    ref
+        .read(chatControllerProvider.notifier)
+        .sendTextMessage(text, profile: _profileForRequest());
+    _scrollToBottom();
   }
 
   bool _hasRecognitionMeta(ReplyCard card) {
@@ -2426,24 +2636,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
     }
     // Top rating
-    final topRating = platforms
-        .map((p) => p.rating)
-        .reduce((a, b) => a > b ? a : b);
-    final totalReviews = platforms
-        .map((p) => p.sales)
-        .fold<int>(0, (a, b) => a + b);
+    final topRating =
+        platforms.map((p) => p.rating).reduce((a, b) => a > b ? a : b);
+    final totalReviews =
+        platforms.map((p) => p.sales).fold<int>(0, (a, b) => a + b);
+    final bestOffer = cheapest;
+    final isFavorite =
+        bestOffer != null && _favoriteProductIds.contains(bestOffer.productId);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: InkWell(
         onTap: () {
           ref.read(behaviorRecorderProvider).record(
-            BehaviorEventType.productClick,
-            productId: group.groupId,
-            category: group.category,
-            brand: group.brand,
-            price: group.bestPrice,
-          );
+                BehaviorEventType.productClick,
+                productId: group.groupId,
+                category: group.category,
+                brand: group.brand,
+                price: group.bestPrice,
+              );
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => ProductGroupDetailScreen(group: group),
@@ -2490,8 +2701,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         Row(
                           children: [
                             Icon(Icons.star_rounded,
-                                size: 15,
-                                color: AppColors.warn.withAlpha(220)),
+                                size: 15, color: AppColors.warn.withAlpha(220)),
                             const SizedBox(width: 2),
                             Text(topRating.toStringAsFixed(1),
                                 style: const TextStyle(
@@ -2501,8 +2711,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             const SizedBox(width: 4),
                             Text('${_formatCount(totalReviews)}评价',
                                 style: const TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.inkSoft)),
+                                    fontSize: 11, color: AppColors.inkSoft)),
                             const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -2511,8 +2720,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                 color: AppColors.panelSoft,
                                 borderRadius: BorderRadius.circular(5),
                               ),
-                              child: Text(
-                                  '${group.platformCount}个平台',
+                              child: Text('${group.platformCount}个平台',
                                   style: const TextStyle(
                                       fontSize: 10,
                                       color: AppColors.inkSoft,
@@ -2532,7 +2740,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ),
               const SizedBox(height: 10),
               // Price row — platform badge + best price
-              if (cheapest != null)
+              if (bestOffer != null)
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2547,21 +2755,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 7, vertical: 3),
                         decoration: BoxDecoration(
-                          color: platformColor(cheapest.platform)
-                              .withAlpha(22),
+                          color:
+                              platformColor(bestOffer.platform).withAlpha(22),
                           borderRadius: BorderRadius.circular(5),
                         ),
-                        child: Text(
-                            _platformLabel(cheapest.platform),
+                        child: Text(_platformLabel(bestOffer.platform),
                             style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: platformColor(
-                                    cheapest.platform))),
+                                color: platformColor(bestOffer.platform))),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                          '¥${cheapest.price.toStringAsFixed(0)}',
+                      Text('¥${bestOffer.price.toStringAsFixed(0)}',
                           style: const TextStyle(
                               fontSize: 20,
                               height: 1,
@@ -2570,22 +2775,39 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       const SizedBox(width: 4),
                       const Text('起',
                           style: TextStyle(
-                              fontSize: 11,
-                              color: AppColors.inkSoft)),
+                              fontSize: 11, color: AppColors.inkSoft)),
                       const Spacer(),
                       if (otherPrices.isNotEmpty)
                         ...otherPrices.entries.take(2).map(
                               (e) => Padding(
-                                padding:
-                                    const EdgeInsets.only(left: 10),
+                                padding: const EdgeInsets.only(left: 10),
                                 child: Text(
                                   '${_platformLabel(e.key)} ¥${e.value.toStringAsFixed(0)}',
                                   style: const TextStyle(
-                                      fontSize: 11,
-                                      color: AppColors.inkSoft),
+                                      fontSize: 11, color: AppColors.inkSoft),
                                 ),
                               ),
                             ),
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        key: Key('favorite_group_${bestOffer.productId}'),
+                        onPressed: () => _addPlatformOfferToFavorites(bestOffer,
+                            group: group),
+                        icon: Icon(
+                            isFavorite ? Icons.favorite : Icons.favorite_border,
+                            size: 15),
+                        label: Text(isFavorite ? '已收藏' : '收藏',
+                            style: const TextStyle(fontSize: 12)),
+                        style: TextButton.styleFrom(
+                          foregroundColor: isFavorite
+                              ? AppColors.priceRed
+                              : AppColors.inkSoft,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 4),
+                          minimumSize: const Size(0, 30),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -2645,8 +2867,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           Positioned(
             right: -size * 0.15,
             bottom: -size * 0.1,
-            child: Icon(colors.icon, size: size * 0.55,
-                color: Colors.white.withAlpha(30)),
+            child: Icon(colors.icon,
+                size: size * 0.55, color: Colors.white.withAlpha(30)),
           ),
           Center(
             child: Text(initial,
@@ -2662,8 +2884,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   _ThumbColors _thumbColors(String category) {
     return switch (category) {
-      '运动鞋' => _ThumbColors(
-          const Color(0xFF6366F1), const Color(0xFF818CF8), Icons.directions_run),
+      '运动鞋' => _ThumbColors(const Color(0xFF6366F1), const Color(0xFF818CF8),
+          Icons.directions_run),
       '耳机' => _ThumbColors(
           const Color(0xFF0EA5E9), const Color(0xFF38BDF8), Icons.headphones),
       '吹风机' => _ThumbColors(
@@ -2672,8 +2894,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           const Color(0xFFF59E0B), const Color(0xFFFBBF24), Icons.backpack),
       '智能手表' => _ThumbColors(
           const Color(0xFF10B981), const Color(0xFF34D399), Icons.watch),
-      _ => _ThumbColors(
-          const Color(0xFF6366F1), const Color(0xFF818CF8), Icons.shopping_bag_outlined),
+      _ => _ThumbColors(const Color(0xFF6366F1), const Color(0xFF818CF8),
+          Icons.shopping_bag_outlined),
     };
   }
 

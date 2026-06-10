@@ -301,16 +301,16 @@ public class MockAgent {
         }
 
         // Always emit product_group_list + clarification
-        cards.add(Card.productGroupList("匹配商品", groups, filterSummary, emptyReason));
+        cards.add(Card.productGroupList("商品结果", groups, filterSummary, emptyReason));
         cards.add(buildSuggestionCard(keyword, effectiveBrand));
 
         String replyText;
         if (groups.isEmpty()) {
             replyText = emptyReason != null ? emptyReason : "暂无合适的商品。";
         } else if (groups.size() == 1) {
-            replyText = "找到 1 组匹配商品，你更看重哪一点？";
+            replyText = "找到 1 组商品";
         } else {
-            replyText = "找到 " + groups.size() + " 组匹配商品，你更看重哪一点？";
+            replyText = "找到 " + groups.size() + " 组商品";
         }
 
         return new AgentReply(UUID.randomUUID().toString(),
@@ -757,7 +757,7 @@ public class MockAgent {
         if (rec.getConfidence() > 0)
             filterSummary.add("置信度：" + Math.round(rec.getConfidence() * 100) + "%");
 
-        Card pgCard = Card.productGroupList("匹配商品", groups, filterSummary, emptyReason);
+        Card pgCard = Card.productGroupList("商品结果", groups, filterSummary, emptyReason);
         pgCard = pgCard.withRecognitionMeta(
                 rec.getImageId(), rec.getCategory(), rec.getBrand(), rec.getModel(),
                 rec.getKeywords(), rec.getAttributes(),
@@ -765,7 +765,8 @@ public class MockAgent {
                 rec.getExplanation(), rec.getRecognitionId());
 
         return new AgentReply(UUID.randomUUID().toString(), "product_recommendation",
-                "我已经识别了你的商品图片。你更看重哪一点？",
+                groups.isEmpty() ? (emptyReason != null ? emptyReason : "暂无合适的商品。")
+                        : "找到 " + groups.size() + " 组商品",
                 List.of(pgCard, buildSuggestionCard(rec.getCategory(), rec.getBrand())));
     }
 
@@ -775,10 +776,11 @@ public class MockAgent {
         List<ProductGroup> groups = quickSearchGroups(keyword, null, null, null);
         String emptyReason = groups.isEmpty() ? "请输入你想要的商品关键词以开始搜索。" : null;
         List<String> filterSummary = List.of("品类：" + keyword);
-        Card pgCard = Card.productGroupList("匹配商品", groups, filterSummary, emptyReason);
+        Card pgCard = Card.productGroupList("商品结果", groups, filterSummary, emptyReason);
 
         return new AgentReply(UUID.randomUUID().toString(), "clarification",
-                "我已经收到你的需求。你更看重哪一点？",
+                groups.isEmpty() ? (emptyReason != null ? emptyReason : "暂无合适的商品。")
+                        : "找到 " + groups.size() + " 组商品",
                 List.of(pgCard, buildSuggestionCard(category, null)));
     }
 
@@ -837,8 +839,8 @@ public class MockAgent {
         options.add(new Option("price_history", "查看历史价格走势"));
 
         String title = category != null && !category.isBlank()
-                ? "你更想看哪类「" + category + "」推荐？"
-                : "你更看重哪一点？";
+                ? "继续筛选「" + category + "」"
+                : "继续筛选";
         return new Card("clarification", title, null, null, null, null,
                 options,
                 null, null, null, null, null, null,
