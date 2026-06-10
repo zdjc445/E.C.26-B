@@ -17,6 +17,7 @@ PATCH  /api/chat/sessions/{sessionId}
 DELETE /api/chat/sessions/{sessionId}
 POST   /api/recognition
 PATCH  /api/recognition/{recognitionId}/attributes
+GET    /api/ecommerce/status
 ```
 
 当前没有独立商品搜索 API。商品推荐通过聊天消息接口返回。
@@ -146,7 +147,13 @@ POST /api/chat/sessions/{sessionId}/messages
 {
   "text": "用户输入",
   "imageIds": ["uuid"],
-  "selectedOptionIds": ["lowest_price"]
+  "selectedOptionIds": ["lowest_price"],
+  "profile": {
+    "preferredPlatforms": ["京东"],
+    "inferredBrands": ["Sony"],
+    "inferredPriceMin": 200,
+    "inferredPriceMax": 500
+  }
 }
 ```
 
@@ -155,26 +162,25 @@ POST /api/chat/sessions/{sessionId}/messages
 - `text`
 - `imageIds`
 - `selectedOptionIds`
+- `profile`（可选，前端个性化推荐画像）
 
-三者至少有一个有效内容。
+`text`、`imageIds`、`selectedOptionIds` 三者至少有一个有效内容。
 
 ### replyType
 
 | replyType | 说明 |
 |----------|------|
 | clarification | 需要用户补充偏好 |
-| recognition | 图片识别结果与追问 |
-| product_recommendation | 商品列表、比价与推荐 |
+| recognition | 旧版图片识别结果与追问 |
+| product_recommendation | 商品分组与动态建议 |
 
 ### cardType
 
 | cardType | 说明 |
 |----------|------|
 | clarification | 动态建议卡 |
-| recognition | 图片识别结果卡 |
-| product_list | 多平台商品列表卡 |
-| comparison | 平台比价卡 |
-| recommendation | 推荐购买卡 |
+| recognition | 旧版图片识别结果卡 |
+| product_group_list | 同款商品分组卡，当前主商品卡 |
 
 ### 动态建议卡的 options
 
@@ -207,97 +213,71 @@ POST /api/chat/sessions/{sessionId}/messages
   "data": {
     "replyId": "uuid",
     "replyType": "product_recommendation",
-    "text": "我按你的偏好整理了几个平台的选择。",
+    "text": "找到 3 组匹配商品，你更看重哪一点？",
     "cards": [
       {
-        "cardType": "product_list",
-        "title": "多平台商品结果",
+        "cardType": "product_group_list",
+        "title": "匹配商品",
         "filterSummary": ["品类：耳机", "预算≤300元", "颜色：黑色", "品牌：索尼"],
-        "products": [
+        "groups": [
           {
-            "productId": "jd-101",
-            "title": "索尼蓝牙降噪耳机 黑色 高音质",
-            "platform": "京东-mock",
-            "price": 299.0,
-            "originalPrice": 499.0,
-            "shopName": "索尼京东自营",
-            "imageUrl": "",
-            "productUrl": "",
-            "rating": 4.9,
-            "sales": 23000,
-            "tags": ["自营", "降噪"],
-            "reasons": ["价格优惠", "官方/自营渠道"],
-            "score": 7.5,
+            "groupId": "索尼|耳机",
+            "displayTitle": "Sony WH-1000XM5 头戴式降噪耳机",
+            "category": "耳机",
             "brand": "索尼",
-            "priceHistory": [499.0, 459.0, 379.0, 309.0, 299.0],
-            "matchedPreferences": ["low_price", "official_store", "high_rating", "budget_match"]
+            "bestPrice": 299.0,
+            "platformCount": 2,
+            "matchLevel": "strict",
+            "priceRange": {"min": 299.0, "max": 329.0},
+            "thumbnailUrl": "https://example.com/headphone.jpg",
+            "platforms": [
+              {
+                "productId": "headphone-001_京东",
+                "platform": "京东-mock",
+                "title": "Sony WH-1000XM5 头戴式降噪耳机",
+                "price": 299.0,
+                "originalPrice": 399.0,
+                "shopName": "索尼自营旗舰店",
+                "imageUrl": "https://example.com/headphone.jpg",
+                "rating": 4.9,
+                "sales": 23000,
+                "tags": ["京东物流", "正品保障"],
+                "score": 7.5,
+                "brand": "索尼",
+                "priceHistory": [399.0, 379.0, 349.0, 319.0, 299.0],
+                "matchedPreferences": ["low_price", "high_rating", "budget_match"],
+                "specs": [
+                  {"label": "品类", "value": "耳机"},
+                  {"label": "店铺", "value": "索尼自营旗舰店"}
+                ]
+              }
+            ]
           }
+        ],
+        "emptyReason": null
+      },
+      {
+        "cardType": "clarification",
+        "title": "你更看重哪一点？",
+        "options": [
+          {"optionId": "lowest_price", "label": "查看同款低价"},
+          {"optionId": "official_store", "label": "只看官方旗舰店"},
+          {"optionId": "fast_delivery", "label": "配送更快"},
+          {"optionId": "price_history", "label": "查看历史价格走势"}
         ]
-      },
-      {
-        "cardType": "comparison",
-        "title": "平台比价",
-        "platformStats": {
-          "京东-mock": {
-            "platform": "京东-mock",
-            "lowestPrice": 199.0,
-            "averagePrice": 259.0,
-            "productCount": 4,
-            "highlight": "自营保障，物流快"
-          }
-        }
-      },
-      {
-        "cardType": "recommendation",
-        "title": "推荐购买",
-        "productName": "索尼蓝牙降噪耳机",
-        "platform": "京东-mock",
-        "price": 299.0,
-        "reason": "价格、店铺和匹配度综合更适合当前需求。",
-        "decisionScore": 86,
-        "decisionSignals": [
-          {"key": "match", "label": "意图匹配", "score": 85, "explanation": "与关键词「耳机」相关度高。"},
-          {"key": "price", "label": "价格", "score": 92, "explanation": "价格符合预算范围。"},
-          {"key": "reputation", "label": "店铺信誉", "score": 78, "explanation": "评分较高。"},
-          {"key": "channel", "label": "渠道可信", "score": 80, "explanation": "平台与店铺类型评估。"},
-          {"key": "risk", "label": "风险", "score": 40, "explanation": "Mock 数据不可作为真实购物参考。"}
-        ],
-        "evidence": [
-          {"type": "price", "content": "你设置了预算上限 300 元。"},
-          {"type": "brand", "content": "你指定了品牌「索尼」。"}
-        ],
-        "risks": [
-          "当前为 Mock 商品数据，不代表真实平台库存与价格。"
-        ],
-        "productAnalyses": [
-          {
-            "productId": "jd-101",
-            "platform": "京东-mock",
-            "title": "索尼蓝牙降噪耳机",
-            "rank": 1,
-            "score": 88,
-            "strengths": ["价格优惠", "官方/自营渠道"],
-            "weaknesses": []
-          }
-        ],
-        "intentProvider": "rule",
-        "intentFallbackUsed": false,
-        "explanationProvider": "rule",
-        "explanationFallbackUsed": false,
-        "notices": []
       }
     ]
   }
 }
 ```
 
-`product_list.filterSummary` 为当前生效筛选条件摘要。前端用于展示 `当前条件：...`，字段缺失或为空数组时不展示该行。
+`product_group_list.filterSummary` 为当前生效筛选条件摘要。前端用于展示 `当前条件：...`，字段缺失或为空数组时不展示该行。
 
 新增字段：
 
-- 商品卡：`brand`、`priceHistory`、`matchedPreferences`
-- 比价卡 PlatformStats：`averagePrice`
-- 推荐卡：`decisionScore`、`decisionSignals`、`evidence`、`risks`、`productAnalyses`、`intentProvider`、`intentFallbackUsed`、`explanationProvider`、`explanationFallbackUsed`、`notices`
+- 商品分组卡：`groups`、`priceRange`、`platformCount`、`matchLevel`、`emptyReason`
+- 平台报价：`brand`、`priceHistory`、`matchedPreferences`、`specs`
+- 图片识别元数据：图片识别路径下 `product_group_list` 可携带 `imageId`、`category`、`brand`、`model`、`keywords`、`attributes`、`confidence`、`aiProvider`、`fallbackUsed`、`recognitionId`
 
 ## 图片识别
 

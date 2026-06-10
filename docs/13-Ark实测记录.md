@@ -4,7 +4,7 @@
 
 本记录用于说明当前项目在 `AI_PROVIDER=ark` 下的真实 AI 链路表现，重点覆盖图片识别、识别结果进入商品推荐、多轮追加筛选、失败回退和已修复问题。
 
-当前商品数据默认来自公开 Flipkart 样例 + `MockProductSourceProvider` 回退，Ark 只参与图片识别、购物意图结构化解析和推荐解释改写。
+当前商品数据默认来自 `mock-data/mock-data.json`，由 `CompositeProductSourceProvider` 生成四平台 Mock 报价。Ark 只参与图片识别、购物意图结构化解析、查询拆解和推荐解释改写。
 
 ## 测试环境与配置
 
@@ -17,7 +17,7 @@
 - `ARK_ENDPOINT_ID`：本地环境变量配置，不写入仓库
 - `ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3`
 - `AUTH_ENABLED=false`
-- `ecommerceProvider=mock`
+- `ecommerceProvider=mock-data`
 - `chatHistoryStore=memory`
 - `voiceProvider=mock`
 
@@ -32,7 +32,7 @@ GET /api/health
 ```text
 status=ok
 aiProvider=ark
-ecommerceProvider=mock
+ecommerceProvider=mock-data
 chatHistoryStore=memory
 authEnabled=false
 ```
@@ -41,7 +41,7 @@ authEnabled=false
 
 | 用例 | 操作 | 期望结果 |
 |------|------|----------|
-| 健康检查 | 启动后端后访问 `/api/health` | 返回 `status=ok`，`aiProvider=ark`，商品源仍为 `mock` |
+| 健康检查 | 启动后端后访问 `/api/health` | 返回 `status=ok`，`aiProvider=ark`，商品源为 `mock-data` |
 | 图片上传 | App 选择或拍摄商品图 | `/api/images/upload` 成功返回 `imageId` |
 | Ark 图片识别 | 上传头戴式耳机图片后发送 | 返回 `recognition` 卡片，`aiProvider=ark`，`fallbackUsed=false` |
 | 耳机细分品类归一 | Ark 返回 `头戴式蓝牙耳机` 或类似细分词 | 后端通过 taxonomy 归一到标准品类 `耳机` |
@@ -79,7 +79,7 @@ Invalid base64 image_url
 
 ## 当前边界
 
-- 商品结果使用离线公开样例与 Mock 回退，不调用京东、淘宝、拼多多真实接口。
+- 商品结果使用本地 `mock-data` 生成 Mock 报价，不调用京东、淘宝、天猫、拼多多真实接口。
 - 商品卡 `去看看` 只展示平台跳转说明，不打开真实电商页面。
 - 收藏使用现有 demo 用户和内存/当前配置的收藏仓库，未做跨设备账号体系验收。
 - Ark 失败不会中断演示，会通过 fallback 返回 Mock 或规则结果。

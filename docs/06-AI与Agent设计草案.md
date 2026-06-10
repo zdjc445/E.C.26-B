@@ -2,7 +2,7 @@
 
 ## 概述
 
-当前项目已具备 Mock/Ark 图片识别路径、规则/Ark 购物意图解析路径、规则/Ark 推荐解释路径、多轮自然语言追加筛选、公开样例 + 多平台 Mock 商品推荐和聊天式 Agent 卡片输出。AI 与 Agent 设计遵循两个原则：
+当前项目已具备 Mock/Ark 图片识别路径、规则/Ark 购物意图解析路径、规则/Ark 推荐解释路径、多轮自然语言追加筛选、`mock-data` 本地商品检索、多平台 Mock 报价和聊天式 Agent 卡片输出。AI 与 Agent 设计遵循两个原则：
 
 - 对外展示结构化结果和解释摘要，不展示真实模型推理链。
 - 外部服务不可用时保持 Mock 降级，保证演示闭环可运行。
@@ -95,15 +95,18 @@ $env:ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
         ↓
 MockAgent 读取会话上下文
         ↓
-图片：生成 recognition + 动态建议卡（含 6 个差异化选项）
+图片：生成带识别元数据的 product_group_list + 动态建议卡（含 6 个差异化选项）
 文字购物意图：解析品类/预算/颜色/品牌/平台/排序/最低评分/偏好，生成 product_recommendation
-追加筛选：合并当前文本、历史文本和识别卡 category，跨轮累积偏好
+追加筛选：合并当前文本、历史文本和识别元数据 category，跨轮累积偏好
 选项：继承最近文本预算 + 最近识别 category，并合并选项偏好
         ↓
 CategoryResolver 通过 mock-data/category-taxonomy.json 归一标准品类
         ↓
-CompositeProductSourceProvider 合并公开 Flipkart 样例和 MockProductSourceProvider
-MockProductSourceProvider 生成 5 品类 × 3 平台 × 4 商品作为回退
+CompositeProductSourceProvider 读取 mock-data/mock-data.json
+ArkQueryDecomposer / QueryRewriter 拆解并扩展查询
+ProductVectorIndex / HybridRetriever 做本地向量 + BM25 混合检索
+CompositeProductSourceProvider 生成四平台 Mock 报价
+ResultReRanker 做多因子重排和多样性控制
         ↓
 按预算、颜色、品牌、平台、最低评分过滤；按 sortBy 排序
         ↓
@@ -111,9 +114,9 @@ RecommendationScorer 评分并记录 matchedPreferences
         ↓
 RecommendationExplainer / ArkRecommendationExplainer 生成解释
         ↓
-输出 product_list + comparison + recommendation
+输出 product_group_list + clarification
         ↓
-product_list 携带 filterSummary，前端显式展示当前生效条件
+product_group_list 携带 filterSummary，前端显式展示当前生效条件
 ```
 
 ## 当前卡片类型
@@ -121,10 +124,8 @@ product_list 携带 filterSummary，前端显式展示当前生效条件
 | cardType | 说明 |
 |----------|------|
 | clarification | 动态建议卡，按识别 category 生成差异化选项 |
-| recognition | 图片识别结果 |
-| product_list | 多平台商品列表（含当前条件摘要、品牌徽章、偏好命中徽章、价格走势 sparkline） |
-| comparison | 平台比价（含最低价、均价、平台亮点） |
-| recommendation | 推荐购买（含综合分、五维决策信号、证据摘要、风险提示、商品对比、Provider 状态） |
+| product_group_list | 同款商品分组（含当前条件摘要、价格区间、平台报价、品牌徽章、偏好命中徽章、价格走势 sparkline） |
+| recognition | 旧版图片识别结果卡；当前图片识别结果主要并入 `product_group_list` 的识别元数据 |
 
 ## 当前 Agent 解释
 
@@ -144,11 +145,11 @@ product_list 携带 filterSummary，前端显式展示当前生效条件
 
 合并规则：
 
-- **品类：** 当前文本明确品类 > 历史文本明确品类 > 历史识别卡 category > 默认运动鞋；所有入口先经过 `CategoryResolver` 归一为标准品类。
+- **品类：** 当前文本明确品类 > 历史文本明确品类 > 历史识别元数据 category > 默认运动鞋；所有入口先经过 `CategoryResolver` 归一为标准品类。
 - **数值字段（maxPrice/color/brand/平台/排序/最低评分）：** 使用最近一次明确值，当前文本可覆盖历史值。
 - **偏好布尔（officialStore/fastDelivery/lowestPrice/highRating/highSales）：** 跨轮累积。
-- `ProductSearchQuery` 当前包含 `keyword`、`preferences`、`maxPrice`、`color`、`brand`、`platforms`、`sortBy`、`minRating`。
-- `PublicDatasetProductSourceProvider` 和 `MockProductSourceProvider` 在预算过滤后依次进行颜色、品牌、平台、最低评分过滤，最后按 sortBy 排序。
+- `ProductSearchQuery` 当前包含 `keyword`、`preferences`、`maxPrice`、`color`、`brand`、`platforms`、`sortBy`、`minRating`、`profile`。
+- `CompositeProductSourceProvider` 在生成平台报价后进行预算、品牌、平台、最低评分过滤，最后按 sortBy 排序。
 
 ## 品类归一与 RAG 扩展
 
@@ -166,7 +167,7 @@ product_list 携带 filterSummary，前端显式展示当前生效条件
 
 ## 已完成推荐解释增强
 
-当前推荐卡已输出以下结构化解释字段：
+当前后端已生成以下结构化推荐解释字段，前端按当前卡片形态兼容展示：
 
 - `decisionScore`：综合分。
 - `decisionSignals`：意图匹配、价格、店铺信誉、渠道可信、风险。
@@ -188,8 +189,8 @@ product_list 携带 filterSummary，前端显式展示当前生效条件
 | 低价 | `低价`、`便宜`、`价格低`、`价格最低` |
 | 高评分 | `评分高`、`好评`、`评价高` |
 | 高销量 | `销量高`、`爆款`、`热销` |
-| 品牌 | 11 个常见品牌：耐克/阿迪达斯/李宁/安踏/新百伦/索尼/森海塞尔/小米/华为/苹果/戴森/飞利浦/松下，含中英文 |
-| 平台 | `京东`/`拼多多`/`淘宝`/`天猫`/JD/PDD 等 |
+| 品牌 | 覆盖 Nike、Adidas、Sony、戴森、小米等 24 个当前商品目录品牌；规则解析保留中英文常见品牌映射 |
+| 平台 | `京东`/`拼多多`/`淘宝`/`天猫`/JD/PDD 等，后端平台值为 `京东-mock`、`拼多多-mock`、`淘宝-mock`、`天猫-mock` |
 | 排序方式 | `价格从低到高`、`价格升序`、`价格从高到低`、`销量优先`、`好评率最高`、`综合推荐` |
 | 最低评分 | `评分4.8以上`、`4.5星以上`、`4.5分起` |
 
