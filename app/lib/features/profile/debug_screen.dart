@@ -3,7 +3,7 @@ import '../../core/theme/app_theme.dart';
 import '../ecommerce/ecommerce_api.dart';
 import 'health_api.dart';
 
-/// Developer debug screen hidden behind long-press on "关于购物助手".
+/// Developer debug screen hidden behind long-press on "关于识价镜".
 /// Shows backend provider status, auth mode, storage backend, etc.
 class DebugScreen extends StatelessWidget {
   final HealthStatus health;
@@ -12,7 +12,6 @@ class DebugScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(title: const Text('开发者调试')),
@@ -23,7 +22,8 @@ class DebugScreen extends StatelessWidget {
           Card(
             child: Column(
               children: [
-                _row(Icons.smart_toy_outlined, 'AI Provider', health.aiProvider),
+                _row(
+                    Icons.smart_toy_outlined, 'AI Provider', health.aiProvider),
                 const Divider(height: 1),
                 _row(Icons.storage_outlined, '历史存储', health.chatHistoryStore),
                 const Divider(height: 1),
@@ -43,11 +43,14 @@ class DebugScreen extends StatelessWidget {
           Card(
             child: Column(
               children: [
-                _row(Icons.power, 'realProviderEnabled', '${ecom.realProviderEnabled}'),
+                _row(Icons.power, 'realProviderEnabled',
+                    '${ecom.realProviderEnabled}'),
                 const Divider(height: 1),
-                _row(Icons.power_outlined, 'realProviderActive', '${ecom.realProviderActive}'),
+                _row(Icons.power_outlined, 'realProviderActive',
+                    '${ecom.realProviderActive}'),
                 const Divider(height: 1),
-                _row(Icons.link, 'realProviderBaseUrl', ecom.realProviderBaseUrl ?? 'null'),
+                _row(Icons.link, 'realProviderBaseUrl',
+                    ecom.realProviderBaseUrl ?? 'null'),
               ],
             ),
           ),
@@ -77,7 +80,9 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(left: 2, bottom: 8),
       child: Text(title,
           style: const TextStyle(
-              fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.inkSoft)),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.inkSoft)),
     );
   }
 }

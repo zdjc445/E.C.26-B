@@ -24,6 +24,16 @@ Desktop.ini
 
 # ── Logs ──
 *.log
+*.err.log
+
+# ── Archives ──
+*.tar.gz
+*.zip
+
+# ── Runtime artifacts ──
+.codex-run/
+artifacts/
+backup-before-restart-*/
 
 # ── Backend (Java / Maven) ──
 backend/target/

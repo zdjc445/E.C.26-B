@@ -41,8 +41,10 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authControllerProvider);
-    final health = ref.watch(healthStatusProvider).valueOrNull ?? HealthStatus.unknown;
-    final ecom = ref.watch(ecommerceStatusProvider).valueOrNull ?? EcommerceStatus.unknown;
+    final health =
+        ref.watch(healthStatusProvider).valueOrNull ?? HealthStatus.unknown;
+    final ecom = ref.watch(ecommerceStatusProvider).valueOrNull ??
+        EcommerceStatus.unknown;
 
     return Scaffold(
       backgroundColor: AppColors.chatBackground,
@@ -70,7 +72,8 @@ class ProfileScreen extends ConsumerWidget {
                   leading: const Icon(Icons.favorite_border),
                   title: const Text('我的收藏'),
                   subtitle: const Text('查看保存的商品'),
-                  trailing: const Icon(Icons.chevron_right, color: AppColors.inkSoft),
+                  trailing:
+                      const Icon(Icons.chevron_right, color: AppColors.inkSoft),
                   onTap: () => context.push('/favorites'),
                 ),
                 const Divider(height: 1),
@@ -78,7 +81,8 @@ class ProfileScreen extends ConsumerWidget {
                   leading: const Icon(Icons.notifications_outlined),
                   title: const Text('价格提醒'),
                   subtitle: const Text('达到目标价时通知你'),
-                  trailing: const Icon(Icons.chevron_right, color: AppColors.inkSoft),
+                  trailing:
+                      const Icon(Icons.chevron_right, color: AppColors.inkSoft),
                   onTap: () => context.push('/price-alerts'),
                 ),
               ],
@@ -93,22 +97,24 @@ class ProfileScreen extends ConsumerWidget {
               leading: const Icon(Icons.psychology_outlined),
               title: const Text('推荐记忆与隐私'),
               subtitle: const Text('查看和管理用于推荐的偏好'),
-              trailing: const Icon(Icons.chevron_right, color: AppColors.inkSoft),
+              trailing:
+                  const Icon(Icons.chevron_right, color: AppColors.inkSoft),
               onTap: () => context.push('/preferences'),
             ),
           ),
           const SizedBox(height: 12),
 
           // ── About ──
-          _SectionHeader(title: '关于购物助手'),
+          _SectionHeader(title: '关于识价镜'),
           GestureDetector(
             onLongPress: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => DebugScreen(health: health, ecom: ecom)),
+              MaterialPageRoute(
+                  builder: (_) => DebugScreen(health: health, ecom: ecom)),
             ),
             child: Card(
               child: ListTile(
                 leading: const Icon(Icons.info_outlined),
-                title: const Text('E.C.26-B'),
+                title: const Text('识价镜'),
                 subtitle: const Text('拍照识物 · 多平台比价 · 智能推荐'),
                 trailing: const Icon(Icons.chevron_right,
                     size: 18, color: AppColors.inkSoft),
@@ -121,21 +127,24 @@ class ProfileScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildUserCard(BuildContext context, WidgetRef ref, AuthController auth) {
+  Widget _buildUserCard(
+      BuildContext context, WidgetRef ref, AuthController auth) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
             Container(
-              width: 48, height: 48,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 color: AppColors.accent.withAlpha(20),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: Icon(
                 auth.isAuthenticated ? Icons.verified_user : Icons.person,
-                color: AppColors.accent, size: 28,
+                color: AppColors.accent,
+                size: 28,
               ),
             ),
             const SizedBox(width: 12),
@@ -145,21 +154,24 @@ class ProfileScreen extends ConsumerWidget {
                 children: [
                   Text(
                     auth.currentUser.displayName,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     auth.isAuthenticated
                         ? '@${auth.currentUser.username} · 已登录'
                         : '后端认证未启用 · 使用演示用户',
-                    style: const TextStyle(fontSize: 13, color: AppColors.inkSoft),
+                    style:
+                        const TextStyle(fontSize: 13, color: AppColors.inkSoft),
                   ),
                 ],
               ),
             ),
             if (auth.isAuthenticated)
               TextButton(
-                onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+                onPressed: () =>
+                    ref.read(authControllerProvider.notifier).logout(),
                 child: const Text('登出'),
               )
             else
@@ -184,7 +196,9 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(left: 2, bottom: 8),
       child: Text(title,
           style: const TextStyle(
-              fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.inkSoft)),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.inkSoft)),
     );
   }
 }

@@ -12,9 +12,9 @@
     </parent>
 
     <groupId>com.ec26b</groupId>
-    <artifactId>shopping-agent</artifactId>
+    <artifactId>price-lens</artifactId>
     <version>0.1.0</version>
-    <name>shopping-agent</name>
+    <name>识价镜</name>
     <description>AI photo recognition and smart shopping comparison assistant</description>
 
     <properties>

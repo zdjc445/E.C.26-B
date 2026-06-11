@@ -476,158 +476,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   void _openCorrectionSheet(ReplyCard recognitionCard) {
-    final recId = recognitionCard.recognitionId;
-    if (recId == null) return;
-
-    final categoryCtrl =
-        TextEditingController(text: recognitionCard.category ?? '');
-    final brandCtrl = TextEditingController(text: recognitionCard.brand ?? '');
-    final modelCtrl = TextEditingController(text: recognitionCard.model ?? '');
-
-    final attrEntries = <_AttrRow>[];
-    if (recognitionCard.attributes != null) {
-      recognitionCard.attributes!.forEach((k, v) {
-        attrEntries.add(_AttrRow(
-          keyCtrl: TextEditingController(text: k.toString()),
-          valueCtrl: TextEditingController(text: v.toString()),
-        ));
-      });
-    }
-
-    final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 16,
-                bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('修正识别结果',
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: categoryCtrl,
-                      decoration: const InputDecoration(labelText: '商品类别'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: brandCtrl,
-                      decoration: const InputDecoration(labelText: '品牌'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: modelCtrl,
-                      decoration: const InputDecoration(labelText: '型号'),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text('属性',
-                        style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w600)),
-                    ...attrEntries.map((e) => Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Row(
-                            children: [
-                              SizedBox(
-                                width: 70,
-                                child: TextField(
-                                  controller: e.keyCtrl,
-                                  decoration: const InputDecoration(
-                                      hintText: 'key', isDense: true),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: TextField(
-                                  controller: e.valueCtrl,
-                                  decoration: const InputDecoration(
-                                      hintText: 'value', isDense: true),
-                                ),
-                              ),
-                            ],
-                          ),
-                        )),
-                    const SizedBox(height: 8),
-                    TextButton.icon(
-                      onPressed: () {
-                        setSheetState(() {
-                          attrEntries.add(_AttrRow(
-                            keyCtrl: TextEditingController(),
-                            valueCtrl: TextEditingController(),
-                          ));
-                        });
-                      },
-                      icon: const Icon(Icons.add, size: 16),
-                      label: const Text('新增属性'),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => navigator.pop(),
-                          child: const Text('取消'),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          onPressed: () async {
-                            final attrs = <String, dynamic>{};
-                            for (final e in attrEntries) {
-                              final k = e.keyCtrl.text.trim();
-                              if (k.isEmpty) continue;
-                              attrs[k] = e.valueCtrl.text.trim();
-                            }
-                            final payload = {
-                              'category': categoryCtrl.text,
-                              'brand': brandCtrl.text,
-                              'model': modelCtrl.text,
-                              'attributes': attrs,
-                            };
-
-                            final recApi = ref.read(recognitionApiProvider);
-                            try {
-                              final updated =
-                                  await recApi.updateAttributes(recId, payload);
-                              if (!mounted) return;
-                              ref
-                                  .read(chatControllerProvider.notifier)
-                                  .updateRecognitionCard(recId, updated);
-                              navigator.pop();
-                              messenger.showSnackBar(
-                                const SnackBar(content: Text('识别结果已更新')),
-                              );
-                            } catch (_) {
-                              if (mounted) {
-                                messenger.showSnackBar(
-                                  const SnackBar(content: Text('修正失败，请重试')),
-                                );
-                              }
-                            }
-                          },
-                          child: const Text('保存'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RecognitionDetailScreen(
+          recognitionCard: recognitionCard,
+          imagePath: _recognitionImagePath(recognitionCard.imageId),
+        ),
+      ),
     );
   }
 
@@ -657,6 +512,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Widget build(BuildContext context) {
     final controller = ref.watch(chatControllerProvider);
     final messages = controller.messages;
+    final recognitionQuickCard = _latestRecognitionMetaCard(messages);
     ref.listen(chatControllerProvider, (previous, next) {
       final previousCount = previous?.messages.length ?? 0;
       final shouldScroll = previousCount != next.messages.length ||
@@ -678,7 +534,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         title: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('购物助手',
+            Text('识价镜',
                 style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
@@ -723,8 +579,62 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         _buildMessage(messages[index]),
                   ),
           ),
-          _buildInputBar(),
+          if (recognitionQuickCard != null)
+            _buildRecognitionQuickAction(recognitionQuickCard),
+          _buildInputBar(recognitionQuickCard),
         ],
+      ),
+    );
+  }
+
+  ReplyCard? _latestRecognitionMetaCard(List<ChatMessage> messages) {
+    for (final msg in messages.reversed) {
+      final reply = msg.agentReply;
+      if (reply == null) continue;
+      for (final card in reply.cards.reversed) {
+        if (_hasRecognitionMeta(card)) {
+          return card;
+        }
+      }
+    }
+    return null;
+  }
+
+  Widget _buildRecognitionQuickAction(ReplyCard card) {
+    final category = card.category?.trim();
+    final brand = card.brand?.trim();
+    final title = category != null && category.isNotEmpty ? category : '识别结果';
+    final meta =
+        brand != null && brand.isNotEmpty ? brand : _confidenceText(card);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      color: AppColors.panel,
+      child: OutlinedButton.icon(
+        key: const Key('recognition_quick_action'),
+        onPressed: () => _openCorrectionSheet(card),
+        icon: const Icon(Icons.image_search, size: 18),
+        label: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            '查看/修改本次识别结果 · $title · $meta',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        style: OutlinedButton.styleFrom(
+          alignment: Alignment.centerLeft,
+          foregroundColor: AppColors.inkBody,
+          backgroundColor: AppColors.panelSoft,
+          side: BorderSide(color: AppColors.accent.withAlpha(70)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          minimumSize: const Size.fromHeight(42),
+        ),
       ),
     );
   }
@@ -1432,7 +1342,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Widget _buildRecognitionCard(ReplyCard card) {
     final imagePath = _recognitionImagePath(card.imageId);
-    return Container(
+    final box = Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -1520,6 +1430,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 .toList(),
           ),
         ],
+      ),
+    );
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: const Key('recognition_card_box'),
+        onTap: () => _openCorrectionSheet(card),
+        borderRadius: BorderRadius.circular(8),
+        child: box,
       ),
     );
   }
@@ -2485,8 +2404,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       badges.add(_recognitionInfoBadge('来源：${card.aiProvider}'));
     }
 
-    return Container(
-      key: const Key('recognition_result_box'),
+    final box = Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -2515,16 +2433,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                             fontWeight: FontWeight.w600)),
                     const Spacer(),
                     if (hasCorrection)
-                      TextButton.icon(
-                        onPressed: () => _openCorrectionSheet(card),
-                        icon: const Icon(Icons.edit, size: 14),
-                        label: const Text('修正', style: TextStyle(fontSize: 12)),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
-                          minimumSize: const Size(0, 28),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
+                      const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.edit, size: 14, color: AppColors.accent),
+                          SizedBox(width: 4),
+                          Text('修正',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.accent,
+                                  fontWeight: FontWeight.w600)),
+                        ],
                       ),
                   ],
                 ),
@@ -2542,6 +2461,42 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   runSpacing: 6,
                   children: badges,
                 ),
+                if (hasCorrection) ...[
+                  const SizedBox(height: 6),
+                  const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.touch_app, size: 13, color: AppColors.inkSoft),
+                      SizedBox(width: 4),
+                      Text('点击查看/修改识别信息',
+                          style: TextStyle(
+                              fontSize: 11, color: AppColors.inkSoft)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    key: const Key('recognition_result_action_button'),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.lineStrong),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.open_in_new,
+                            size: 15, color: AppColors.inkBody),
+                        SizedBox(width: 8),
+                        Text('查看/修改识别结果',
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: AppColors.inkBody,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                ],
                 if (card.fallbackUsed == true) ...[
                   const SizedBox(height: 6),
                   const Text('已回退到 Mock 识别',
@@ -2560,6 +2515,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
           ),
         ],
+      ),
+    );
+    return Semantics(
+      button: true,
+      label: hasCorrection ? '查看并修改识别结果' : '查看识别结果',
+      child: GestureDetector(
+        key: const Key('recognition_result_box'),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _openCorrectionSheet(card),
+        child: box,
       ),
     );
   }
@@ -2596,7 +2561,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: InkWell(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: () {
           ref.read(behaviorRecorderProvider).record(
                 BehaviorEventType.productClick,
@@ -2611,8 +2577,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
           );
         },
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
+        child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             color: AppColors.panel,
@@ -2871,7 +2836,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   // ── Input bar ───────────────────────────────────────────────
 
-  Widget _buildInputBar() {
+  Widget _buildInputBar(ReplyCard? recognitionQuickCard) {
     final sending = ref.watch(chatControllerProvider).sending;
     final inputFocused = _textFocusNode.hasFocus;
 
@@ -2950,6 +2915,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   tooltip: '语音输入',
                   onPressed: sending ? null : _onVoiceTap,
                 ),
+                if (recognitionQuickCard != null)
+                  _composerIconButton(
+                    key: const Key('recognition_quick_icon_button'),
+                    icon: Icons.image_search,
+                    tooltip: '识别结果',
+                    onPressed: sending
+                        ? null
+                        : () => _openCorrectionSheet(recognitionQuickCard),
+                  ),
                 Expanded(
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 140),
@@ -3021,6 +2995,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _composerIconButton({
+    Key? key,
     required IconData icon,
     required String tooltip,
     required VoidCallback? onPressed,
@@ -3032,6 +3007,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         width: 44,
         height: 44,
         child: IconButton(
+          key: key,
           tooltip: tooltip,
           icon: Icon(icon, size: 21),
           color: enabled ? AppColors.inkSoft : AppColors.lineStrong,
@@ -3097,6 +3073,433 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
       ),
     );
+  }
+}
+
+class RecognitionDetailScreen extends ConsumerStatefulWidget {
+  final ReplyCard recognitionCard;
+  final String? imagePath;
+
+  const RecognitionDetailScreen({
+    super.key,
+    required this.recognitionCard,
+    this.imagePath,
+  });
+
+  @override
+  ConsumerState<RecognitionDetailScreen> createState() =>
+      _RecognitionDetailScreenState();
+}
+
+class _RecognitionDetailScreenState
+    extends ConsumerState<RecognitionDetailScreen> {
+  late final TextEditingController _categoryCtrl;
+  late final TextEditingController _brandCtrl;
+  late final TextEditingController _modelCtrl;
+  final List<_AttrRow> _attrEntries = <_AttrRow>[];
+  bool _saving = false;
+
+  ReplyCard get _card => widget.recognitionCard;
+
+  bool get _canSave {
+    final recId = _card.recognitionId;
+    return recId != null && recId.isNotEmpty;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _categoryCtrl = TextEditingController(text: _card.category ?? '');
+    _brandCtrl = TextEditingController(text: _card.brand ?? '');
+    _modelCtrl = TextEditingController(text: _card.model ?? '');
+
+    final attrs = _card.attributes;
+    if (attrs != null) {
+      attrs.forEach((k, v) {
+        _attrEntries.add(_AttrRow(
+          keyCtrl: TextEditingController(text: k.toString()),
+          valueCtrl: TextEditingController(text: v.toString()),
+        ));
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _categoryCtrl.dispose();
+    _brandCtrl.dispose();
+    _modelCtrl.dispose();
+    for (final entry in _attrEntries) {
+      entry.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final recId = _card.recognitionId;
+    if (recId == null || recId.isEmpty || _saving) return;
+
+    final attrs = <String, dynamic>{};
+    for (final entry in _attrEntries) {
+      final key = entry.keyCtrl.text.trim();
+      if (key.isEmpty) continue;
+      attrs[key] = entry.valueCtrl.text.trim();
+    }
+    final payload = {
+      'category': _categoryCtrl.text,
+      'brand': _brandCtrl.text,
+      'model': _modelCtrl.text,
+      'attributes': attrs,
+    };
+
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() {
+      _saving = true;
+    });
+    try {
+      final updated = await ref
+          .read(recognitionApiProvider)
+          .updateAttributes(recId, payload);
+      if (!mounted) return;
+      ref
+          .read(chatControllerProvider.notifier)
+          .updateRecognitionCard(recId, updated);
+      navigator.pop();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('识别结果已更新')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+      });
+      messenger.showSnackBar(
+        const SnackBar(content: Text('修正失败，请重试')),
+      );
+    }
+  }
+
+  void _addAttribute() {
+    setState(() {
+      _attrEntries.add(_AttrRow(
+        keyCtrl: TextEditingController(),
+        valueCtrl: TextEditingController(),
+      ));
+    });
+  }
+
+  void _removeAttribute(int index) {
+    final entry = _attrEntries.removeAt(index);
+    entry.dispose();
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: const Key('recognition_detail_page'),
+      backgroundColor: AppColors.chatBackground,
+      appBar: AppBar(
+        title: const Text('识别结果详情'),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                children: [
+                  _buildSummary(),
+                  const SizedBox(height: 14),
+                  _buildPrimaryFields(),
+                  const SizedBox(height: 14),
+                  _buildAttributes(),
+                  if (!_canSave) ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      '当前识别结果缺少记录 ID，只能查看，不能保存修改。',
+                      style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            _buildActions(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummary() {
+    final category = _card.category?.trim();
+    final title = category != null && category.isNotEmpty ? category : '未知商品';
+    final badges = <Widget>[
+      _metaBadge(_confidenceText(_card)),
+    ];
+    if (_card.brand != null && _card.brand!.isNotEmpty) {
+      badges.add(_metaBadge('品牌：${_card.brand}'));
+    }
+    if (_card.model != null && _card.model!.isNotEmpty) {
+      badges.add(_metaBadge('型号：${_card.model}'));
+    }
+    if (_card.aiProvider != null && _card.aiProvider!.isNotEmpty) {
+      badges.add(_metaBadge('来源：${_card.aiProvider}'));
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.accent.withAlpha(60)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _thumb(),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '当前识别结果',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.inkSoft,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '识别到：$title',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    height: 1.3,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(spacing: 6, runSpacing: 6, children: badges),
+                if (_card.fallbackUsed == true) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    '已回退到 Mock 识别',
+                    style: TextStyle(fontSize: 12, color: AppColors.warn),
+                  ),
+                ],
+                if (_card.explanation != null &&
+                    _card.explanation!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _card.explanation!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: AppColors.inkSoft,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrimaryFields() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '基础信息',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _categoryCtrl,
+            decoration: const InputDecoration(labelText: '商品类别'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _brandCtrl,
+            decoration: const InputDecoration(labelText: '品牌'),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _modelCtrl,
+            decoration: const InputDecoration(labelText: '型号'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttributes() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                '属性',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: _saving ? null : _addAttribute,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('新增属性'),
+              ),
+            ],
+          ),
+          if (_attrEntries.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                '暂无属性，可手动新增。',
+                style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+              ),
+            ),
+          ...List.generate(_attrEntries.length, (index) {
+            final entry = _attrEntries[index];
+            return Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 88,
+                    child: TextField(
+                      controller: entry.keyCtrl,
+                      enabled: !_saving,
+                      decoration: const InputDecoration(
+                        hintText: 'key',
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: entry.valueCtrl,
+                      enabled: !_saving,
+                      decoration: const InputDecoration(
+                        hintText: 'value',
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '删除属性',
+                    icon: const Icon(Icons.close, size: 18),
+                    color: AppColors.inkSoft,
+                    onPressed: _saving ? null : () => _removeAttribute(index),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActions() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      decoration: const BoxDecoration(
+        color: AppColors.panel,
+        border: Border(top: BorderSide(color: AppColors.line)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: _saving ? null : () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: _canSave && !_saving ? _save : null,
+              child: Text(_saving ? '保存中...' : '保存'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _thumb() {
+    final imagePath = widget.imagePath;
+    if (imagePath != null && File(imagePath).existsSync()) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.file(
+          File(imagePath),
+          key: const Key('recognition_detail_image_thumb'),
+          width: 88,
+          height: 88,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _thumbPlaceholder(),
+        ),
+      );
+    }
+    return _thumbPlaceholder();
+  }
+
+  Widget _thumbPlaceholder() {
+    return Container(
+      key: const Key('recognition_detail_image_placeholder'),
+      width: 88,
+      height: 88,
+      decoration: BoxDecoration(
+        color: AppColors.panelSoft,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: const Center(
+        child: Icon(Icons.image_search, size: 30, color: AppColors.inkSoft),
+      ),
+    );
+  }
+
+  Widget _metaBadge(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.panelSoft,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 11, color: AppColors.inkSoft),
+      ),
+    );
+  }
+
+  String _confidenceText(ReplyCard card) {
+    if (card.confidence == null) return '置信度 --';
+    return '置信度 ${(card.confidence! * 100).toStringAsFixed(0)}%';
   }
 }
 
@@ -3313,7 +3716,7 @@ class _PrivacyNoticeDialog extends StatelessWidget {
     return AlertDialog(
       title: const Text('隐私与个性化推荐'),
       content: const Text(
-        '为了给你更相关的商品推荐，购物助手会：\n\n'
+        '为了给你更相关的商品推荐，识价镜会：\n\n'
         '• 记录你搜索、点击、查看的商品信息\n'
         '• 根据使用行为推断你的购物偏好\n'
         '• 使用偏好优化商品排序\n\n'
@@ -3348,4 +3751,9 @@ class _AttrRow {
   final TextEditingController valueCtrl;
 
   _AttrRow({required this.keyCtrl, required this.valueCtrl});
+
+  void dispose() {
+    keyCtrl.dispose();
+    valueCtrl.dispose();
+  }
 }

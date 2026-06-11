@@ -8,16 +8,26 @@ import 'chat_providers.dart';
 
 /// Full-screen product group detail page.
 /// Shows: hero image, product info, highlights, platform comparison list.
-class ProductGroupDetailScreen extends ConsumerWidget {
+class ProductGroupDetailScreen extends ConsumerStatefulWidget {
   final ProductGroup group;
 
   const ProductGroupDetailScreen({super.key, required this.group});
 
+  @override
+  ConsumerState<ProductGroupDetailScreen> createState() =>
+      _ProductGroupDetailScreenState();
+}
+
+class _ProductGroupDetailScreenState
+    extends ConsumerState<ProductGroupDetailScreen> {
   // Track viewed products in-session to avoid duplicate productView events
   static final _viewedThisSession = <String>{};
+  final Set<String> _favoriteProductIds = <String>{};
+
+  ProductGroup get group => widget.group;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     // Record product view event once per session
     if (_viewedThisSession.add(group.groupId)) {
       final cheapest = group.platforms.isNotEmpty
@@ -574,6 +584,7 @@ class ProductGroupDetailScreen extends ConsumerWidget {
     final trendText = _priceTrendText(p);
     final priceNote = _priceNote(p, discountLabel);
     final reviewSnippets = _reviewSnippets(p, shippingLabel, afterSaleLabel);
+    final isFavorite = _favoriteProductIds.contains(p.productId);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -770,10 +781,12 @@ class ProductGroupDetailScreen extends ConsumerWidget {
               ),
               const SizedBox(width: 4),
               IconButton(
-                tooltip: '收藏',
+                key: Key('detail_favorite_${p.productId}'),
+                tooltip: isFavorite ? '已收藏' : '收藏',
                 onPressed: () => _addOfferToFavorites(context, ref, p),
-                icon: const Icon(Icons.favorite_border, size: 20),
-                color: AppColors.inkSoft,
+                icon: Icon(isFavorite ? Icons.favorite : Icons.favorite_border,
+                    size: 20),
+                color: isFavorite ? AppColors.priceRed : AppColors.inkSoft,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
               ),
@@ -1184,6 +1197,10 @@ class ProductGroupDetailScreen extends ConsumerWidget {
   Future<void> _addOfferToFavorites(
       BuildContext context, WidgetRef ref, PlatformOfferSummary p) async {
     final messenger = ScaffoldMessenger.of(context);
+    if (_favoriteProductIds.contains(p.productId)) {
+      messenger.showSnackBar(const SnackBar(content: Text('已收藏')));
+      return;
+    }
     try {
       final token = ref.read(authControllerProvider).session?.token;
       await ref.read(favoriteApiInChatProvider).add({
@@ -1205,6 +1222,10 @@ class ProductGroupDetailScreen extends ConsumerWidget {
             brand: p.brand.isNotEmpty ? p.brand : group.brand,
             tags: p.tags,
           );
+      if (!mounted) return;
+      setState(() {
+        _favoriteProductIds.add(p.productId);
+      });
       if (context.mounted) {
         messenger.showSnackBar(
           const SnackBar(content: Text('已收藏，可在「我的收藏」查看')),

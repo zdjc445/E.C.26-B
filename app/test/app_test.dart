@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shopping_agent_app/core/theme/app_theme.dart';
 import 'package:shopping_agent_app/features/chat/chat_api.dart';
 import 'package:shopping_agent_app/features/chat/chat_controller.dart';
 import 'package:shopping_agent_app/features/chat/chat_models.dart';
@@ -65,7 +66,7 @@ class FakeHealthApi extends HealthApi {
   Future<HealthStatus> fetch() async {
     return const HealthStatus(
       status: 'ok',
-      app: 'shopping-agent',
+      app: '识价镜',
       stage:
           '聊天式 AI 识别 + 公开样例数据多平台比价 + 7 维度自然语言筛选 + 动态建议卡 + 持久化 + 认证 + 收藏 + 价格提醒 + 语音转写阶段',
       aiProvider: 'ark',
@@ -661,8 +662,8 @@ void main() {
       // Verify lower sections visible without scrolling
       expect(find.text('演示用户'), findsOneWidget);
       expect(find.text('购物偏好'), findsOneWidget);
-      expect(find.text('关于购物助手'), findsOneWidget);
-      expect(find.text('E.C.26-B'), findsOneWidget);
+      expect(find.text('关于识价镜'), findsOneWidget);
+      expect(find.text('识价镜'), findsOneWidget);
     });
 
     testWidgets('displays live health status in debug screen via long-press',
@@ -671,8 +672,8 @@ void main() {
       await tester.tap(find.byIcon(Icons.person_outline));
       await tester.pumpAndSettle();
 
-      // Long-press "关于购物助手" to reveal debug screen
-      await tester.longPress(find.text('E.C.26-B'));
+      // Long-press "关于识价镜" to reveal debug screen
+      await tester.longPress(find.text('识价镜'));
       await tester.pumpAndSettle();
 
       // Debug screen shows backend provider status
@@ -1637,8 +1638,17 @@ void main() {
       expect(find.text('型号：Mock 型号'), findsOneWidget);
       expect(find.text('置信度 82%'), findsOneWidget);
       expect(find.text('修正'), findsOneWidget);
+      expect(find.text('点击查看/修改识别信息'), findsOneWidget);
+      expect(find.text('查看/修改识别结果'), findsOneWidget);
+      expect(find.byKey(const Key('recognition_quick_action')), findsOneWidget);
       expect(find.text('暂未找到商品'), findsOneWidget);
       expect(find.text('查看同款低价'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('recognition_quick_action')));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(TextField, '商品类别'), findsOneWidget);
+      expect(find.text('保存'), findsOneWidget);
     });
 
     testWidgets('product group list hides empty filter summary',
@@ -1980,6 +1990,73 @@ void main() {
       // Default is current platform price (299), not 0.9 * price
       expect(payload['targetPrice'], 299.0);
       expect(payload['note'], '从商品详情页创建');
+    });
+
+    testWidgets('detail page favorite turns heart red after save',
+        (tester) async {
+      final ov = _TestOverrides();
+      const group = ProductGroup(
+        groupId: 'headphone-test',
+        displayTitle: '测试耳机 黑色',
+        category: '耳机',
+        brand: '测试品牌',
+        thumbnailUrl: '',
+        bestPrice: 299,
+        originalPrice: 399,
+        priceRange: PriceRange(min: 299, max: 299),
+        platformCount: 1,
+        platforms: [
+          PlatformOfferSummary(
+            productId: 'headphone-test-jd',
+            platform: '京东-mock',
+            price: 299,
+            originalPrice: 399,
+            shopName: '测试京东自营',
+            productUrl: '',
+            rating: 4.9,
+            sales: 23000,
+            tags: ['自营'],
+            reasons: ['高评分'],
+            title: '测试耳机 黑色 高音质',
+            priceHistory: [399, 369, 329, 299],
+            matchedPreferences: ['budget_match', 'high_rating'],
+          ),
+        ],
+        highlights: ['最低 ¥299', '高评分'],
+        matchLevel: 'strict',
+      );
+
+      await tester.pumpWidget(_wrapChat(
+        const ProductGroupDetailScreen(group: group),
+        overrides: ov,
+      ));
+
+      final favoriteButton =
+          find.byKey(const Key('detail_favorite_headphone-test-jd'));
+      await _dragUntilFinderVisible(tester, favoriteButton);
+
+      IconButton button = tester.widget<IconButton>(favoriteButton);
+      expect((button.icon as Icon).icon, Icons.favorite_border);
+      expect(button.color, AppColors.inkSoft);
+
+      await tester.tap(favoriteButton);
+      await tester.pumpAndSettle();
+
+      expect(ov.favoriteApi.addedPayloads, hasLength(1));
+      expect(ov.favoriteApi.addedPayloads.single['productId'],
+          'headphone-test-jd');
+      expect(find.text('已收藏，可在「我的收藏」查看'), findsOneWidget);
+      button = tester.widget<IconButton>(favoriteButton);
+      expect((button.icon as Icon).icon, Icons.favorite);
+      expect(button.color, AppColors.priceRed);
+
+      await tester.tap(favoriteButton);
+      await tester.pumpAndSettle();
+
+      expect(ov.favoriteApi.addedPayloads, hasLength(1));
+      button = tester.widget<IconButton>(favoriteButton);
+      expect((button.icon as Icon).icon, Icons.favorite);
+      expect(button.color, AppColors.priceRed);
     });
   });
 }

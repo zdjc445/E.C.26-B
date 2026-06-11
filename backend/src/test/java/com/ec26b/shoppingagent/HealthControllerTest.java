@@ -27,7 +27,7 @@ class HealthControllerTest {
         mockMvc.perform(get("/api/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ok"))
-                .andExpect(jsonPath("$.app").value("shopping-agent"))
+                .andExpect(jsonPath("$.app").value("识价镜"))
                 .andExpect(jsonPath("$.stage", containsString("聊天式 AI")))
                 .andExpect(jsonPath("$.aiProvider").value("mock"))
                 .andExpect(jsonPath("$.chatHistoryStore").value("memory"))

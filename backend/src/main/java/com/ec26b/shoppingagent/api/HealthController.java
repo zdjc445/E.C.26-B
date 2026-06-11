@@ -39,7 +39,7 @@ public class HealthController {
     public Map<String, Object> health() {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("status", "ok");
-        result.put("app", "shopping-agent");
+        result.put("app", "识价镜");
         result.put("stage", stage);
         result.put("aiProvider", aiProvider);
         result.put("chatHistoryStore", chatHistoryStore);
