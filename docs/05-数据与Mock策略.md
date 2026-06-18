@@ -7,6 +7,7 @@
 - 默认商品目录文件：`backend/src/main/resources/data/public-product-offers.json`
 - 默认商品源模式：`public-dataset-platforms`
 - 数据来源记录：`jason1966/PromptCloudHQ_flipkart-products`，原始文件名 `flipkart_com-ecommerce_sample.csv`
+- 公开资源构建脚本：`scripts/build_public_product_offers.py`
 - 可切换本地商品目录：`mock-data/mock-data.json`
 - 品类 taxonomy：`mock-data/category-taxonomy.json`
 - 后端商品源：`CompositeProductSourceProvider`
@@ -16,7 +17,14 @@
 
 ## 商品范围
 
-`public-product-offers.json` 当前收录公开样例商品，覆盖当前演示需要的标准品类。系统按标准品类检索，并在运行时扩展为平台报价。
+`public-product-offers.json` 当前收录 243 个公开样例商品，文件大小为 208,827 字节，覆盖运动鞋、耳机、吹风机、背包 4 个标准品类。系统按标准品类检索，并在运行时扩展为四个平台演示报价。
+
+| 标准品类 | 商品数 |
+|----------|--------|
+| 运动鞋 | 59 |
+| 耳机 | 75 |
+| 吹风机 | 17 |
+| 背包 | 92 |
 
 本地 `mock-data/mock-data.json` 仍保留为可切换演示源，当前包含 26 个基础商品，覆盖运动鞋、耳机、吹风机、背包 4 个品类和 24 个品牌。
 
@@ -54,6 +62,32 @@
 - `matchedPreferences`
 
 `sameItemKey` 使用公开样例商品的原始 `productId`，用于把同一商品的不同平台报价聚合为同款商品分组。
+
+公开文件中的商品图片字段是外部 HTTP 链接，仓库内未保存这些商品图片文件。客户端加载图片时需要网络连接，外链失效时显示图片占位状态。
+
+公开资源由脚本从原始 20,000 行 CSV 中按精确关键词规则筛选并确定性生成。使用相同输入文件重复执行时，输出文件 SHA-256 保持一致。
+
+脚本校验的原始 CSV SHA-256：
+
+```text
+56f8f699c9e847356666c2eab3c3ab1244340f6a98ad08e39ea2199ebe993ad1
+```
+
+筛选规则：
+
+- 运动鞋：`sports shoes`、`running shoes`
+- 耳机：`headphone`、`headset`、`earphone`
+- 吹风机：`hair dryer`
+- 背包：`backpack`
+
+公开文件中的数据完整性限制：
+
+- 243 个商品的 `sales` 均为 0，因为原始 CSV 不包含销量字段。
+- 35 个商品的 `rating` 非 0。
+- 73 个商品的原始 `brand` 为空，脚本保留空值，不从标题推断品牌。
+- 平台价格、原价、店铺名和价格历史由 `PublicDatasetProductSourceProvider` 按固定规则生成。
+- 评分、销量、平台价格和店铺信息不得描述为真实电商平台实时数据。
+- Hugging Face 来源页面当前将许可证标记为 `unknown`，正式发布或商业使用前必须确认授权范围。
 
 ## 平台样例报价
 
@@ -168,12 +202,17 @@ mock-data/
 ├── README.md
 ├── category-taxonomy.json
 └── mock-data.json
+
+scripts/
+└── build_public_product_offers.py
 ```
 
 ## 约束
 
 - 公开样例商品只用于演示和测试。
 - 平台报价由系统生成。
+- 商品图片来自公开数据集中的外部链接，不是仓库内置图片。
+- 评分和销量字段稀疏，相关筛选与排序只用于验证代码链路。
 - 不包含真实用户数据。
 - 仓库不包含自行爬取脚本。
 - 不包含真实密钥、Token 或个人信息。

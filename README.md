@@ -30,9 +30,10 @@
 - 多轮自然语言追加筛选：品类、预算、颜色、品牌、平台、排序、最低评分跨轮合并
 - 本地商品检索链路：查询拆解、规则扩展、本地向量/BM25 混合检索、多因子重排
 - 推荐解释增强：综合分、决策信号、证据摘要、风险提示、商品胜因/不足
-- 默认公开样例商品源：`backend/src/main/resources/data/public-product-offers.json`
-- 可切换 `mock-data/mock-data.json` 商品目录：26 个基础商品，覆盖运动鞋、耳机、吹风机、背包 4 个品类和 24 个品牌
-- 多平台样例报价生成：`京东-mock`、`淘宝-mock`、`天猫-mock`、`拼多多-mock`
+- 默认公开商品源：`backend/src/main/resources/data/public-product-offers.json`
+- 243 个基础商品，覆盖运动鞋 59 个、耳机 75 个、吹风机 17 个、背包 92 个
+- 商品图片保留公开数据集中的外部 HTTP 链接
+- 运行时生成 `京东-mock`、`淘宝-mock`、`天猫-mock`、`拼多多-mock` 四个平台演示报价
 - 同款商品分组卡：展示跨平台价格区间、最低价、评价/销量、平台报价明细
 - 商品详情页：购买判断、评价概览、平台比价、精选评论、价格提醒和收藏入口
 - 商品卡显示品牌徽章、偏好命中徽章、价格走势 sparkline
@@ -47,7 +48,9 @@
 
 - 真实 AI 识别需要配置 Ark 环境变量后实测；未配置或调用失败时回退 Mock。
 - Ark 购物意图解析和推荐解释改写需要配置 Ark 环境变量；未配置或调用失败时回退规则解析与规则解释。
-- 商品搜索和比价默认使用公开样例商品数据并生成平台样例报价，不调用真实电商接口；样例报价不代表真实平台商品、价格、库存或评价。
+- 商品搜索和比价默认读取公开样例商品数据，不调用真实电商接口；平台价格、店铺和价格历史由代码生成，不代表真实平台商品、价格、库存或评价。
+- 公开样例数据的销量全部为 0，35 条商品评分非 0，73 条商品原始品牌为空，因此销量、评分和品牌相关功能只用于验证功能链路，不用于证明推荐效果。
+- 公开资源由 `scripts/build_public_product_offers.py` 从来源 CSV 确定性生成；来源页面当前将许可证标记为 `unknown`，正式发布前需要再次确认数据使用权限。
 - 认证、收藏、价格提醒和聊天历史支持内存 / Postgres 仓库切换，演示环境默认可用内存仓库。
 - 真实语音识别仍为后续迭代，当前默认返回 Mock 转写。
 - Agent 输出结构化解释摘要，不输出真实模型推理链。
@@ -127,7 +130,7 @@ C:\flutter\flutter\bin\flutter.bat test
 
 - 后端测试：142 tests，0 failures，0 errors
 - Flutter analyze：0 error / 0 warning，33 条 info
-- Flutter test：39 widget tests，全部通过
+- Flutter test：41 tests（37 个 widget 测试 + 4 个模型解析测试），全部通过
 
 ## 自然语言筛选示例
 
@@ -150,9 +153,9 @@ C:\flutter\flutter\bin\flutter.bat test
 | [docs/README.md](docs/README.md) | 文档目录 |
 | [docs/00-比赛要求.md](docs/00-比赛要求.md) | 赛事官方要求 |
 | [docs/01-项目范围与阶段计划.md](docs/01-项目范围与阶段计划.md) | 项目范围与阶段计划 |
-| [docs/02-系统架构草案.md](docs/02-系统架构草案.md) | 系统架构草案 |
+| [docs/02-系统架构方案.md](docs/02-系统架构方案.md) | 系统架构方案 |
 | [docs/03-核心流程设计.md](docs/03-核心流程设计.md) | 核心流程设计 |
-| [docs/04-API草案.md](docs/04-API草案.md) | API 草案 |
+| [docs/04-API设计.md](docs/04-API设计.md) | API 设计 |
 | [docs/05-数据与Mock策略.md](docs/05-数据与Mock策略.md) | 数据与 Mock 策略 |
 | [docs/06-AI与Agent设计草案.md](docs/06-AI与Agent设计草案.md) | AI 与 Agent 设计草案 |
 | [docs/07-测试与验收计划.md](docs/07-测试与验收计划.md) | 测试与验收计划 |

@@ -1,4 +1,4 @@
-# API 草案
+# API 设计
 
 ## 概述
 
@@ -32,6 +32,13 @@ POST   /api/voice/transcribe
 ```
 
 当前没有独立商品搜索 API。商品推荐通过聊天消息接口返回。
+
+`GET /api/ecommerce/status` 的 `data` 字段包含：
+
+- `activeProvider`：当前实际商品源，默认 `public-dataset-platforms`
+- `samplePlatforms`：四个平台演示报价的展示平台
+- `sampleCategories`：公开样例商品覆盖的标准品类
+- `fallbackPolicy`：公开数据集与真实电商接口边界说明
 
 ## 统一响应格式
 

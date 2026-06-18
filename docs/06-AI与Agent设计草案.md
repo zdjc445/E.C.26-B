@@ -103,8 +103,8 @@ MockAgent 读取会话上下文
 CategoryResolver 通过 mock-data/category-taxonomy.json 归一标准品类
         ↓
 CompositeProductSourceProvider 按 app.product-source.mode 选择商品源
-默认 public-dataset-platforms 读取公开样例商品
-PublicDatasetProductSourceProvider 生成四平台样例报价
+默认 public-dataset-platforms 读取 243 个公开样例商品
+PublicDatasetProductSourceProvider 生成四个平台演示报价
         ↓
 按预算、颜色、品牌、平台、最低评分过滤；按 sortBy 排序
         ↓
@@ -188,7 +188,7 @@ product_group_list 携带 filterSummary，前端显式展示当前生效条件
 | 高评分 | `评分高`、`好评`、`评价高` |
 | 高销量 | `销量高`、`爆款`、`热销` |
 | 品牌 | 规则解析保留 Nike、Adidas、Sony、戴森、小米等中英文常见品牌映射；商品结果取决于当前商品源 |
-| 平台 | `京东`/`拼多多`/`淘宝`/`天猫`/JD/PDD 等，后端平台值为 `京东-mock`、`拼多多-mock`、`淘宝-mock`、`天猫-mock` |
+| 平台 | `京东`/`拼多多`/`淘宝`/`天猫`/JD/PDD 等，规则解析会分别映射到 `京东-mock`、`拼多多-mock`、`淘宝-mock`、`天猫-mock` |
 | 排序方式 | `价格从低到高`、`价格升序`、`价格从高到低`、`销量优先`、`好评率最高`、`综合推荐` |
 | 最低评分 | `评分4.8以上`、`4.5星以上`、`4.5分起` |
 
