@@ -51,7 +51,7 @@ public class CompositeProductSourceProvider implements ProductSourceProvider {
                                           String resourcePath,
                                           @Value("${app.product-source.public-resource:data/public-product-offers.json}")
                                           String publicResourcePath,
-                                          @Value("${app.product-source.mode:public-dataset}")
+                                          @Value("${app.product-source.mode:public-dataset-platforms}")
                                           String mode,
                                           ArkClient arkClient,
                                           RecommendationScorer scorer) {
@@ -60,7 +60,8 @@ public class CompositeProductSourceProvider implements ProductSourceProvider {
         this.reRanker = new ResultReRanker(scorer);
         this.publicDataset = new PublicDatasetProductSourceProvider(
                 scorer, objectMapper, publicResourcePath);
-        this.mode = mode == null || mode.isBlank() ? "public-dataset" : mode.trim();
+        this.mode = mode == null || mode.isBlank()
+                ? "public-dataset-platforms" : mode.trim();
 
         // Build product maps for hybrid retrieval
         List<Map<String, String>> productMaps = catalog.stream()

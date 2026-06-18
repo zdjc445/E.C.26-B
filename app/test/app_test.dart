@@ -14,6 +14,7 @@ import 'package:shopping_agent_app/features/chat/chat_screen.dart';
 import 'package:shopping_agent_app/features/chat/chat_providers.dart';
 import 'package:shopping_agent_app/features/chat/product_group_detail_screen.dart';
 import 'package:shopping_agent_app/features/chat/recognition_api.dart';
+import 'package:shopping_agent_app/features/ecommerce/ecommerce_api.dart';
 import 'package:shopping_agent_app/features/favorites/favorite_api.dart';
 import 'package:shopping_agent_app/features/favorites/favorite_models.dart';
 import 'package:shopping_agent_app/features/profile/health_api.dart';
@@ -600,6 +601,21 @@ Offset? _finderCenter(WidgetTester tester, Finder finder) {
 }
 
 void main() {
+  test('ecommerce status parses public dataset fields', () {
+    final status = EcommerceStatus.fromJson({
+      'activeProvider': 'public-dataset-platforms',
+      'realProviderEnabled': false,
+      'realProviderActive': false,
+      'samplePlatforms': ['京东', '淘宝', '天猫', '拼多多'],
+      'sampleCategories': ['运动鞋', '耳机', '吹风机', '背包'],
+      'fallbackPolicy': '默认读取公开样例商品。',
+    });
+
+    expect(status.activeProvider, 'public-dataset-platforms');
+    expect(status.samplePlatforms, contains('京东'));
+    expect(status.sampleCategories, contains('耳机'));
+  });
+
   group('ChatScreen AppBar', () {
     testWidgets('has history, profile, image, mic, send buttons',
         (tester) async {

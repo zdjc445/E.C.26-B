@@ -6,8 +6,8 @@ class EcommerceStatus {
   final bool realProviderEnabled;
   final bool realProviderActive;
   final String? realProviderBaseUrl;
-  final List<String> mockPlatforms;
-  final List<String> mockCategories;
+  final List<String> samplePlatforms;
+  final List<String> sampleCategories;
   final String? fallbackPolicy;
 
   const EcommerceStatus({
@@ -15,22 +15,22 @@ class EcommerceStatus {
     required this.realProviderEnabled,
     required this.realProviderActive,
     this.realProviderBaseUrl,
-    required this.mockPlatforms,
-    required this.mockCategories,
+    required this.samplePlatforms,
+    required this.sampleCategories,
     this.fallbackPolicy,
   });
 
   factory EcommerceStatus.fromJson(Map<String, dynamic> json) {
     return EcommerceStatus(
-      activeProvider: json['activeProvider'] as String? ?? 'mock',
+      activeProvider: json['activeProvider'] as String? ?? 'unknown',
       realProviderEnabled: json['realProviderEnabled'] as bool? ?? false,
       realProviderActive: json['realProviderActive'] as bool? ?? false,
       realProviderBaseUrl: json['realProviderBaseUrl'] as String?,
-      mockPlatforms: (json['mockPlatforms'] as List?)
+      samplePlatforms: (json['samplePlatforms'] as List?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
-      mockCategories: (json['mockCategories'] as List?)
+      sampleCategories: (json['sampleCategories'] as List?)
               ?.map((e) => e.toString())
               .toList() ??
           const [],
@@ -42,8 +42,8 @@ class EcommerceStatus {
     activeProvider: 'unknown',
     realProviderEnabled: false,
     realProviderActive: false,
-    mockPlatforms: [],
-    mockCategories: [],
+    samplePlatforms: [],
+    sampleCategories: [],
   );
 }
 

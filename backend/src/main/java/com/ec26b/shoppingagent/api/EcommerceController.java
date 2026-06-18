@@ -29,9 +29,11 @@ public class EcommerceController {
         data.put("realProviderEnabled", false);
         data.put("realProviderActive", false);
         data.put("realProviderBaseUrl", null);
-        data.put("mockDataPlatforms", java.util.List.of("京东", "淘宝", "天猫", "拼多多"));
-        data.put("mockDataCategories", java.util.List.of("运动鞋", "耳机", "吹风机", "背包"));
-        data.put("fallbackPolicy", "商品数据按 app.product-source.mode 选择公开样例或本地 Mock 数据。");
+        data.put("samplePlatforms", java.util.List.of("京东", "淘宝", "天猫", "拼多多"));
+        data.put("sampleCategories",
+                java.util.List.of("运动鞋", "耳机", "吹风机", "背包"));
+        data.put("fallbackPolicy",
+                "默认读取公开样例商品，并扩展为四个平台的演示报价；不调用真实电商接口。");
         return ResponseEntity.ok(ApiResponse.success(data));
     }
 }

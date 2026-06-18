@@ -17,6 +17,7 @@ app:
   upload-dir: ${UPLOAD_DIR:../uploads}
   product-source:
     mode: ${PRODUCT_SOURCE_MODE:public-dataset-platforms}
+    mock-resource: ${MOCK_PRODUCT_RESOURCE:../mock-data/mock-data.json}
     public-resource: ${PUBLIC_PRODUCT_RESOURCE:data/public-product-offers.json}
   ai:
     provider: ${AI_PROVIDER:mock}

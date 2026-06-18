@@ -27,11 +27,11 @@ class EcommerceControllerTest {
         mockMvc.perform(get("/api/ecommerce/status"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.activeProvider").value("mock-data"))
+                .andExpect(jsonPath("$.data.activeProvider").value("public-dataset-platforms"))
                 .andExpect(jsonPath("$.data.realProviderEnabled").value(false))
                 .andExpect(jsonPath("$.data.realProviderActive").value(false))
-                .andExpect(jsonPath("$.data.mockDataPlatforms", hasItem("京东")))
-                .andExpect(jsonPath("$.data.mockDataCategories", hasItem("运动鞋")))
-                .andExpect(jsonPath("$.data.mockDataCategories", hasItem("耳机")));
+                .andExpect(jsonPath("$.data.samplePlatforms", hasItem("京东")))
+                .andExpect(jsonPath("$.data.sampleCategories", hasItem("运动鞋")))
+                .andExpect(jsonPath("$.data.sampleCategories", hasItem("耳机")));
     }
 }
