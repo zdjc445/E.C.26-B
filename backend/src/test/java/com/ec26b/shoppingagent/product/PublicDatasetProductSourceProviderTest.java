@@ -18,6 +18,7 @@ class PublicDatasetProductSourceProviderTest {
 
         ProductSearchResult result = source.search(new ProductSearchQuery("耳机", List.of(), null));
 
+        assertEquals(75, result.products().size());
         assertFalse(result.products().isEmpty());
         for (ProductOffer product : result.products()) {
             assertEquals(PublicDatasetProductSourceProvider.PLATFORM, product.platform());
@@ -54,6 +55,7 @@ class PublicDatasetProductSourceProviderTest {
                 new ProductSearchQuery("耳机", List.of(), null),
                 CompositeProductSourceProvider.DOMESTIC_PLATFORMS);
 
+        assertEquals(300, result.products().size());
         assertFalse(result.products().isEmpty());
         assertTrue(result.products().stream()
                 .anyMatch(p -> "京东-mock".equals(p.platform())));
