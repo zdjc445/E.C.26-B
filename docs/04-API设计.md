@@ -68,7 +68,7 @@ POST   /api/voice/transcribe
 GET /api/health
 ```
 
-返回服务状态、应用名、阶段和 AI Provider。
+返回服务状态、应用名、阶段、AI Provider、持久化仓库、认证状态、商品源和语音 Provider。`chatHistoryStore` 当前作为兼容字段返回，值与 `persistenceStore` 一致。
 
 ## 图片上传
 
@@ -399,7 +399,7 @@ POST /api/voice/transcribe
 - `multipart/form-data`
 - 文件字段名固定为 `file`
 
-默认演示环境使用 Mock 转写 Provider，真实语音识别为后续扩展。
+默认演示环境使用 Mock 转写 Provider，返回固定演示文本。配置 `app.voice.provider=ark` 时会尝试 Ark 音频转写，失败后回退 Mock。当前 Flutter 端语音按钮发送演示音频字节，不进行真实录音采集。
 
 ## 后续计划 API
 

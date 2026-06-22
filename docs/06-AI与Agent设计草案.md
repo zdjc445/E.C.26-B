@@ -100,7 +100,7 @@ MockAgent 读取会话上下文
 追加筛选：合并当前文本、历史文本和识别元数据 category，跨轮累积偏好
 选项：继承最近文本预算 + 最近识别 category，并合并选项偏好
         ↓
-CategoryResolver 通过 mock-data/category-taxonomy.json 归一标准品类
+CategoryResolver 通过 backend/src/main/resources/data/category-taxonomy.json 归一标准品类
         ↓
 CompositeProductSourceProvider 按 app.product-source.mode 选择商品源
 默认 public-dataset-platforms 读取 243 个公开样例商品

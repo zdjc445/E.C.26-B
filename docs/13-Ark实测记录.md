@@ -4,7 +4,7 @@
 
 本记录用于说明当前项目在 `AI_PROVIDER=ark` 下的真实 AI 链路表现，重点覆盖图片识别、识别结果进入商品推荐、多轮追加筛选、失败回退和已修复问题。
 
-当前商品数据默认来自 `backend/src/main/resources/data/public-product-offers.json`，由 `CompositeProductSourceProvider` 以 `public-dataset-platforms` 模式生成四平台样例报价。Ark 只参与图片识别、购物意图结构化解析、查询拆解和推荐解释改写。
+当前商品数据默认来自 `backend/src/main/resources/data/public-product-offers.json`，由 `CompositeProductSourceProvider` 以 `public-dataset-platforms` 模式生成四平台样例报价。Ark 只参与图片识别、购物意图结构化解析和推荐解释改写。
 
 ## 测试环境与配置
 
@@ -18,7 +18,7 @@
 - `ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3`
 - `AUTH_ENABLED=false`
 - `ecommerceProvider=public-dataset-platforms`
-- `chatHistoryStore=memory`
+- `persistenceStore=memory`
 - `voiceProvider=mock`
 
 健康检查期望：
@@ -33,7 +33,7 @@ GET /api/health
 status=ok
 aiProvider=ark
 ecommerceProvider=public-dataset-platforms
-chatHistoryStore=memory
+persistenceStore=memory
 authEnabled=false
 ```
 
@@ -73,13 +73,13 @@ Invalid base64 image_url
 
 修复方式：
 
-- 新增 `mock-data/category-taxonomy.json` 维护标准品类、别名和属性 schema。
+- 新增 `backend/src/main/resources/data/category-taxonomy.json` 维护标准品类、别名和属性 schema。
 - `CategoryResolver` 在文本解析、Ark 识别结果、多轮上下文合并和动态建议生成前统一归一。
 - `头戴式蓝牙耳机`、`真无线蓝牙耳机` 等词会归一为 `耳机`。
 
 ## 当前边界
 
-- 商品结果默认使用公开样例商品生成四平台样例报价，不调用京东、淘宝、天猫、拼多多真实接口；本地 `mock-data` 仍可通过配置切换。
+- 商品结果默认使用公开样例商品生成四平台样例报价，不调用京东、淘宝、天猫、拼多多真实接口。
 - 商品卡 `去看看` 只展示平台跳转说明，不打开真实电商页面。
 - 收藏使用现有 demo 用户和内存/当前配置的收藏仓库，未做跨设备账号体系验收。
 - Ark 失败不会中断演示，会通过 fallback 返回 Mock 或规则结果。

@@ -8,8 +8,7 @@
 - 默认商品源模式：`public-dataset-platforms`
 - 数据来源记录：`jason1966/PromptCloudHQ_flipkart-products`，原始文件名 `flipkart_com-ecommerce_sample.csv`
 - 公开资源构建脚本：`scripts/build_public_product_offers.py`
-- 可切换本地商品目录：`mock-data/mock-data.json`
-- 品类 taxonomy：`mock-data/category-taxonomy.json`
+- 品类 taxonomy：`backend/src/main/resources/data/category-taxonomy.json`
 - 后端商品源：`CompositeProductSourceProvider`
 - 商品源状态名：`public-dataset-platforms`
 
@@ -25,8 +24,6 @@
 | 耳机 | 75 |
 | 吹风机 | 17 |
 | 背包 | 92 |
-
-本地 `mock-data/mock-data.json` 仍保留为可切换演示源，当前包含 26 个基础商品，覆盖运动鞋、耳机、吹风机、背包 4 个品类和 24 个品牌。
 
 ## 数据结构
 
@@ -109,16 +106,15 @@
 
 ## 商品检索链路
 
-默认商品源读取公开样例文件，并按平台生成样例报价。旧的本地 `mock-data` 商品源可通过 `PRODUCT_SOURCE_MODE=mock-data` 切换。
+默认商品源读取公开样例文件，并按平台生成样例报价。`PRODUCT_SOURCE_MODE` 支持 `public-dataset-platforms` 和 `public-dataset-only`。
 
 运行链路如下：
 
 ```text
 ProductSearchQuery
-  → ArkQueryDecomposer / QueryRewriter
   → CategoryResolver 归一品类
   → PublicDatasetProductSourceProvider 读取公开样例商品
-  → public-dataset-platforms 生成四平台报价
+  → public-dataset-platforms 生成四平台报价，或 public-dataset-only 保留原始报价
   → RecommendationScorer 规则评分
   → ProductSearchResults 聚合平台统计
   → MockAgent 生成 ProductGroup 同款分组
@@ -142,7 +138,7 @@ ProductSearchQuery
 
 ## 轻量品类 taxonomy
 
-`mock-data/category-taxonomy.json` 维护标准品类、别名和属性 schema。后端 `CategoryResolver` 在文本解析、Ark 识别结果、多轮上下文合并和动态建议卡生成前统一做品类归一。
+`backend/src/main/resources/data/category-taxonomy.json` 维护标准品类、别名和属性 schema。后端 `CategoryResolver` 在文本解析、Ark 识别结果、多轮上下文合并和动态建议卡生成前统一做品类归一。
 
 当前归一示例：
 
@@ -154,7 +150,7 @@ ProductSearchQuery
 
 注意：taxonomy 中保留 `智能手表`，用于识别归一和动态建议；是否返回商品取决于当前商品源是否包含对应公开样例商品。
 
-## 推荐评分与重排
+## 推荐评分
 
 `RecommendationScorer` 根据以下因素生成分数和理由：
 
@@ -178,8 +174,6 @@ ProductSearchQuery
 - `brand_match`
 - `min_rating_met`
 
-`ResultReRanker` 在规则评分基础上叠加文本相关性、用户画像匹配和多样性约束，避免前几组结果被单一品牌或单一平台占满。
-
 ## 推荐解释
 
 `RecommendationExplainer` 基于商品结果和用户偏好生成：
@@ -196,12 +190,8 @@ ProductSearchQuery
 
 ```text
 backend/src/main/resources/data/
-└── public-product-offers.json
-
-mock-data/
-├── README.md
+├── public-product-offers.json
 ├── category-taxonomy.json
-└── mock-data.json
 
 scripts/
 └── build_public_product_offers.py
