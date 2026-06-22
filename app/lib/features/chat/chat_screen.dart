@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,6 +17,8 @@ import '../memory/onboarding_dialog.dart';
 import '../memory/query_keywords.dart';
 import '../memory/user_profile.dart';
 import 'product_group_detail_screen.dart';
+import 'product_thumb_painter.dart';
+import 'recognition_detail_screen.dart';
 
 final voiceApiProvider = Provider<VoiceApi>((ref) {
   return VoiceApi(baseUrl: ref.watch(apiBaseUrlProvider));
@@ -395,7 +396,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       color: AppColors.priceRed)),
               const SizedBox(height: 12),
               Text(
-                '当前演示使用 Mock 商品数据，不会打开真实电商页面。正式接入后将跳转到$platform商品详情页。',
+                '当前演示使用公开样例商品数据，不会打开真实电商页面。正式接入后将跳转到$platform商品详情页。',
                 style: const TextStyle(
                     fontSize: 13, height: 1.45, color: AppColors.inkSoft),
               ),
@@ -1118,7 +1119,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  Widget _alternativeProductRow(_AlternativeProductView item) {
+  Widget _alternativeProductRow(AlternativeProductView item) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 7),
       decoration: const BoxDecoration(
@@ -1223,10 +1224,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return '价格、评价和售后信息已按当前条件整理。';
   }
 
-  List<_AlternativeProductView> _alternativeProducts(
+  List<AlternativeProductView> _alternativeProducts(
       ReplyCard card, List<ProductItem> products) {
     final analyses = card.productAnalyses ?? const <ProductAnalysis>[];
-    final items = <_AlternativeProductView>[];
+    final items = <AlternativeProductView>[];
     for (final analysis in analyses.take(3)) {
       final product = _productForAnalysis(analysis, products);
       final title = product != null
@@ -1252,7 +1253,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   : _defaultProductCaution(product),
               maxLength: 24) ??
           '购买前核对规格';
-      items.add(_AlternativeProductView(
+      items.add(AlternativeProductView(
         title: title,
         platform: platform,
         price: price,
@@ -1842,7 +1843,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         children: [
           Positioned.fill(
             child: CustomPaint(
-              painter: _ProductThumbPainter(
+              painter: ProductThumbPainter(
                 icon: _productIcon(product),
                 accent: accent,
                 lineColor: AppColors.inkSoft.withAlpha(80),
@@ -2807,19 +2808,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  _ThumbColors _thumbColors(String category) {
+  ThumbColors _thumbColors(String category) {
     return switch (category) {
-      '运动鞋' => _ThumbColors(const Color(0xFF6366F1), const Color(0xFF818CF8),
+      '运动鞋' => ThumbColors(const Color(0xFF6366F1), const Color(0xFF818CF8),
           Icons.directions_run),
-      '耳机' => _ThumbColors(
+      '耳机' => ThumbColors(
           const Color(0xFF0EA5E9), const Color(0xFF38BDF8), Icons.headphones),
-      '吹风机' => _ThumbColors(
+      '吹风机' => ThumbColors(
           const Color(0xFFF43F5E), const Color(0xFFFB7185), Icons.air),
-      '背包' => _ThumbColors(
+      '背包' => ThumbColors(
           const Color(0xFFF59E0B), const Color(0xFFFBBF24), Icons.backpack),
-      '智能手表' => _ThumbColors(
+      '智能手表' => ThumbColors(
           const Color(0xFF10B981), const Color(0xFF34D399), Icons.watch),
-      _ => _ThumbColors(const Color(0xFF6366F1), const Color(0xFF818CF8),
+      _ => ThumbColors(const Color(0xFF6366F1), const Color(0xFF818CF8),
           Icons.shopping_bag_outlined),
     };
   }
@@ -3075,640 +3076,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 }
-
-class RecognitionDetailScreen extends ConsumerStatefulWidget {
-  final ReplyCard recognitionCard;
-  final String? imagePath;
-
-  const RecognitionDetailScreen({
-    super.key,
-    required this.recognitionCard,
-    this.imagePath,
-  });
-
-  @override
-  ConsumerState<RecognitionDetailScreen> createState() =>
-      _RecognitionDetailScreenState();
-}
-
-class _RecognitionDetailScreenState
-    extends ConsumerState<RecognitionDetailScreen> {
-  late final TextEditingController _categoryCtrl;
-  late final TextEditingController _brandCtrl;
-  late final TextEditingController _modelCtrl;
-  final List<_AttrRow> _attrEntries = <_AttrRow>[];
-  bool _saving = false;
-
-  ReplyCard get _card => widget.recognitionCard;
-
-  bool get _canSave {
-    final recId = _card.recognitionId;
-    return recId != null && recId.isNotEmpty;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _categoryCtrl = TextEditingController(text: _card.category ?? '');
-    _brandCtrl = TextEditingController(text: _card.brand ?? '');
-    _modelCtrl = TextEditingController(text: _card.model ?? '');
-
-    final attrs = _card.attributes;
-    if (attrs != null) {
-      attrs.forEach((k, v) {
-        _attrEntries.add(_AttrRow(
-          keyCtrl: TextEditingController(text: k.toString()),
-          valueCtrl: TextEditingController(text: v.toString()),
-        ));
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _categoryCtrl.dispose();
-    _brandCtrl.dispose();
-    _modelCtrl.dispose();
-    for (final entry in _attrEntries) {
-      entry.dispose();
-    }
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final recId = _card.recognitionId;
-    if (recId == null || recId.isEmpty || _saving) return;
-
-    final attrs = <String, dynamic>{};
-    for (final entry in _attrEntries) {
-      final key = entry.keyCtrl.text.trim();
-      if (key.isEmpty) continue;
-      attrs[key] = entry.valueCtrl.text.trim();
-    }
-    final payload = {
-      'category': _categoryCtrl.text,
-      'brand': _brandCtrl.text,
-      'model': _modelCtrl.text,
-      'attributes': attrs,
-    };
-
-    final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-    setState(() {
-      _saving = true;
-    });
-    try {
-      final updated = await ref
-          .read(recognitionApiProvider)
-          .updateAttributes(recId, payload);
-      if (!mounted) return;
-      ref
-          .read(chatControllerProvider.notifier)
-          .updateRecognitionCard(recId, updated);
-      navigator.pop();
-      messenger.showSnackBar(
-        const SnackBar(content: Text('识别结果已更新')),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _saving = false;
-      });
-      messenger.showSnackBar(
-        const SnackBar(content: Text('修正失败，请重试')),
-      );
-    }
-  }
-
-  void _addAttribute() {
-    setState(() {
-      _attrEntries.add(_AttrRow(
-        keyCtrl: TextEditingController(),
-        valueCtrl: TextEditingController(),
-      ));
-    });
-  }
-
-  void _removeAttribute(int index) {
-    final entry = _attrEntries.removeAt(index);
-    entry.dispose();
-    setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      key: const Key('recognition_detail_page'),
-      backgroundColor: AppColors.chatBackground,
-      appBar: AppBar(
-        title: const Text('识别结果详情'),
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-                children: [
-                  _buildSummary(),
-                  const SizedBox(height: 14),
-                  _buildPrimaryFields(),
-                  const SizedBox(height: 14),
-                  _buildAttributes(),
-                  if (!_canSave) ...[
-                    const SizedBox(height: 12),
-                    const Text(
-                      '当前识别结果缺少记录 ID，只能查看，不能保存修改。',
-                      style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            _buildActions(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSummary() {
-    final category = _card.category?.trim();
-    final title = category != null && category.isNotEmpty ? category : '未知商品';
-    final badges = <Widget>[
-      _metaBadge(_confidenceText(_card)),
-    ];
-    if (_card.brand != null && _card.brand!.isNotEmpty) {
-      badges.add(_metaBadge('品牌：${_card.brand}'));
-    }
-    if (_card.model != null && _card.model!.isNotEmpty) {
-      badges.add(_metaBadge('型号：${_card.model}'));
-    }
-    if (_card.aiProvider != null && _card.aiProvider!.isNotEmpty) {
-      badges.add(_metaBadge('来源：${_card.aiProvider}'));
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.accent.withAlpha(60)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _thumb(),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '当前识别结果',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.inkSoft,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  '识别到：$title',
-                  style: const TextStyle(
-                    fontSize: 17,
-                    height: 1.3,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(spacing: 6, runSpacing: 6, children: badges),
-                if (_card.fallbackUsed == true) ...[
-                  const SizedBox(height: 8),
-                  const Text(
-                    '已回退到 Mock 识别',
-                    style: TextStyle(fontSize: 12, color: AppColors.warn),
-                  ),
-                ],
-                if (_card.explanation != null &&
-                    _card.explanation!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    _card.explanation!,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      height: 1.4,
-                      color: AppColors.inkSoft,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPrimaryFields() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '基础信息',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _categoryCtrl,
-            decoration: const InputDecoration(labelText: '商品类别'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _brandCtrl,
-            decoration: const InputDecoration(labelText: '品牌'),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _modelCtrl,
-            decoration: const InputDecoration(labelText: '型号'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAttributes() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text(
-                '属性',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-              ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: _saving ? null : _addAttribute,
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('新增属性'),
-              ),
-            ],
-          ),
-          if (_attrEntries.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                '暂无属性，可手动新增。',
-                style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
-              ),
-            ),
-          ...List.generate(_attrEntries.length, (index) {
-            final entry = _attrEntries[index];
-            return Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 88,
-                    child: TextField(
-                      controller: entry.keyCtrl,
-                      enabled: !_saving,
-                      decoration: const InputDecoration(
-                        hintText: 'key',
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: entry.valueCtrl,
-                      enabled: !_saving,
-                      decoration: const InputDecoration(
-                        hintText: 'value',
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: '删除属性',
-                    icon: const Icon(Icons.close, size: 18),
-                    color: AppColors.inkSoft,
-                    onPressed: _saving ? null : () => _removeAttribute(index),
-                  ),
-                ],
-              ),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActions() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      decoration: const BoxDecoration(
-        color: AppColors.panel,
-        border: Border(top: BorderSide(color: AppColors.line)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: _saving ? null : () => Navigator.of(context).pop(),
-              child: const Text('取消'),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: ElevatedButton(
-              onPressed: _canSave && !_saving ? _save : null,
-              child: Text(_saving ? '保存中...' : '保存'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _thumb() {
-    final imagePath = widget.imagePath;
-    if (imagePath != null && File(imagePath).existsSync()) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Image.file(
-          File(imagePath),
-          key: const Key('recognition_detail_image_thumb'),
-          width: 88,
-          height: 88,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _thumbPlaceholder(),
-        ),
-      );
-    }
-    return _thumbPlaceholder();
-  }
-
-  Widget _thumbPlaceholder() {
-    return Container(
-      key: const Key('recognition_detail_image_placeholder'),
-      width: 88,
-      height: 88,
-      decoration: BoxDecoration(
-        color: AppColors.panelSoft,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: const Center(
-        child: Icon(Icons.image_search, size: 30, color: AppColors.inkSoft),
-      ),
-    );
-  }
-
-  Widget _metaBadge(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.panelSoft,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 11, color: AppColors.inkSoft),
-      ),
-    );
-  }
-
-  String _confidenceText(ReplyCard card) {
-    if (card.confidence == null) return '置信度 --';
-    return '置信度 ${(card.confidence! * 100).toStringAsFixed(0)}%';
-  }
-}
-
-class _AlternativeProductView {
-  final String title;
-  final String platform;
-  final String price;
-  final String strength;
-  final String caution;
-
-  const _AlternativeProductView({
-    required this.title,
-    required this.platform,
-    required this.price,
-    required this.strength,
-    required this.caution,
-  });
-}
-
-class _ProductThumbPainter extends CustomPainter {
-  final IconData icon;
-  final Color accent;
-  final Color lineColor;
-  final String text;
-
-  const _ProductThumbPainter({
-    required this.icon,
-    required this.accent,
-    required this.lineColor,
-    required this.text,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final softPaint = Paint()
-      ..color = accent.withAlpha(18)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(size.width * 0.68, size.height * 0.28),
-        size.width * 0.28, softPaint);
-    canvas.drawCircle(Offset(size.width * 0.28, size.height * 0.78),
-        size.width * 0.18, softPaint);
-
-    if (text.contains('耳机')) {
-      _paintHeadphones(canvas, size);
-    } else if (text.contains('鞋')) {
-      _paintShoe(canvas, size);
-    } else if (text.contains('吹风机')) {
-      _paintHairDryer(canvas, size);
-    } else if (text.contains('背包') || text.contains('双肩')) {
-      _paintBag(canvas, size);
-    } else if (text.contains('手表')) {
-      _paintWatch(canvas, size);
-    } else {
-      _paintIcon(canvas, size);
-    }
-  }
-
-  void _paintHeadphones(Canvas canvas, Size size) {
-    final stroke = Paint()
-      ..color = accent
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4
-      ..strokeCap = StrokeCap.round;
-    final fill = Paint()
-      ..color = accent.withAlpha(170)
-      ..style = PaintingStyle.fill;
-    canvas.drawArc(
-      Rect.fromLTWH(size.width * 0.24, size.height * 0.20, size.width * 0.52,
-          size.height * 0.54),
-      math.pi,
-      math.pi,
-      false,
-      stroke,
-    );
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(size.width * 0.23, size.height * 0.48,
-                size.width * 0.17, size.height * 0.27),
-            const Radius.circular(8)),
-        fill);
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(size.width * 0.60, size.height * 0.48,
-                size.width * 0.17, size.height * 0.27),
-            const Radius.circular(8)),
-        fill);
-    canvas.drawLine(Offset(size.width * 0.40, size.height * 0.72),
-        Offset(size.width * 0.60, size.height * 0.72), stroke);
-  }
-
-  void _paintShoe(Canvas canvas, Size size) {
-    final fill = Paint()
-      ..color = accent.withAlpha(190)
-      ..style = PaintingStyle.fill;
-    final sole = Paint()
-      ..color = lineColor
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
-    final path = Path()
-      ..moveTo(size.width * 0.20, size.height * 0.58)
-      ..quadraticBezierTo(size.width * 0.43, size.height * 0.34,
-          size.width * 0.62, size.height * 0.48)
-      ..quadraticBezierTo(size.width * 0.76, size.height * 0.58,
-          size.width * 0.84, size.height * 0.64)
-      ..quadraticBezierTo(size.width * 0.67, size.height * 0.72,
-          size.width * 0.23, size.height * 0.70)
-      ..close();
-    canvas.drawPath(path, fill);
-    canvas.drawLine(Offset(size.width * 0.18, size.height * 0.73),
-        Offset(size.width * 0.82, size.height * 0.74), sole);
-  }
-
-  void _paintHairDryer(Canvas canvas, Size size) {
-    final fill = Paint()
-      ..color = accent.withAlpha(185)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(size.width * 0.22, size.height * 0.35,
-                size.width * 0.36, size.height * 0.24),
-            const Radius.circular(10)),
-        fill);
-    final nozzle = Path()
-      ..moveTo(size.width * 0.56, size.height * 0.39)
-      ..lineTo(size.width * 0.82, size.height * 0.35)
-      ..lineTo(size.width * 0.82, size.height * 0.56)
-      ..lineTo(size.width * 0.56, size.height * 0.53)
-      ..close();
-    canvas.drawPath(nozzle, fill);
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(size.width * 0.34, size.height * 0.55,
-                size.width * 0.14, size.height * 0.28),
-            const Radius.circular(6)),
-        fill);
-  }
-
-  void _paintBag(Canvas canvas, Size size) {
-    final fill = Paint()
-      ..color = accent.withAlpha(180)
-      ..style = PaintingStyle.fill;
-    final stroke = Paint()
-      ..color = lineColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(size.width * 0.28, size.height * 0.32,
-                size.width * 0.44, size.height * 0.46),
-            const Radius.circular(10)),
-        fill);
-    canvas.drawArc(
-        Rect.fromLTWH(size.width * 0.36, size.height * 0.22, size.width * 0.28,
-            size.height * 0.25),
-        math.pi,
-        math.pi,
-        false,
-        stroke);
-    canvas.drawLine(Offset(size.width * 0.35, size.height * 0.52),
-        Offset(size.width * 0.65, size.height * 0.52), stroke);
-  }
-
-  void _paintWatch(Canvas canvas, Size size) {
-    final fill = Paint()
-      ..color = accent.withAlpha(180)
-      ..style = PaintingStyle.fill;
-    final band = Paint()
-      ..color = lineColor
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(size.width * 0.43, size.height * 0.18,
-                size.width * 0.14, size.height * 0.62),
-            const Radius.circular(7)),
-        band);
-    canvas.drawCircle(
-        Offset(size.width * 0.50, size.height * 0.50), size.width * 0.22, fill);
-  }
-
-  void _paintIcon(Canvas canvas, Size size) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: String.fromCharCode(icon.codePoint),
-        style: TextStyle(
-          fontSize: 34,
-          color: accent.withAlpha(185),
-          fontFamily: icon.fontFamily,
-          package: icon.fontPackage,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    painter.paint(
-      canvas,
-      Offset(
-          (size.width - painter.width) / 2, (size.height - painter.height) / 2),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _ProductThumbPainter oldDelegate) {
-    return oldDelegate.icon != icon ||
-        oldDelegate.accent != accent ||
-        oldDelegate.lineColor != lineColor ||
-        oldDelegate.text != text;
-  }
-}
-
 /// Privacy notice shown before onboarding on first launch.
 class _PrivacyNoticeDialog extends StatelessWidget {
   @override
@@ -3736,24 +3103,5 @@ class _PrivacyNoticeDialog extends StatelessWidget {
         ),
       ],
     );
-  }
-}
-
-class _ThumbColors {
-  final Color bg;
-  final Color bg2;
-  final IconData icon;
-  const _ThumbColors(this.bg, this.bg2, this.icon);
-}
-
-class _AttrRow {
-  final TextEditingController keyCtrl;
-  final TextEditingController valueCtrl;
-
-  _AttrRow({required this.keyCtrl, required this.valueCtrl});
-
-  void dispose() {
-    keyCtrl.dispose();
-    valueCtrl.dispose();
   }
 }

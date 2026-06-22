@@ -6,7 +6,7 @@ class HealthStatus {
   final String app;
   final String stage;
   final String aiProvider;
-  final String chatHistoryStore;
+  final String persistenceStore;
   final bool authEnabled;
   final String ecommerceProvider;
   final String voiceProvider;
@@ -17,7 +17,7 @@ class HealthStatus {
     required this.app,
     required this.stage,
     required this.aiProvider,
-    required this.chatHistoryStore,
+    required this.persistenceStore,
     required this.authEnabled,
     required this.ecommerceProvider,
     required this.voiceProvider,
@@ -30,7 +30,9 @@ class HealthStatus {
       app: json['app'] as String? ?? 'unknown',
       stage: json['stage'] as String? ?? 'unknown',
       aiProvider: json['aiProvider'] as String? ?? 'unknown',
-      chatHistoryStore: json['chatHistoryStore'] as String? ?? 'unknown',
+      persistenceStore: json['persistenceStore'] as String? ??
+          json['chatHistoryStore'] as String? ??
+          'unknown',
       authEnabled: json['authEnabled'] as bool? ?? false,
       ecommerceProvider: json['ecommerceProvider'] as String? ?? 'mock',
       voiceProvider: json['voiceProvider'] as String? ?? 'mock',
@@ -43,7 +45,7 @@ class HealthStatus {
     app: 'unknown',
     stage: 'unknown',
     aiProvider: 'unknown',
-    chatHistoryStore: 'unknown',
+    persistenceStore: 'unknown',
     authEnabled: false,
     ecommerceProvider: 'unknown',
     voiceProvider: 'unknown',

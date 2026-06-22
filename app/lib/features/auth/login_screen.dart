@@ -5,14 +5,14 @@ import '../../core/theme/app_theme.dart';
 import 'auth_controller.dart';
 
 /// Login + register screen.
-class LoginPlaceholder extends ConsumerStatefulWidget {
-  const LoginPlaceholder({super.key});
+class LoginScreen extends ConsumerStatefulWidget {
+  const LoginScreen({super.key});
 
   @override
-  ConsumerState<LoginPlaceholder> createState() => _LoginPlaceholderState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginPlaceholderState extends ConsumerState<LoginPlaceholder>
+class _LoginScreenState extends ConsumerState<LoginScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   final _loginUser = TextEditingController();

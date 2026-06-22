@@ -25,7 +25,7 @@ class DebugScreen extends StatelessWidget {
                 _row(
                     Icons.smart_toy_outlined, 'AI Provider', health.aiProvider),
                 const Divider(height: 1),
-                _row(Icons.storage_outlined, '历史存储', health.chatHistoryStore),
+                _row(Icons.storage_outlined, '持久化存储', health.persistenceStore),
                 const Divider(height: 1),
                 _row(Icons.shopping_bag_outlined, '商品数据源', ecom.activeProvider),
                 const Divider(height: 1),

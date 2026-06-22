@@ -21,7 +21,7 @@ class QueryKeywordExtractor {
     );
   }
 
-  // ── Taxonomy (mirrors mock-data/category-taxonomy.json) ──────
+  // ── Taxonomy (mirrors backend/src/main/resources/data/category-taxonomy.json) ──────
 
   static const _taxonomy = <({String name, List<String> aliases})>[
     (name: '运动鞋', aliases: [

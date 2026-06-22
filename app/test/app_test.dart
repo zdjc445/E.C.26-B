@@ -71,7 +71,7 @@ class FakeHealthApi extends HealthApi {
       stage:
           '聊天式 AI 识别 + 公开样例数据多平台比价 + 7 维度自然语言筛选 + 动态建议卡 + 持久化 + 认证 + 收藏 + 价格提醒 + 语音转写阶段',
       aiProvider: 'ark',
-      chatHistoryStore: 'memory',
+      persistenceStore: 'memory',
       authEnabled: false,
       ecommerceProvider: 'mock',
       voiceProvider: 'mock',
@@ -1082,7 +1082,7 @@ void main() {
               {
                 'cardType': 'recommendation',
                 'title': '推荐购买',
-                'productName': 'Mock 商品',
+                'productName': '样例商品',
                 'platform': '京东-mock',
                 'price': 299.0,
                 'reason': '综合评分较高',
@@ -1101,7 +1101,7 @@ void main() {
       expect(find.text('平台比价'), findsOneWidget);
       expect(find.text('京东'), findsWidgets);
       expect(find.text('拼多多'), findsOneWidget);
-      expect(find.text('Mock 商品'), findsOneWidget);
+      expect(find.text('样例商品'), findsOneWidget);
     });
 
     testWidgets('voice button fills transcribed text', (tester) async {
@@ -1125,13 +1125,13 @@ void main() {
       completer.complete(AgentReply(
         replyId: 'reply-empty',
         replyType: 'product_recommendation',
-        text: '当前预算下暂无合适的 Mock 商品',
+        text: '当前预算下暂无合适的样例商品',
         cards: const [
           ReplyCard(
             cardType: 'product_group_list',
             title: '商品结果',
             groups: [],
-            emptyReason: '当前预算下暂无合适的 Mock 商品，请放宽条件。',
+            emptyReason: '当前预算下暂无合适的样例商品，请放宽条件。',
           ),
           ReplyCard(
             cardType: 'clarification',
@@ -1145,7 +1145,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('暂未找到商品'), findsOneWidget);
-      expect(find.text('当前预算下暂无合适的 Mock 商品，请放宽条件。'), findsOneWidget);
+      expect(find.text('当前预算下暂无合适的样例商品，请放宽条件。'), findsOneWidget);
     });
 
     testWidgets('product group list shows lightweight summary', (tester) async {
@@ -1487,7 +1487,7 @@ void main() {
       expect(find.text('即将跳转到京东'), findsOneWidget);
       expect(find.text('京东 · 京东自营'), findsWidgets);
       expect(find.text('¥299'), findsWidgets);
-      expect(find.textContaining('当前演示使用 Mock 商品数据'), findsOneWidget);
+      expect(find.textContaining('当前演示使用公开样例商品数据'), findsOneWidget);
       expect(find.text('知道了'), findsOneWidget);
     });
 
