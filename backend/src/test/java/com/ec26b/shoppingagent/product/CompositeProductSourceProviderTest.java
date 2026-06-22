@@ -7,81 +7,76 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CompositeProductSourceProviderTest {
 
     @Test
-    void shouldReturnDomesticPlatformsOnly() {
-        CompositeProductSourceProvider provider = new CompositeProductSourceProvider(
-                new ObjectMapper(), "../mock-data/mock-data.json", null, new RecommendationScorer());
+    void shouldReturnDomesticPlatformsOnlyByDefault() {
+        CompositeProductSourceProvider provider = newProvider();
 
         ProductSearchResult result = provider.search(new ProductSearchQuery("运动鞋", List.of(), null));
 
         assertFalse(result.products().isEmpty(), "Should have products");
-        // All platforms should be domestic, no Flipkart
         Set<String> platforms = result.products().stream()
                 .map(ProductOffer::platform)
                 .collect(Collectors.toSet());
-        for (String p : platforms) {
-            assertTrue(CompositeProductSourceProvider.DOMESTIC_PLATFORMS.contains(p),
-                    "Platform should be domestic but was: " + p);
+        for (String platform : platforms) {
+            assertTrue(CompositeProductSourceProvider.DOMESTIC_PLATFORMS.contains(platform),
+                    "Platform should be domestic but was: " + platform);
         }
-        assertFalse(platforms.contains("Flipkart-sample"), "Should not contain Flipkart");
+        assertFalse(platforms.contains(PublicDatasetProductSourceProvider.PLATFORM));
     }
 
     @Test
     void shouldGenerateMultiplePlatformsPerProduct() {
-        CompositeProductSourceProvider provider = new CompositeProductSourceProvider(
-                new ObjectMapper(), "../mock-data/mock-data.json", null, new RecommendationScorer());
+        CompositeProductSourceProvider provider = newProvider();
 
         ProductSearchResult result = provider.search(new ProductSearchQuery("耳机", List.of(), null));
 
         assertFalse(result.products().isEmpty());
-        // Each product (sameItemKey) should have 4 offers (one per domestic platform)
         long distinctKeys = result.products().stream()
                 .map(ProductOffer::sameItemKey)
                 .distinct()
                 .count();
-        assertTrue(distinctKeys >= 2, "Should have multiple product groups");
-        assertTrue(result.products().size() >= distinctKeys * 4,
-                "Each product should have 4 platform offers");
+        assertEquals(75, distinctKeys);
+        assertEquals(distinctKeys * CompositeProductSourceProvider.DOMESTIC_PLATFORMS.size(),
+                result.products().size());
     }
 
     @Test
     void shouldFilterByPlatform() {
-        CompositeProductSourceProvider provider = new CompositeProductSourceProvider(
-                new ObjectMapper(), "../mock-data/mock-data.json", null, new RecommendationScorer());
+        CompositeProductSourceProvider provider = newProvider();
 
         ProductSearchResult result = provider.search(new ProductSearchQuery(
                 "运动鞋", List.of(), null, null, null,
                 List.of("京东-mock"), null, null));
 
         assertFalse(result.products().isEmpty());
-        for (ProductOffer p : result.products()) {
-            assertEquals("京东-mock", p.platform());
+        for (ProductOffer product : result.products()) {
+            assertEquals("京东-mock", product.platform());
         }
     }
 
     @Test
     void shouldFilterByMinRating() {
-        CompositeProductSourceProvider provider = new CompositeProductSourceProvider(
-                new ObjectMapper(), "../mock-data/mock-data.json", null, new RecommendationScorer());
+        CompositeProductSourceProvider provider = newProvider();
 
         ProductSearchResult result = provider.search(new ProductSearchQuery(
                 "运动鞋", List.of(), null, null, null,
                 List.of(), null, 4.5));
 
-        for (ProductOffer p : result.products()) {
-            assertTrue(p.rating() >= 4.5,
-                    "Rating should be >= 4.5 but was " + p.rating());
+        for (ProductOffer product : result.products()) {
+            assertTrue(product.rating() >= 4.5,
+                    "Rating should be >= 4.5 but was " + product.rating());
         }
     }
 
     @Test
     void shouldSortByPriceAsc() {
-        CompositeProductSourceProvider provider = new CompositeProductSourceProvider(
-                new ObjectMapper(), "../mock-data/mock-data.json", null, new RecommendationScorer());
+        CompositeProductSourceProvider provider = newProvider();
 
         ProductSearchResult result = provider.search(new ProductSearchQuery(
                 "运动鞋", List.of(), null, null, null,
@@ -95,44 +90,23 @@ class CompositeProductSourceProviderTest {
 
     @Test
     void shouldSwitchToPublicDatasetOnly() {
-        CompositeProductSourceProvider provider = new CompositeProductSourceProvider(
-                new ObjectMapper(), "../mock-data/mock-data.json",
-                "data/public-product-offers.json", "public-dataset-only",
-                null, new RecommendationScorer());
+        CompositeProductSourceProvider provider = newProvider(
+                CompositeProductSourceProvider.MODE_PUBLIC_DATASET_ONLY);
 
         ProductSearchResult result = provider.search(new ProductSearchQuery("耳机", List.of(), null));
 
         assertFalse(result.products().isEmpty());
         assertEquals("public-dataset", provider.sourceName());
-        for (ProductOffer p : result.products()) {
-            assertEquals(PublicDatasetProductSourceProvider.PLATFORM, p.platform());
-            assertTrue(p.imageUrl().startsWith("http"));
+        for (ProductOffer product : result.products()) {
+            assertEquals(PublicDatasetProductSourceProvider.PLATFORM, product.platform());
+            assertTrue(product.imageUrl().startsWith("http"));
         }
     }
 
     @Test
-    void shouldMergePublicDatasetAndMockData() {
-        CompositeProductSourceProvider provider = new CompositeProductSourceProvider(
-                new ObjectMapper(), "../mock-data/mock-data.json",
-                "data/public-product-offers.json", "public-dataset",
-                null, new RecommendationScorer());
-
-        ProductSearchResult result = provider.search(new ProductSearchQuery("耳机", List.of(), null));
-        Set<String> platforms = result.products().stream()
-                .map(ProductOffer::platform)
-                .collect(Collectors.toSet());
-
-        assertEquals("public-dataset+mock-data", provider.sourceName());
-        assertTrue(platforms.contains(PublicDatasetProductSourceProvider.PLATFORM));
-        assertTrue(platforms.contains("京东-mock"));
-    }
-
-    @Test
     void shouldUsePublicDatasetWithGeneratedPlatforms() {
-        CompositeProductSourceProvider provider = new CompositeProductSourceProvider(
-                new ObjectMapper(), "../mock-data/mock-data.json",
-                "data/public-product-offers.json", "public-dataset-platforms",
-                null, new RecommendationScorer());
+        CompositeProductSourceProvider provider = newProvider(
+                CompositeProductSourceProvider.MODE_PUBLIC_DATASET_PLATFORMS);
 
         ProductSearchResult result = provider.search(new ProductSearchQuery("耳机", List.of(), null));
         Set<String> platforms = result.products().stream()
@@ -144,5 +118,32 @@ class CompositeProductSourceProviderTest {
         assertTrue(platforms.contains("拼多多-mock"));
         assertFalse(platforms.contains(PublicDatasetProductSourceProvider.PLATFORM));
         assertTrue(result.products().stream().allMatch(p -> p.imageUrl().startsWith("http")));
+    }
+
+    @Test
+    void shouldFallbackUnknownModeToGeneratedPlatforms() {
+        CompositeProductSourceProvider provider = newProvider("public-dataset");
+
+        ProductSearchResult result = provider.search(new ProductSearchQuery("耳机", List.of(), null));
+        Set<String> platforms = result.products().stream()
+                .map(ProductOffer::platform)
+                .collect(Collectors.toSet());
+
+        assertEquals("public-dataset-platforms", provider.sourceName());
+        assertTrue(platforms.contains("京东-mock"));
+        assertFalse(platforms.contains(PublicDatasetProductSourceProvider.PLATFORM));
+    }
+
+    private CompositeProductSourceProvider newProvider() {
+        return newProvider(CompositeProductSourceProvider.MODE_PUBLIC_DATASET_PLATFORMS);
+    }
+
+    private CompositeProductSourceProvider newProvider(String mode) {
+        ObjectMapper objectMapper = new ObjectMapper();
+        RecommendationScorer scorer = new RecommendationScorer();
+        PublicDatasetProductSourceProvider publicDataset =
+                new PublicDatasetProductSourceProvider(
+                        scorer, objectMapper, "data/public-product-offers.json");
+        return new CompositeProductSourceProvider(publicDataset, mode);
     }
 }

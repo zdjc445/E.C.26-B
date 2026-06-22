@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Component
-@ConditionalOnProperty(name = "chat.history-store", havingValue = "postgres")
+@ConditionalOnProperty(name = "app.persistence.store", havingValue = "postgres")
 public class PostgresUserRepository implements UserRepository {
 
     private final JdbcTemplate jdbc;

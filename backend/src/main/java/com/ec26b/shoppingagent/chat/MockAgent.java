@@ -653,8 +653,8 @@ public class MockAgent {
         if (brand != null) hints.add("品牌 " + brand);
         if (color != null) hints.add("颜色 " + color);
         if (minRating != null) hints.add("评分 ≥ " + minRating + " 星");
-        if (hints.isEmpty()) return "暂无合适的 Mock 商品。";
-        return "当前筛选（" + String.join("、", hints) + "）下暂无合适的 Mock 商品，请放宽条件。";
+        if (hints.isEmpty()) return "暂无合适的样例商品。";
+        return "当前筛选（" + String.join("、", hints) + "）下暂无合适的样例商品，请放宽条件。";
     }
 
     private List<String> buildFilterSummary(ShoppingIntent intent) {

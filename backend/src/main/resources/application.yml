@@ -15,9 +15,10 @@ spring:
 
 app:
   upload-dir: ${UPLOAD_DIR:../uploads}
+  persistence:
+    store: ${APP_PERSISTENCE_STORE:memory}
   product-source:
     mode: ${PRODUCT_SOURCE_MODE:public-dataset-platforms}
-    mock-resource: ${MOCK_PRODUCT_RESOURCE:../mock-data/mock-data.json}
     public-resource: ${PUBLIC_PRODUCT_RESOURCE:data/public-product-offers.json}
   ai:
     provider: ${AI_PROVIDER:mock}
@@ -32,9 +33,6 @@ app:
   voice:
     provider: ${VOICE_PROVIDER:mock}
     transcript-fallback: ${VOICE_FALLBACK_TEXT:推荐运动鞋}
-
-chat:
-  history-store: ${CHAT_HISTORY_STORE:memory}
 
 logging:
   level:
@@ -56,8 +54,7 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
-chat:
-  history-store: postgres
 app:
   persistence:
+    store: postgres
     enabled: true

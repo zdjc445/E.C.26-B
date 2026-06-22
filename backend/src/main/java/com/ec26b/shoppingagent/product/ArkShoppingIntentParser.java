@@ -32,7 +32,7 @@ public class ArkShoppingIntentParser implements ShoppingIntentParser {
                         "officialStore(bool)，fastDelivery(bool)，lowestPrice(bool)，" +
                         "highRating(bool)，highSales(bool)，" +
                         "brand(字符串，例如 耐克、阿迪达斯、索尼、小米、华为、苹果、戴森、飞利浦、松下、新百伦、森海塞尔)，" +
-                        "platforms(字符串数组，元素只能是 京东-mock/拼多多-mock/淘宝-mock)，" +
+                        "platforms(字符串数组，元素只能是 京东-mock/拼多多-mock/淘宝-mock/天猫-mock)，" +
                         "sortBy(只能是 recommended/price_asc/price_desc/sales_desc/rating_desc 之一)，" +
                         "minRating(0-5 之间的小数)，" +
                         "needsClarification(bool)，clarificationQuestion(字符串)。" +

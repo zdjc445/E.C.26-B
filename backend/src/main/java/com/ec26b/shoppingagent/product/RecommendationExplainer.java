@@ -370,7 +370,7 @@ public class RecommendationExplainer {
 
     private List<String> buildRisks(Stats s) {
         List<String> risks = new ArrayList<>();
-        risks.add("当前为 Mock 商品数据，不代表真实平台库存与价格。");
+        risks.add("当前为公开样例商品数据，不代表真实平台库存与价格。");
 
         if (s.singlePlatform) {
             risks.add("仅覆盖 1 个平台，建议跨平台比价后再购买。");

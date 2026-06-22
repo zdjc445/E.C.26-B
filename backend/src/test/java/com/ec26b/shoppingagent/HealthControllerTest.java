@@ -30,6 +30,7 @@ class HealthControllerTest {
                 .andExpect(jsonPath("$.app").value("识价镜"))
                 .andExpect(jsonPath("$.stage", containsString("聊天式 AI")))
                 .andExpect(jsonPath("$.aiProvider").value("mock"))
+                .andExpect(jsonPath("$.persistenceStore").value("memory"))
                 .andExpect(jsonPath("$.chatHistoryStore").value("memory"))
                 .andExpect(jsonPath("$.authEnabled").value(false))
                 .andExpect(jsonPath("$.ecommerceProvider").value("public-dataset-platforms"))

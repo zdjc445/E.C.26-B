@@ -10,7 +10,7 @@ import java.util.Optional;
  * Default in-memory implementation — requires no database.
  */
 @Component
-@ConditionalOnProperty(name = "chat.history-store", havingValue = "memory", matchIfMissing = true)
+@ConditionalOnProperty(name = "app.persistence.store", havingValue = "memory", matchIfMissing = true)
 public class InMemoryChatHistoryRepository implements ChatHistoryRepository {
 
     private final ChatStore store;

@@ -8,7 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Component
-@ConditionalOnProperty(name = "chat.history-store", havingValue = "memory", matchIfMissing = true)
+@ConditionalOnProperty(name = "app.persistence.store", havingValue = "memory", matchIfMissing = true)
 public class InMemoryUserRepository implements UserRepository {
 
     private final ConcurrentHashMap<String, User> byUsername = new ConcurrentHashMap<>();

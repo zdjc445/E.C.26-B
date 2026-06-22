@@ -3,6 +3,7 @@ package com.ec26b.shoppingagent.chat;
 import com.ec26b.shoppingagent.ai.ArkClient;
 import com.ec26b.shoppingagent.product.ArkRecommendationExplainer;
 import com.ec26b.shoppingagent.product.CompositeProductSourceProvider;
+import com.ec26b.shoppingagent.product.PublicDatasetProductSourceProvider;
 import com.ec26b.shoppingagent.product.RecommendationExplainer;
 import com.ec26b.shoppingagent.product.RecommendationScorer;
 import com.ec26b.shoppingagent.product.ShoppingIntent;
@@ -49,8 +50,10 @@ class MockAgentFilterSummaryTest {
 
     private MockAgent newAgent(ShoppingIntent intent) {
         ObjectMapper objectMapper = new ObjectMapper();
+        RecommendationScorer scorer = new RecommendationScorer();
         return new MockAgent(
-                new CompositeProductSourceProvider(objectMapper, "../mock-data/mock-data.json", null, new RecommendationScorer()),
+                new CompositeProductSourceProvider(new PublicDatasetProductSourceProvider(
+                        scorer, objectMapper, "data/public-product-offers.json")),
                 new FixedShoppingIntentParser(intent),
                 new RecommendationExplainer(),
                 new ArkRecommendationExplainer(new ArkClient(objectMapper, "", "", null), objectMapper),

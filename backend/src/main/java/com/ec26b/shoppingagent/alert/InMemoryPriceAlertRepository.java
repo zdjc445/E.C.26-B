@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Component
-@ConditionalOnProperty(name = "chat.history-store", havingValue = "memory", matchIfMissing = true)
+@ConditionalOnProperty(name = "app.persistence.store", havingValue = "memory", matchIfMissing = true)
 public class InMemoryPriceAlertRepository implements PriceAlertRepository {
 
     private final ConcurrentHashMap<Long, List<PriceAlert>> byUser = new ConcurrentHashMap<>();

@@ -2,10 +2,10 @@ package com.ec26b.shoppingagent.product;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -114,21 +114,15 @@ public class CategoryResolver {
 
     private static CategoryResolver loadDefault() {
         ObjectMapper objectMapper = new ObjectMapper();
-        for (Path path : taxonomyPaths()) {
-            if (!Files.exists(path)) continue;
-            try {
-                List<CategoryEntry> entries = objectMapper.readValue(
-                        path.toFile(), new TypeReference<>() {});
-                if (!entries.isEmpty()) return new CategoryResolver(entries);
-            } catch (IOException ignored) {}
+        try (InputStream in = new ClassPathResource("data/category-taxonomy.json").getInputStream()) {
+            List<CategoryEntry> entries = objectMapper.readValue(in, new TypeReference<>() {});
+            if (!entries.isEmpty()) {
+                return new CategoryResolver(entries);
+            }
+        } catch (IOException ignored) {
+            // Keep local fallback so tests and dev runs remain available if resources are missing.
         }
         return new CategoryResolver(fallbackTaxonomy());
-    }
-
-    private static List<Path> taxonomyPaths() {
-        return List.of(
-                Path.of("mock-data", "category-taxonomy.json"),
-                Path.of("..", "mock-data", "category-taxonomy.json"));
     }
 
     private static List<CategoryEntry> fallbackTaxonomy() {

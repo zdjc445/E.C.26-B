@@ -14,7 +14,7 @@ import java.util.Map;
 public class HealthController {
 
     private final String aiProvider;
-    private final String chatHistoryStore;
+    private final String persistenceStore;
     private final CurrentUser currentUser;
     private final ProductSourceProvider productSourceProvider;
     private final String voiceProvider;
@@ -22,12 +22,12 @@ public class HealthController {
 
     public HealthController(
             @Value("${app.ai.provider:mock}") String aiProvider,
-            @Value("${chat.history-store:memory}") String chatHistoryStore,
+            @Value("${app.persistence.store:memory}") String persistenceStore,
             @Value("${app.voice.provider:mock}") String voiceProvider,
             CurrentUser currentUser,
             ProductSourceProvider productSourceProvider) {
         this.aiProvider = aiProvider;
-        this.chatHistoryStore = chatHistoryStore;
+        this.persistenceStore = persistenceStore;
         this.voiceProvider = voiceProvider;
         this.currentUser = currentUser;
         this.productSourceProvider = productSourceProvider;
@@ -42,7 +42,8 @@ public class HealthController {
         result.put("app", "识价镜");
         result.put("stage", stage);
         result.put("aiProvider", aiProvider);
-        result.put("chatHistoryStore", chatHistoryStore);
+        result.put("persistenceStore", persistenceStore);
+        result.put("chatHistoryStore", persistenceStore);
         result.put("authEnabled", currentUser.authEnabled());
         result.put("ecommerceProvider", productSourceProvider.sourceName());
         result.put("voiceProvider", voiceProvider);

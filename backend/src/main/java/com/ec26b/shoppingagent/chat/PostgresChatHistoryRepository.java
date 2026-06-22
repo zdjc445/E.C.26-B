@@ -17,11 +17,11 @@ import java.util.UUID;
 /**
  * Postgres-backed implementation of {@link ChatHistoryRepository}.
  *
- * <p>Activated with {@code chat.history-store=postgres}. Requires a running
+ * <p>Activated with {@code app.persistence.store=postgres}. Requires a running
  * Postgres instance with the V1 migration applied (see {@code db/migration}).
  */
 @Component
-@ConditionalOnProperty(name = "chat.history-store", havingValue = "postgres")
+@ConditionalOnProperty(name = "app.persistence.store", havingValue = "postgres")
 public class PostgresChatHistoryRepository implements ChatHistoryRepository {
 
     private final JdbcTemplate jdbc;

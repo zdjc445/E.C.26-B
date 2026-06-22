@@ -6,8 +6,8 @@ import java.util.Optional;
 /**
  * Abstraction for chat history persistence.
  *
- * <p>{@code chat.history-store=memory} (default) uses the in-memory implementation
- * and requires no database. {@code chat.history-store=postgres} enables Postgres
+ * <p>{@code app.persistence.store=memory} (default) uses the in-memory implementation
+ * and requires no database. {@code app.persistence.store=postgres} enables Postgres
  * persistence via Flyway-managed schema.
  */
 public interface ChatHistoryRepository {

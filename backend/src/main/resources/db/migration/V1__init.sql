@@ -32,31 +32,6 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session
     ON chat_messages(session_id, created_at ASC);
 
-CREATE TABLE IF NOT EXISTS image_metadata (
-    image_id VARCHAR(64) PRIMARY KEY,
-    stored_file_name VARCHAR(255) NOT NULL,
-    original_file_name VARCHAR(255),
-    content_type VARCHAR(64),
-    size BIGINT,
-    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS recognition_results (
-    recognition_id VARCHAR(64) PRIMARY KEY,
-    image_id VARCHAR(64) REFERENCES image_metadata(image_id) ON DELETE CASCADE,
-    category VARCHAR(64),
-    brand VARCHAR(128),
-    model VARCHAR(128),
-    keywords JSONB,
-    attributes JSONB,
-    confidence DOUBLE PRECISION,
-    ai_provider VARCHAR(32),
-    fallback_used BOOLEAN,
-    explanation TEXT,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE IF NOT EXISTS favorites (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
