@@ -2,22 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-class AlternativeProductView {
-  final String title;
-  final String platform;
-  final String price;
-  final String strength;
-  final String caution;
-
-  const AlternativeProductView({
-    required this.title,
-    required this.platform,
-    required this.price,
-    required this.strength,
-    required this.caution,
-  });
-}
-
 class ProductThumbPainter extends CustomPainter {
   final IconData icon;
   final Color accent;

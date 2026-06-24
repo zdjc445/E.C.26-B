@@ -300,8 +300,12 @@ public class MockAgent {
             emptyReason = noEmptyNote(effectiveMaxPrice, effectiveBrand, effectiveColor, effectiveMinRating);
         }
 
+        RecommendationExplanation recommendationExplanation =
+                buildRecommendationExplanation(sr, fullIntent);
+
         // Always emit product_group_list + clarification
-        cards.add(Card.productGroupList("商品结果", groups, filterSummary, emptyReason));
+        cards.add(Card.productGroupList("商品结果", groups, filterSummary,
+                emptyReason, recommendationExplanation, fullIntent));
         cards.add(buildSuggestionCard(keyword, effectiveBrand));
 
         String replyText;
@@ -315,6 +319,13 @@ public class MockAgent {
 
         return new AgentReply(UUID.randomUUID().toString(),
                 "product_recommendation", replyText, cards);
+    }
+
+    private RecommendationExplanation buildRecommendationExplanation(
+            ProductSearchResult result, ShoppingIntent intent) {
+        RecommendationExplanation ruleResult =
+                ruleExplainer.explain(result, intent.toUserPreference(), intent.keyword());
+        return useArk ? arkExplainer.explain(ruleResult, intent, result) : ruleResult;
     }
 
     /**
@@ -845,8 +856,7 @@ public class MockAgent {
                 options,
                 null, null, null, null, null, null,
                 0.0, null, false, null, null, null, null,
-                null, null, null, null, null,
-                null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null,
                 null, null, null);
     }
 
@@ -885,26 +895,7 @@ public class MockAgent {
                             new Option("fast_delivery", "配送更快")),
                     null, null, null, null, null, null,
                     0.0, null, false, null, null, null, null,
-                    null, null, null, null, null,
-                    null, null, null, null, null,
-                    null, null, null);
-        }
-
-        public static Card recommendation(String title, String productName,
-                                          String platform, Double price, String reason,
-                                          Integer decisionScore,
-                                          List<DecisionSignal> signals,
-                                          List<RecommendationEvidence> evidence,
-                                          List<String> risks,
-                                          List<ProductAnalysis> analyses,
-                                          String intentProvider, Boolean intentFallback,
-                                          String explProvider, Boolean explFallback,
-                                          List<String> notices) {
-            return new Card("recommendation", title, productName, platform, price, reason,
-                    null, null, null, null, null, null, null,
-                    0.0, null, false, null, null, null, null,
-                    decisionScore, signals, evidence, risks, analyses,
-                    intentProvider, intentFallback, explProvider, explFallback, notices,
+                    null, null, null, null, null, null, null, null, null, null,
                     null, null, null);
         }
 
@@ -916,8 +907,8 @@ public class MockAgent {
             return new Card("recognition", "识别结果", null, null, null, null, null,
                     imageId, category, brand, model, keywords, attributes,
                     conf, aiProvider, fallback, explanation, recognitionId,
-                    null, null, null, null, null, null, null,
-                    null, null, null, null, null,
+                    null, null,
+                    null, null, null, null, null, null, null, null, null, null,
                     null, null, null);
         }
 
@@ -926,8 +917,7 @@ public class MockAgent {
             return new Card("product_list", title, null, null, null, null, null,
                     null, null, null, null, null, null,
                     0.0, null, false, null, null, products, null,
-                    null, null, null, null, null,
-                    null, null, null, null, null,
+                    null, null, null, null, null, null, null, null, null, null,
                     filterSummary, null, null);
         }
 
@@ -936,19 +926,46 @@ public class MockAgent {
             return new Card("comparison", title, null, null, null, null, null,
                     null, null, null, null, null, null,
                     0.0, null, false, null, null, null, stats,
-                    null, null, null, null, null,
-                    null, null, null, null, null,
+                    null, null, null, null, null, null, null, null, null, null,
                     null, null, null);
         }
 
         public static Card productGroupList(String title, List<ProductGroup> groups,
                                             List<String> filterSummary, String emptyReason) {
-            return new Card("product_group_list", title, null, null, null, null, null,
+            return productGroupList(title, groups, filterSummary, emptyReason, null, null);
+        }
+
+        public static Card productGroupList(String title, List<ProductGroup> groups,
+                                            List<String> filterSummary, String emptyReason,
+                                            RecommendationExplanation explanation,
+                                            ShoppingIntent intent) {
+            return new Card("product_group_list", title, null, null, null,
+                    explanation != null ? explanation.summaryReason() : null, null,
                     null, null, null, null, null, null,
                     0.0, null, false, null, null, null, null,
-                    null, null, null, null, null,
-                    null, null, null, null, null,
+                    explanation != null ? explanation.decisionScore() : null,
+                    explanation != null ? explanation.decisionSignals() : null,
+                    explanation != null ? explanation.evidence() : null,
+                    explanation != null ? explanation.risks() : null,
+                    explanation != null ? explanation.productAnalyses() : null,
+                    intent != null ? intent.intentProvider() : null,
+                    intent != null ? intent.intentFallbackUsed() : null,
+                    explanation != null ? explanation.explanationProvider() : null,
+                    explanation != null ? explanation.explanationFallbackUsed() : null,
+                    mergeNotices(intent, explanation),
                     filterSummary, groups, emptyReason);
+        }
+
+        private static List<String> mergeNotices(ShoppingIntent intent,
+                                                 RecommendationExplanation explanation) {
+            Set<String> merged = new LinkedHashSet<>();
+            if (intent != null && intent.notices() != null) {
+                merged.addAll(intent.notices());
+            }
+            if (explanation != null && explanation.notices() != null) {
+                merged.addAll(explanation.notices());
+            }
+            return merged.isEmpty() ? null : List.copyOf(merged);
         }
 
         /**
@@ -967,8 +984,8 @@ public class MockAgent {
                     imageId, category, brand, model, keywords, attributes,
                     confidence, aiProvider, fallbackUsed, explanation, recognitionId,
                     this.products, this.platformStats,
-                    this.decisionScore, this.decisionSignals, this.evidence, this.risks,
-                    this.productAnalyses,
+                    this.decisionScore, this.decisionSignals, this.evidence,
+                    this.risks, this.productAnalyses,
                     this.intentProvider, this.intentFallbackUsed,
                     this.explanationProvider, this.explanationFallbackUsed,
                     this.notices,

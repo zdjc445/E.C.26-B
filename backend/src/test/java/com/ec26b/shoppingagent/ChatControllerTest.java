@@ -77,6 +77,14 @@ class ChatControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.replyType").value("product_recommendation"))
                 .andExpect(jsonPath("$.data.cards[0].cardType").value("product_group_list"))
+                .andExpect(jsonPath("$.data.cards[0].reason").isString())
+                .andExpect(jsonPath("$.data.cards[0].decisionScore").isNumber())
+                .andExpect(jsonPath("$.data.cards[0].decisionSignals").isArray())
+                .andExpect(jsonPath("$.data.cards[0].evidence").isArray())
+                .andExpect(jsonPath("$.data.cards[0].risks").isArray())
+                .andExpect(jsonPath("$.data.cards[0].productAnalyses").isArray())
+                .andExpect(jsonPath("$.data.cards[0].intentProvider").exists())
+                .andExpect(jsonPath("$.data.cards[0].explanationProvider").value("rule"))
                 .andExpect(jsonPath("$.data.cards[1].cardType").value("clarification"))
                 .andExpect(jsonPath("$.data.cards.length()").value(2));
     }

@@ -260,30 +260,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-  Future<void> _addToFavorites(ReplyCard card) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final productId = card.productName != null ? card.productName! : 'unknown';
-    final payload = <String, dynamic>{
-      'productId': productId,
-      'title': card.productName ?? '推荐商品',
-      'platform': card.platform ?? '',
-      'price': card.price ?? 0,
-      'shopName': null,
-      'brand': null,
-    };
-    try {
-      final token = ref.read(authControllerProvider).session?.token;
-      await ref.read(favoriteApiInChatProvider).add(payload, token: token);
-      if (mounted) {
-        messenger.showSnackBar(const SnackBar(content: Text('已加入收藏')));
-      }
-    } catch (e) {
-      if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text('收藏失败：$e')));
-      }
-    }
-  }
-
   Future<void> _addProductToFavorites(ProductItem product) async {
     final messenger = ScaffoldMessenger.of(context);
     if (_favoriteProductIds.contains(product.productId)) {
@@ -413,67 +389,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _setPriceAlert(ReplyCard card) async {
-    if (card.price == null) return;
-    final controller =
-        TextEditingController(text: (card.price! * 0.9).round().toString());
-    final result = await showDialog<double>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('设置价格提醒'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('当 ${card.productName ?? "该商品"} 价格 ≤ 以下数值时触发：'),
-              const SizedBox(height: 8),
-              TextField(
-                controller: controller,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(prefixText: '¥ '),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final v = double.tryParse(controller.text);
-                Navigator.of(ctx).pop(v);
-              },
-              child: const Text('保存'),
-            ),
-          ],
-        );
-      },
-    );
-    if (result == null || result <= 0) return;
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final token = ref.read(authControllerProvider).session?.token;
-      await ref.read(priceAlertApiInChatProvider).create({
-        'productId': card.productName ?? 'unknown',
-        'title': card.productName ?? '推荐商品',
-        'platform': card.platform ?? '',
-        'targetPrice': result,
-        'note': '从推荐卡创建',
-      }, token: token);
-      if (mounted) {
-        messenger.showSnackBar(SnackBar(
-          content: Text('已设置价格提醒：¥${result.toStringAsFixed(0)}'),
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Text('设置失败：$e')));
-      }
-    }
   }
 
   void _openCorrectionSheet(ReplyCard recognitionCard) {
@@ -834,8 +749,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     switch (card.cardType) {
       case 'clarification':
         return _buildClarificationCard(card);
-      case 'recommendation':
-        return _buildRecommendationCard(card, _productsFromCards(siblingCards));
       case 'recognition':
         return _buildRecognitionCard(card);
       case 'product_list':
@@ -847,17 +760,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       default:
         return const SizedBox.shrink();
     }
-  }
-
-  List<ProductItem> _productsFromCards(List<ReplyCard> cards) {
-    final products = <ProductItem>[];
-    for (final card in cards) {
-      final items = card.products;
-      if (card.cardType == 'product_list' && items != null) {
-        products.addAll(items);
-      }
-    }
-    return products;
   }
 
   Widget _buildClarificationCard(ReplyCard card) {
@@ -907,438 +809,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ],
       ),
     );
-  }
-
-  Widget _buildRecommendationCard(ReplyCard card, List<ProductItem> products) {
-    final reasons = _recommendationReasons(card);
-    final risks = _recommendationRisks(card);
-    final details = _recommendationDetails(card);
-    final alternatives = _alternativeProducts(card, products);
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.panel,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            const Icon(Icons.shopping_bag_outlined,
-                size: 18, color: AppColors.accent),
-            const SizedBox(width: 6),
-            Text(card.title,
-                style:
-                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-            const Spacer(),
-            if (card.decisionScore != null) _scoreBadge(card.decisionScore!),
-          ]),
-          const SizedBox(height: 8),
-          if (card.productName != null)
-            Text(card.productName!,
-                style:
-                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
-          const SizedBox(height: 4),
-          if (card.platform != null || card.price != null)
-            Row(children: [
-              if (card.platform != null) _platformBadge(card.platform!),
-              if (card.platform != null && card.price != null)
-                const SizedBox(width: 8),
-              if (card.price != null)
-                Text('¥${card.price!.toStringAsFixed(0)}',
-                    style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.priceRed)),
-            ]),
-          if (reasons.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            _briefInfoBlock(
-              title: '推荐理由',
-              lines: reasons,
-              icon: Icons.check_circle_outline,
-              color: AppColors.good,
-            ),
-          ],
-          if (risks.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            _briefInfoBlock(
-              title: '注意事项',
-              lines: risks,
-              icon: Icons.error_outline,
-              color: AppColors.warn,
-            ),
-          ],
-          if (card.productName != null) ...[
-            const SizedBox(height: 8),
-            Row(children: [
-              OutlinedButton.icon(
-                onPressed: () => _addToFavorites(card),
-                icon: const Icon(Icons.favorite_border, size: 14),
-                label: const Text('收藏', style: TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  minimumSize: const Size(0, 28),
-                ),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: () => _setPriceAlert(card),
-                icon: const Icon(Icons.notifications_outlined, size: 14),
-                label: const Text('价格提醒', style: TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  minimumSize: const Size(0, 28),
-                ),
-              ),
-            ]),
-          ],
-          if (details.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            _recommendationReasonExpansion(card, details),
-          ],
-          if (alternatives.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            const Text('备选商品',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            ...alternatives.map(_alternativeProductRow),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _scoreBadge(int score) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppColors.panelSoft,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Text('匹配度 $score',
-          style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: AppColors.inkSoft)),
-    );
-  }
-
-  Widget _briefInfoBlock({
-    required String title,
-    required List<String> lines,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 4),
-        ...lines.map((line) => Padding(
-              padding: const EdgeInsets.only(bottom: 3),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Icon(icon, size: 13, color: color),
-                  ),
-                  const SizedBox(width: 5),
-                  Expanded(
-                    child: Text(line,
-                        style: TextStyle(
-                            fontSize: 11.5,
-                            height: 1.35,
-                            color: color == AppColors.warn
-                                ? AppColors.warn
-                                : AppColors.inkSoft)),
-                  ),
-                ],
-              ),
-            )),
-      ],
-    );
-  }
-
-  Widget _recommendationReasonExpansion(
-      ReplyCard card, List<MapEntry<String, String>> details) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.panelSoft,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: AppColors.line),
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-          childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-          shape: const Border(),
-          collapsedShape: const Border(),
-          title: const Text('为什么推荐它',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-          subtitle: Text(_recommendationSummary(card),
-              style: const TextStyle(
-                  fontSize: 11, height: 1.35, color: AppColors.inkSoft)),
-          children: details.map(_recommendationDetailRow).toList(),
-        ),
-      ),
-    );
-  }
-
-  Widget _recommendationDetailRow(MapEntry<String, String> detail) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 42,
-            child: Text(detail.key,
-                style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.inkMain)),
-          ),
-          Expanded(
-            child: Text(detail.value,
-                style: const TextStyle(
-                    fontSize: 11, height: 1.35, color: AppColors.inkSoft)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _alternativeProductRow(AlternativeProductView item) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.line)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(item.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 12.5, fontWeight: FontWeight.w600)),
-              ),
-              const SizedBox(width: 8),
-              Text(item.price,
-                  style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.priceRed)),
-            ],
-          ),
-          const SizedBox(height: 3),
-          Row(children: [
-            _platformBadge(item.platform),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text('优点：${item.strength}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style:
-                      const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
-            ),
-          ]),
-          const SizedBox(height: 2),
-          Text('注意：${item.caution}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: AppColors.inkSoft)),
-        ],
-      ),
-    );
-  }
-
-  List<String> _recommendationReasons(ReplyCard card) {
-    final lines = <String>[];
-    final reason = _compactDecisionText(card.reason);
-    if (reason != null) lines.add(reason);
-    for (final evidence in card.evidence ?? const <RecommendationEvidence>[]) {
-      final line = _compactDecisionText(evidence.content);
-      if (line != null) lines.add(line);
-    }
-    if (lines.isEmpty) {
-      for (final signal in card.decisionSignals ?? const <DecisionSignal>[]) {
-        final line = _compactDecisionText(signal.explanation);
-        if (line != null) lines.add(line);
-      }
-    }
-    if (lines.isEmpty) lines.add('价格、评价和售后信息较均衡');
-    return _uniqueLimited(lines, 3);
-  }
-
-  List<String> _recommendationRisks(ReplyCard card) {
-    final lines = <String>[];
-    for (final risk in card.risks ?? const <String>[]) {
-      final line = _compactDecisionText(risk);
-      if (line != null) lines.add(line);
-    }
-    return _uniqueLimited(lines, 2);
-  }
-
-  List<MapEntry<String, String>> _recommendationDetails(ReplyCard card) {
-    final rows = <MapEntry<String, String>>[];
-    for (final signal in card.decisionSignals ?? const <DecisionSignal>[]) {
-      final detail = _compactDecisionText(signal.explanation, maxLength: 42);
-      rows.add(
-          MapEntry(_decisionSignalLabel(signal), detail ?? '${signal.score}分'));
-    }
-    if (rows.isEmpty) {
-      for (final evidence
-          in card.evidence ?? const <RecommendationEvidence>[]) {
-        final detail = _compactDecisionText(evidence.content, maxLength: 42);
-        if (detail != null) rows.add(MapEntry('参考', detail));
-      }
-    }
-    return rows.take(5).toList();
-  }
-
-  String _recommendationSummary(ReplyCard card) {
-    final reasons = _recommendationReasons(card);
-    final risks = _recommendationRisks(card);
-    if (reasons.isNotEmpty && risks.isNotEmpty) {
-      return '${_stripEndPunctuation(reasons.first)}，${_stripEndPunctuation(risks.first)}。';
-    }
-    if (reasons.isNotEmpty) {
-      return '${_stripEndPunctuation(reasons.first)}，下单前再核对规格和优惠。';
-    }
-    return '价格、评价和售后信息已按当前条件整理。';
-  }
-
-  List<AlternativeProductView> _alternativeProducts(
-      ReplyCard card, List<ProductItem> products) {
-    final analyses = card.productAnalyses ?? const <ProductAnalysis>[];
-    final items = <AlternativeProductView>[];
-    for (final analysis in analyses.take(3)) {
-      final product = _productForAnalysis(analysis, products);
-      final title = product != null
-          ? _displayProductTitle(product)
-          : _cleanProductTitle(analysis.title);
-      final platform = product?.platform ?? analysis.platform;
-      final price = product != null
-          ? '¥${product.price.toStringAsFixed(0)}'
-          : (card.productName == analysis.title && card.price != null
-              ? '¥${card.price!.toStringAsFixed(0)}'
-              : '价格见列表');
-      final strength = _compactDecisionText(
-              analysis.strengths.isNotEmpty
-                  ? analysis.strengths.first
-                  : (product?.reasons.isNotEmpty == true
-                      ? product!.reasons.first
-                      : '价格和评价较均衡'),
-              maxLength: 24) ??
-          '价格和评价较均衡';
-      final caution = _compactDecisionText(
-              analysis.weaknesses.isNotEmpty
-                  ? analysis.weaknesses.first
-                  : _defaultProductCaution(product),
-              maxLength: 24) ??
-          '购买前核对规格';
-      items.add(AlternativeProductView(
-        title: title,
-        platform: platform,
-        price: price,
-        strength: strength,
-        caution: caution,
-      ));
-    }
-    return items;
-  }
-
-  ProductItem? _productForAnalysis(
-      ProductAnalysis analysis, List<ProductItem> products) {
-    for (final product in products) {
-      if (product.productId == analysis.productId) return product;
-    }
-    return null;
-  }
-
-  String _decisionSignalLabel(DecisionSignal signal) {
-    final text = '${signal.key}${signal.label}';
-    if (text.contains('price') || text.contains('价格')) return '价格';
-    if (text.contains('rating') ||
-        text.contains('review') ||
-        text.contains('评分') ||
-        text.contains('评价')) {
-      return '评价';
-    }
-    if (text.contains('store') ||
-        text.contains('shop') ||
-        text.contains('店') ||
-        text.contains('售后')) {
-      return '售后';
-    }
-    if (text.contains('risk') || text.contains('风险')) return '风险';
-    if (text.contains('platform') || text.contains('渠道')) return '平台';
-    return signal.label;
-  }
-
-  String? _compactDecisionText(String? value, {int maxLength = 36}) {
-    final raw = value?.trim();
-    if (raw == null || raw.isEmpty) return null;
-    var text = raw
-        .replaceAll('\n', ' ')
-        .replaceAll('整体决策得分', '')
-        .replaceAll('模型判断', '')
-        .replaceAll('综合排序策略', '')
-        .replaceAll('AI', '')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    if (text.isEmpty) return null;
-    if (text.length > maxLength) {
-      text = '${text.substring(0, maxLength)}...';
-    }
-    return text;
-  }
-
-  String _stripEndPunctuation(String value) {
-    return value.replaceAll(RegExp(r'[。！？；,.!?\s]+$'), '');
-  }
-
-  List<String> _uniqueLimited(List<String> values, int limit) {
-    final seen = <String>{};
-    final result = <String>[];
-    for (final value in values) {
-      if (seen.add(value)) result.add(value);
-      if (result.length >= limit) break;
-    }
-    return result;
-  }
-
-  String _cleanProductTitle(String title) {
-    return title
-        .replaceAll('爆款', '')
-        .replaceAll('高性价比', '')
-        .replaceAll('专业级', '')
-        .replaceAll('高音质', '')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
-  String _defaultProductCaution(ProductItem? product) {
-    if (product == null) return '购买前核对规格';
-    if (product.platform == '拼多多-mock') return '注意店铺售后规则';
-    if (product.priceHistory.isEmpty) return '暂无历史价参考';
-    return '下单前确认优惠有效';
   }
 
   Widget _buildRecognitionCard(ReplyCard card) {
@@ -2187,6 +1657,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             const SizedBox(height: 8),
             _buildEditableFilterSummary(card),
           ],
+          if (_hasRecommendationExplanation(card)) ...[
+            const SizedBox(height: 8),
+            _buildRecommendationExplanationBox(card),
+          ],
           const SizedBox(height: 8),
           if (groups.isEmpty && emptyReason != null)
             Container(
@@ -2215,6 +1689,193 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ],
       ),
     );
+  }
+
+  bool _hasRecommendationExplanation(ReplyCard card) {
+    return card.decisionScore != null ||
+        _compactExplanationText(card.reason) != null ||
+        (card.decisionSignals?.isNotEmpty ?? false) ||
+        (card.evidence?.isNotEmpty ?? false) ||
+        (card.risks?.isNotEmpty ?? false) ||
+        (card.productAnalyses?.isNotEmpty ?? false) ||
+        (card.notices?.isNotEmpty ?? false);
+  }
+
+  Widget _buildRecommendationExplanationBox(ReplyCard card) {
+    final summary = _explanationSummary(card);
+    final reasons = _explanationReasonLines(card);
+    final risks = _explanationRiskLines(card);
+    final notices = _uniqueExplanationLines(card.notices ?? const [], 1);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.panel,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.insights_outlined,
+                  size: 15, color: AppColors.accent),
+              const SizedBox(width: 5),
+              const Text('推荐解释',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.inkBody)),
+              const Spacer(),
+              if (card.decisionScore != null)
+                _decisionScoreBadge(card.decisionScore!),
+            ],
+          ),
+          if (summary != null) ...[
+            const SizedBox(height: 7),
+            Text(summary,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 12.5,
+                    height: 1.35,
+                    color: AppColors.inkMain,
+                    fontWeight: FontWeight.w600)),
+          ],
+          if (reasons.isNotEmpty) ...[
+            const SizedBox(height: 7),
+            ...reasons.map((text) => _explanationLine(
+                  icon: Icons.check_circle_outline,
+                  text: text,
+                  color: AppColors.good,
+                )),
+          ],
+          if (risks.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            const Text('注意事项',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.inkSoft,
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            ...risks.map((text) => _explanationLine(
+                  icon: Icons.info_outline,
+                  text: text,
+                  color: AppColors.warn,
+                )),
+          ],
+          if (notices.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            ...notices.map((text) => _explanationLine(
+                  icon: Icons.sync_problem_outlined,
+                  text: text,
+                  color: AppColors.inkSoft,
+                )),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _decisionScoreBadge(int score) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.accent.withAlpha(18),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.accent.withAlpha(55)),
+      ),
+      child: Text('综合分 $score',
+          style: const TextStyle(
+              fontSize: 11,
+              color: AppColors.accent,
+              fontWeight: FontWeight.w700)),
+    );
+  }
+
+  Widget _explanationLine({
+    required IconData icon,
+    required String text,
+    required Color color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(text,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 11.5,
+                    height: 1.35,
+                    color: AppColors.inkSoft)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _explanationSummary(ReplyCard card) {
+    return _compactExplanationText(card.reason, maxLength: 86) ??
+        (card.evidence?.isNotEmpty == true
+            ? _compactExplanationText(card.evidence!.first.content,
+                maxLength: 86)
+            : null) ??
+        (card.decisionSignals?.isNotEmpty == true
+            ? _compactExplanationText(card.decisionSignals!.first.explanation,
+                maxLength: 86)
+            : null);
+  }
+
+  List<String> _explanationReasonLines(ReplyCard card) {
+    final lines = <String>[];
+    lines.addAll((card.evidence ?? const []).map((item) => item.content));
+    lines.addAll((card.decisionSignals ?? const [])
+        .where((item) => item.key != 'risk')
+        .map((item) => item.explanation));
+    for (final item in card.productAnalyses ?? const <ProductAnalysis>[]) {
+      if (item.strengths.isNotEmpty) {
+        lines.add('${item.title}：${item.strengths.first}');
+      }
+    }
+    return _uniqueExplanationLines(lines, 2);
+  }
+
+  List<String> _explanationRiskLines(ReplyCard card) {
+    final lines = <String>[];
+    lines.addAll(card.risks ?? const []);
+    for (final item in card.productAnalyses ?? const <ProductAnalysis>[]) {
+      if (item.weaknesses.isNotEmpty) {
+        lines.add('${item.title}：${item.weaknesses.first}');
+      }
+    }
+    return _uniqueExplanationLines(lines, 1);
+  }
+
+  List<String> _uniqueExplanationLines(Iterable<String> rawLines, int limit) {
+    final result = <String>[];
+    final seen = <String>{};
+    for (final raw in rawLines) {
+      final text = _compactExplanationText(raw);
+      if (text == null || seen.contains(text)) continue;
+      seen.add(text);
+      result.add(text);
+      if (result.length >= limit) break;
+    }
+    return result;
+  }
+
+  String? _compactExplanationText(String? value, {int maxLength = 72}) {
+    final text = value?.trim();
+    if (text == null || text.isEmpty) return null;
+    if (text.length <= maxLength) return text;
+    return '${text.substring(0, maxLength)}...';
   }
 
   Widget _buildProductResultHeader(ReplyCard card, List<ProductGroup> groups) {

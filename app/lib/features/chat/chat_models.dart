@@ -109,19 +109,18 @@ class ReplyCard {
   // product fields (legacy)
   final List<ProductItem>? products;
   final Map<String, dynamic>? platformStats;
-  final List<String> filterSummary;
-  // explanation fields (legacy)
+  // recommendation explanation fields
   final int? decisionScore;
   final List<DecisionSignal>? decisionSignals;
   final List<RecommendationEvidence>? evidence;
   final List<String>? risks;
   final List<ProductAnalysis>? productAnalyses;
-  // provider metadata
   final String? intentProvider;
   final bool? intentFallbackUsed;
   final String? explanationProvider;
   final bool? explanationFallbackUsed;
   final List<String>? notices;
+  final List<String> filterSummary;
   // product group fields (new)
   final List<ProductGroup>? groups;
   final String? emptyReason;
@@ -147,7 +146,6 @@ class ReplyCard {
     this.recognitionId,
     this.products,
     this.platformStats,
-    this.filterSummary = const [],
     this.decisionScore,
     this.decisionSignals,
     this.evidence,
@@ -158,6 +156,7 @@ class ReplyCard {
     this.explanationProvider,
     this.explanationFallbackUsed,
     this.notices,
+    this.filterSummary = const [],
     this.groups,
     this.emptyReason,
   });
@@ -188,18 +187,15 @@ class ReplyCard {
           ?.map((p) => ProductItem.fromJson(p as Map<String, dynamic>))
           .toList(),
       platformStats: _stringMap(json['platformStats']),
-      filterSummary:
-          (json['filterSummary'] as List?)?.map((v) => v.toString()).toList() ??
-              const [],
-      decisionScore: json['decisionScore'] as int?,
+      decisionScore: (json['decisionScore'] as num?)?.round(),
       decisionSignals: (json['decisionSignals'] as List?)
           ?.map((s) => DecisionSignal.fromJson(s as Map<String, dynamic>))
           .toList(),
       evidence: (json['evidence'] as List?)
-          ?.map(
-              (e) => RecommendationEvidence.fromJson(e as Map<String, dynamic>))
+          ?.map((e) =>
+              RecommendationEvidence.fromJson(e as Map<String, dynamic>))
           .toList(),
-      risks: (json['risks'] as List?)?.map((r) => r.toString()).toList(),
+      risks: (json['risks'] as List?)?.map((v) => v.toString()).toList(),
       productAnalyses: (json['productAnalyses'] as List?)
           ?.map((a) => ProductAnalysis.fromJson(a as Map<String, dynamic>))
           .toList(),
@@ -207,11 +203,87 @@ class ReplyCard {
       intentFallbackUsed: json['intentFallbackUsed'] as bool?,
       explanationProvider: json['explanationProvider'] as String?,
       explanationFallbackUsed: json['explanationFallbackUsed'] as bool?,
-      notices: (json['notices'] as List?)?.map((n) => n.toString()).toList(),
+      notices: (json['notices'] as List?)?.map((v) => v.toString()).toList(),
+      filterSummary:
+          (json['filterSummary'] as List?)?.map((v) => v.toString()).toList() ??
+              const [],
       groups: (json['groups'] as List?)
           ?.map((g) => ProductGroup.fromJson(g as Map<String, dynamic>))
           .toList(),
       emptyReason: json['emptyReason'] as String?,
+    );
+  }
+}
+
+class DecisionSignal {
+  final String key;
+  final String label;
+  final int score;
+  final String explanation;
+
+  const DecisionSignal({
+    required this.key,
+    required this.label,
+    required this.score,
+    required this.explanation,
+  });
+
+  factory DecisionSignal.fromJson(Map<String, dynamic> json) {
+    return DecisionSignal(
+      key: json['key'] as String? ?? '',
+      label: json['label'] as String? ?? '',
+      score: (json['score'] as num?)?.round() ?? 0,
+      explanation: json['explanation'] as String? ?? '',
+    );
+  }
+}
+
+class RecommendationEvidence {
+  final String type;
+  final String content;
+
+  const RecommendationEvidence({required this.type, required this.content});
+
+  factory RecommendationEvidence.fromJson(Map<String, dynamic> json) {
+    return RecommendationEvidence(
+      type: json['type'] as String? ?? '',
+      content: json['content'] as String? ?? '',
+    );
+  }
+}
+
+class ProductAnalysis {
+  final String productId;
+  final String platform;
+  final String title;
+  final int rank;
+  final int score;
+  final List<String> strengths;
+  final List<String> weaknesses;
+
+  const ProductAnalysis({
+    required this.productId,
+    required this.platform,
+    required this.title,
+    required this.rank,
+    required this.score,
+    required this.strengths,
+    required this.weaknesses,
+  });
+
+  factory ProductAnalysis.fromJson(Map<String, dynamic> json) {
+    return ProductAnalysis(
+      productId: json['productId'] as String? ?? '',
+      platform: json['platform'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      rank: (json['rank'] as num?)?.round() ?? 0,
+      score: (json['score'] as num?)?.round() ?? 0,
+      strengths:
+          (json['strengths'] as List?)?.map((v) => v.toString()).toList() ??
+              const [],
+      weaknesses:
+          (json['weaknesses'] as List?)?.map((v) => v.toString()).toList() ??
+              const [],
     );
   }
 }
@@ -373,76 +445,6 @@ class PlatformOfferSummary {
 Map<String, dynamic>? _stringMap(Object? value) {
   if (value == null) return null;
   return Map<String, dynamic>.from(value as Map);
-}
-
-class DecisionSignal {
-  final String key;
-  final String label;
-  final int score;
-  final String explanation;
-
-  const DecisionSignal({
-    required this.key,
-    required this.label,
-    required this.score,
-    required this.explanation,
-  });
-
-  factory DecisionSignal.fromJson(Map<String, dynamic> json) {
-    return DecisionSignal(
-      key: json['key'] as String,
-      label: json['label'] as String,
-      score: json['score'] as int,
-      explanation: json['explanation'] as String,
-    );
-  }
-}
-
-class RecommendationEvidence {
-  final String type;
-  final String content;
-
-  const RecommendationEvidence({required this.type, required this.content});
-
-  factory RecommendationEvidence.fromJson(Map<String, dynamic> json) {
-    return RecommendationEvidence(
-      type: json['type'] as String,
-      content: json['content'] as String,
-    );
-  }
-}
-
-class ProductAnalysis {
-  final String productId;
-  final String platform;
-  final String title;
-  final int rank;
-  final int score;
-  final List<String> strengths;
-  final List<String> weaknesses;
-
-  const ProductAnalysis({
-    required this.productId,
-    required this.platform,
-    required this.title,
-    required this.rank,
-    required this.score,
-    required this.strengths,
-    required this.weaknesses,
-  });
-
-  factory ProductAnalysis.fromJson(Map<String, dynamic> json) {
-    return ProductAnalysis(
-      productId: json['productId'] as String,
-      platform: json['platform'] as String,
-      title: json['title'] as String,
-      rank: json['rank'] as int,
-      score: json['score'] as int,
-      strengths: (json['strengths'] as List).map((s) => s.toString()).toList(),
-      weaknesses:
-          (json['weaknesses'] as List).map((w) => w.toString()).toList(),
-    );
-  }
 }
 
 class ProductItem {

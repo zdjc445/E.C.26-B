@@ -293,7 +293,6 @@ class ChatController extends ChangeNotifier {
             recognitionId: card.recognitionId,
             products: card.products,
             platformStats: card.platformStats,
-            filterSummary: card.filterSummary,
             decisionScore: card.decisionScore,
             decisionSignals: card.decisionSignals,
             evidence: card.evidence,
@@ -304,6 +303,7 @@ class ChatController extends ChangeNotifier {
             explanationProvider: card.explanationProvider,
             explanationFallbackUsed: card.explanationFallbackUsed,
             notices: card.notices,
+            filterSummary: card.filterSummary,
             groups: card.groups,
             emptyReason: card.emptyReason,
           );

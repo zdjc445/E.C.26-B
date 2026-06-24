@@ -279,6 +279,40 @@ class FakeChatApi extends ChatApi {
           const ReplyCard(
             cardType: 'product_group_list',
             title: '商品结果',
+            reason: '耐克品牌运动鞋 轻便透气 综合评分较高，推荐购买。',
+            decisionScore: 86,
+            decisionSignals: [
+              DecisionSignal(
+                key: 'price',
+                label: '价格',
+                score: 88,
+                explanation: '价格分布合理，低价平台可直接比价。',
+              ),
+              DecisionSignal(
+                key: 'channel',
+                label: '渠道可信',
+                score: 82,
+                explanation: '覆盖 2 个平台，包含自营或官方渠道。',
+              ),
+            ],
+            evidence: [
+              RecommendationEvidence(
+                type: 'stats',
+                content: '共 3 件商品，覆盖 2 个平台，均价 ¥266。',
+              ),
+            ],
+            risks: ['当前为公开样例商品数据，不代表真实平台库存与价格。'],
+            productAnalyses: [
+              ProductAnalysis(
+                productId: 'jd-001',
+                platform: '京东-mock',
+                title: '耐克品牌运动鞋 轻便透气',
+                rank: 1,
+                score: 86,
+                strengths: ['价格低于同类均价'],
+                weaknesses: ['第三方店铺需注意售后'],
+              ),
+            ],
             filterSummary: ['品类：运动鞋', '全部平台'],
             groups: [
               ProductGroup(
@@ -1016,7 +1050,7 @@ void main() {
       expect(find.text('价格最低'), findsOneWidget);
     });
 
-    testWidgets('history restores product_recommendation with all card types',
+    testWidgets('history restores product_list and comparison cards',
         (tester) async {
       final ov = _TestOverrides();
       ov.chatApi.addHistoryMessages('hist-002', [
@@ -1079,14 +1113,6 @@ void main() {
                   },
                 },
               },
-              {
-                'cardType': 'recommendation',
-                'title': '推荐购买',
-                'productName': '样例商品',
-                'platform': '京东-mock',
-                'price': 299.0,
-                'reason': '综合评分较高',
-              },
             ],
           },
         },
@@ -1101,7 +1127,6 @@ void main() {
       expect(find.text('平台比价'), findsOneWidget);
       expect(find.text('京东'), findsWidgets);
       expect(find.text('拼多多'), findsOneWidget);
-      expect(find.text('样例商品'), findsOneWidget);
     });
 
     testWidgets('voice button fills transcribed text', (tester) async {
@@ -1170,66 +1195,15 @@ void main() {
       expect(find.text('放宽匹配'), findsNothing);
       // Should show clarification card
       expect(find.text('查看同款低价'), findsOneWidget);
-      // Should NOT show heavy recommendation cards
-      expect(find.text('推荐理由'), findsNothing);
-      expect(find.text('注意事项'), findsNothing);
+      // Should show compact explanation on the product group card
+      expect(find.text('推荐解释'), findsOneWidget);
+      expect(find.text('综合分 86'), findsOneWidget);
+      expect(find.text('注意事项'), findsOneWidget);
       expect(find.text('为什么推荐它'), findsNothing);
-      expect(find.text('综合分 86'), findsNothing);
       expect(find.text('决策信号'), findsNothing);
     });
 
-    testWidgets('old recommendation card without explanation still works',
-        (tester) async {
-      final ov = _TestOverrides();
-      final completer = Completer<AgentReply>();
-      ov.chatApi.stubSendMessage(completer);
-
-      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
-      await tester.enterText(find.byType(TextField), 'test');
-      await tester.pump();
-      await tester.tap(find.byIcon(Icons.arrow_upward));
-      await tester.pump();
-
-      // Old-style recommendation without explanation fields
-      completer.complete(const AgentReply(
-        replyId: 'reply-old',
-        replyType: 'product_recommendation',
-        text: '推荐结果',
-        cards: [
-          ReplyCard(cardType: 'product_list', title: '商品列表', products: [
-            ProductItem(
-                productId: 'p1',
-                title: 'Test',
-                platform: '京东-mock',
-                price: 100,
-                originalPrice: 150,
-                shopName: 'Shop',
-                imageUrl: '',
-                productUrl: '',
-                rating: 4.0,
-                sales: 100,
-                tags: [],
-                reasons: [],
-                score: 5),
-          ]),
-          ReplyCard(cardType: 'comparison', title: '比价', platformStats: {}),
-          ReplyCard(
-              cardType: 'recommendation',
-              title: '推荐',
-              productName: 'Old Card',
-              platform: '京东-mock',
-              price: 100,
-              reason: 'test'),
-        ],
-      ));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Old Card'), findsOneWidget);
-      // Should not crash on missing fields
-      expect(find.text('综合分'), findsNothing);
-    });
-
-    testWidgets('recommendation card hides provider status', (tester) async {
+    testWidgets('provider status hidden from ui', (tester) async {
       final ov = _TestOverrides();
       await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
       await tester.enterText(find.byType(TextField), '推荐耳机');
@@ -1241,87 +1215,6 @@ void main() {
       expect(find.text('解释：rule'), findsNothing);
     });
 
-    testWidgets('history restores provider metadata', (tester) async {
-      final ov = _TestOverrides();
-      // Use minimal cards so the recommendation card is visible without scrolling
-      ov.chatApi.addHistoryMessages('hist-prov', [
-        {
-          'messageId': 'm1',
-          'role': 'user',
-          'text': '推荐',
-          'imageIds': [],
-          'selectedOptionIds': [],
-          'createdAt': '2026-06-06T10:00:00+08:00'
-        },
-        {
-          'messageId': 'm2',
-          'role': 'assistant',
-          'text': '推荐结果',
-          'imageIds': [],
-          'selectedOptionIds': [],
-          'createdAt': '2026-06-06T10:00:01+08:00',
-          'agentReply': {
-            'replyId': 'rp',
-            'replyType': 'product_recommendation',
-            'text': '推荐',
-            'cards': [
-              {'cardType': 'product_list', 'title': '商品', 'products': []},
-              {'cardType': 'comparison', 'title': '比价', 'platformStats': {}},
-              {
-                'cardType': 'recommendation',
-                'title': '推荐',
-                'productName': 'T',
-                'platform': '京东-mock',
-                'price': 100.0,
-                'reason': 'test',
-                'decisionScore': 80,
-                'decisionSignals': [],
-                'evidence': [],
-                'risks': [],
-                'productAnalyses': [],
-                'intentProvider': 'ark',
-                'intentFallbackUsed': true,
-                'explanationProvider': 'rule',
-                'explanationFallbackUsed': false,
-                'notices': []
-              },
-            ],
-          }
-        },
-      ]);
-
-      final controller = ChatController(ov.chatApi);
-      await controller.switchToSession('hist-prov');
-      expect(controller.messages, hasLength(2));
-      final restoredReply = controller.messages[1].agentReply;
-      expect(restoredReply, isNotNull);
-      final restoredCard = restoredReply!.cards[2];
-      expect(restoredCard.productName, 'T');
-      expect(restoredCard.intentProvider, 'ark');
-      expect(restoredCard.intentFallbackUsed, isTrue);
-
-      await tester.pumpWidget(_wrapChat(const ChatScreen(), overrides: ov));
-      await tester.tap(find.byIcon(Icons.history));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('历史会话'));
-      await tester.pumpAndSettle();
-
-      final uiController = ProviderScope.containerOf(
-        tester.element(find.byType(ChatScreen)),
-        listen: false,
-      ).read(chatControllerProvider);
-      expect(uiController.messages, hasLength(2));
-      final uiReply = uiController.messages[1].agentReply;
-      expect(uiReply, isNotNull);
-      expect(uiReply!.cards[2].productName, 'T');
-
-      // Verify history loaded
-      expect(find.text('T'), findsOneWidget);
-      expect(find.text('test'), findsOneWidget);
-      // Provider metadata is retained in the model but hidden from the user UI.
-      expect(find.text('意图：ark'), findsNothing);
-      expect(find.text('已回退规则处理'), findsNothing);
-    });
   });
 
   group('Product card extensions', () {
@@ -1334,6 +1227,54 @@ void main() {
       });
 
       expect(card.filterSummary, ['品类：耳机', '预算≤300元', '颜色：黑色']);
+    });
+
+    test('ReplyCard parses recommendation explanation fields', () {
+      final card = ReplyCard.fromJson({
+        'cardType': 'product_group_list',
+        'title': '商品结果',
+        'reason': '综合评分较高，推荐购买。',
+        'decisionScore': 86,
+        'decisionSignals': [
+          {
+            'key': 'price',
+            'label': '价格',
+            'score': 88,
+            'explanation': '价格分布合理。',
+          },
+        ],
+        'evidence': [
+          {'type': 'stats', 'content': '共 3 件商品，覆盖 2 个平台。'},
+        ],
+        'risks': ['当前为公开样例商品数据。'],
+        'productAnalyses': [
+          {
+            'productId': 'jd-001',
+            'platform': '京东-mock',
+            'title': '耐克品牌运动鞋',
+            'rank': 1,
+            'score': 86,
+            'strengths': ['价格低于同类均价'],
+            'weaknesses': ['第三方店铺需注意售后'],
+          },
+        ],
+        'intentProvider': 'rule',
+        'intentFallbackUsed': false,
+        'explanationProvider': 'rule',
+        'explanationFallbackUsed': false,
+        'notices': ['说明文本'],
+        'groups': [],
+      });
+
+      expect(card.reason, '综合评分较高，推荐购买。');
+      expect(card.decisionScore, 86);
+      expect(card.decisionSignals!.single.key, 'price');
+      expect(card.evidence!.single.content, '共 3 件商品，覆盖 2 个平台。');
+      expect(card.risks, ['当前为公开样例商品数据。']);
+      expect(card.productAnalyses!.single.productId, 'jd-001');
+      expect(card.intentProvider, 'rule');
+      expect(card.explanationProvider, 'rule');
+      expect(card.notices, ['说明文本']);
     });
 
     testWidgets('shows brand badge, price trend, matched preference badges',
