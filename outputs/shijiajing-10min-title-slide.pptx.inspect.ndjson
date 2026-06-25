@@ -1,0 +1,15 @@
+{"kind":"deck","id":"pr/d8a42g","name":"Deck"}
+{"kind":"layout","layoutId":"0ae6f30b-2b68-4af1-9451-8f5e7b79c28a","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"d07d3524-6dec-4660-94e6-c1cd1c5c1842","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/r40nrv","slide":1,"title":"EC26-B · 10分钟项目讲解","textShapes":7}
+{"kind":"shape","id":"sh/2x4nap4r","slide":1,"name":"lower-context-band","bbox":[0,390,1280,330]}
+{"kind":"textbox","id":"sh/donyd0z6","slide":1,"name":"deck-meta","text":"EC26-B · 10分钟项目讲解","textPreview":"EC26-B · 10分钟项目讲解","textChars":17,"textLines":1,"bbox":[42,42,420,34]}
+{"kind":"textbox","id":"sh/k3q5o7qp","slide":1,"name":"project-title","text":"识价镜\nAI 智能比价购物助手","textPreview":"识价镜 | AI 智能比价购物助手","textChars":15,"textLines":2,"bbox":[42,138,960,220]}
+{"kind":"shape","id":"sh/val87ed8","slide":1,"name":"left-anchor-square","bbox":[452,457,27,27]}
+{"kind":"textbox","id":"sh/6psfil0r","slide":1,"name":"positioning-title","text":"项目定位","textPreview":"项目定位","textChars":4,"textLines":1,"bbox":[452,514,375,34]}
+{"kind":"textbox","id":"sh/dcbulwva","slide":1,"name":"positioning-body","text":"拍照识物、自然语言筛选、多平台样例比价，把购物决策放进聊天链路。","textPreview":"拍照识物、自然语言筛选、多平台样例比价，把购物决策放进聊天链路。","textChars":32,"textLines":1,"bbox":[452,558,375,88]}
+{"kind":"shape","id":"sh/kre1w7mp","slide":1,"name":"right-anchor-square","bbox":[864,457,27,27]}
+{"kind":"textbox","id":"sh/v6psfil0","slide":1,"name":"storyline-title","text":"讲解主线","textPreview":"讲解主线","textChars":4,"textLines":1,"bbox":[864,514,375,34]}
+{"kind":"textbox","id":"sh/2lszqtcj","slide":1,"name":"storyline-body","text":"从一次图片或文本输入出发，说明识别、检索、推荐解释和工程闭环。","textPreview":"从一次图片或文本输入出发，说明识别、检索、推荐解释和工程闭环。","textChars":31,"textLines":1,"bbox":[864,558,375,88]}
+{"kind":"textbox","id":"sh/szqtcj6t","slide":1,"name":"slide-number","text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[1184,659,54,25]}
+{"kind":"notes","id":"nt/r40nrv","slide":1,"text":""}
