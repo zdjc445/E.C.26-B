@@ -1,0 +1,81 @@
+[project]
+name = "shijiajing-agent"
+version = "0.1.0"
+description = "识价镜 Agent：图片/文本输入 → 商品识别 → 意图理解 → 混合召回 → 同款匹配 → SKU 拆分 → 比价排序 → 多轮筛选 的可恢复 Workflow Agent"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+authors = [{ name = "shijiajing" }]
+dependencies = [
+    "langgraph>=0.3.0",
+    "langgraph-checkpoint-sqlite>=2.0.0",
+    "pydantic>=2.7.0",
+    "openai>=1.40.0,<2",
+    "httpx>=0.27.0",
+    "tenacity>=8.2.0",
+    "pymilvus>=2.4.0,<3",
+    "structlog>=24.1.0",
+    "opentelemetry-api>=1.25.0",
+    "opentelemetry-sdk>=1.25.0",
+    "prometheus-client>=0.20.0",
+    "orjson>=3.10.0",
+]
+
+[project.optional-dependencies]
+postgres = [
+    "langgraph-checkpoint-postgres>=2.0.0",
+    "psycopg[binary]>=3.2.0",
+]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "hypothesis>=6.100.0",
+    "testcontainers>=4.5.0",
+    "ruff>=0.5.0",
+    "pyright>=1.1.370",
+]
+
+[project.scripts]
+shijiajing-init-milvus = "shijiajing_agent.tools.init_milvus:main"
+shijiajing-index-products = "shijiajing_agent.tools.index_products:main"
+shijiajing-eval = "shijiajing_agent.tools.run_eval:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/shijiajing_agent"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/shijiajing_agent/data" = "shijiajing_agent/data"
+"src/shijiajing_agent/prompts" = "shijiajing_agent/prompts"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# Windows 系统 Temp 目录 ACL 异常时使用项目内临时目录（避免 PermissionError）
+addopts = "--basetemp=.pytest_tmp -m \"not integration\""
+markers = [
+    "integration: tests that require external services (docker/testcontainers)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "ASYNC", "RUF"]
+ignore = [
+    "B008", # allow function calls in defaults where intentional (Field default_factory preferred, kept for adapters)
+    "RUF001", # ambiguous fullwidth punctuation: user-facing strings are intentionally Chinese
+    "RUF002", # ambiguous fullwidth punctuation: project docstrings are intentionally Chinese
+    "RUF003", # ambiguous fullwidth punctuation: project comments are intentionally Chinese
+]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false

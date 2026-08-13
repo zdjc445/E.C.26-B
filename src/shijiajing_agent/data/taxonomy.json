@@ -1,0 +1,166 @@
+{
+  "schema_version": "1.0",
+  "taxonomy_version": "2026.08.1",
+  "categories": [
+    {
+      "category_id": "headphone",
+      "category_name": "耳机",
+      "aliases": ["耳机", "头戴式耳机", "入耳式耳机", "蓝牙耳机", "无线耳机", "降噪耳机", "耳麦"],
+      "brand_aliases": {
+        "苹果": "Apple",
+        "索尼": "Sony",
+        "华为": "Huawei",
+        "小米": "Xiaomi",
+        "三星": "Samsung",
+        "森海塞尔": "Sennheiser",
+        "铁三角": "Audio-Technica",
+        "漫步者": "Edifier",
+        "JBL": "JBL",
+        "Beats": "Beats",
+        "Bose": "Bose"
+      },
+      "model_normalization_rules": {
+        "separator": "space",
+        "uppercase": true
+      },
+      "searchable_attributes": ["noise_cancellation", "wearing_style", "connectivity", "battery_life"],
+      "identity_attributes": ["connectivity", "wearing_style"],
+      "variant_attributes": ["color", "set_type"],
+      "attribute_schema": {
+        "noise_cancellation": {"type": "string", "enum": ["主动降噪", "被动降噪", "无"]},
+        "wearing_style": {"type": "string", "enum": ["头戴式", "入耳式", "半入耳式", "骨传导"]},
+        "connectivity": {"type": "string", "enum": ["蓝牙", "有线", "双模"]},
+        "battery_life": {"type": "string"},
+        "color": {"type": "string"},
+        "set_type": {"type": "string", "enum": ["单件", "套装"]}
+      }
+    },
+    {
+      "category_id": "sneaker",
+      "category_name": "运动鞋",
+      "aliases": ["运动鞋", "跑步鞋", "跑鞋", "篮球鞋", "休闲运动鞋", "球鞋"],
+      "brand_aliases": {
+        "耐克": "Nike",
+        "阿迪达斯": "Adidas",
+        "新百伦": "New Balance",
+        "亚瑟士": "ASICS",
+        "安踏": "Anta",
+        "李宁": "Li-Ning",
+        "彪马": "Puma",
+        "昂跑": "On",
+        "斯凯奇": "Skechers",
+        "NB": "New Balance"
+      },
+      "model_normalization_rules": {
+        "separator": "space",
+        "uppercase": true
+      },
+      "searchable_attributes": ["shoe_type", "upper_material"],
+      "identity_attributes": ["shoe_type"],
+      "variant_attributes": ["size", "color"],
+      "attribute_schema": {
+        "shoe_type": {"type": "string", "enum": ["跑步", "篮球", "休闲", "综训"]},
+        "upper_material": {"type": "string", "enum": ["织物", "皮革", "合成革"]},
+        "size": {"type": "string"},
+        "color": {"type": "string"}
+      }
+    },
+    {
+      "category_id": "hair_dryer",
+      "category_name": "吹风机",
+      "aliases": ["吹风机", "电吹风", "高速吹风机", "负离子吹风机"],
+      "brand_aliases": {
+        "戴森": "Dyson",
+        "飞利浦": "Philips",
+        "松下": "Panasonic",
+        "小米": "Xiaomi",
+        "徕芬": "Laifen",
+        "康夫": "Kangfu",
+        "松下电器": "Panasonic"
+      },
+      "model_normalization_rules": {
+        "separator": "space",
+        "uppercase": true
+      },
+      "searchable_attributes": ["power", "ion_type", "nozzle_count"],
+      "identity_attributes": ["power", "ion_type"],
+      "variant_attributes": ["color", "voltage_region", "set_type"],
+      "attribute_schema": {
+        "power": {"type": "string"},
+        "ion_type": {"type": "string", "enum": ["负离子", "水离子", "无"]},
+        "nozzle_count": {"type": "string"},
+        "color": {"type": "string"},
+        "voltage_region": {"type": "string", "enum": ["国行220V", "海外版110V", "全球电压"]},
+        "set_type": {"type": "string", "enum": ["单机", "套装"]}
+      }
+    },
+    {
+      "category_id": "backpack",
+      "category_name": "背包",
+      "aliases": ["背包", "双肩包", "双肩背包", "电脑包", "旅行背包", "书包"],
+      "brand_aliases": {
+        "新秀丽": "Samsonite",
+        "无印良品": "MUJI",
+        "小米": "Xiaomi",
+        "阿迪达斯": "Adidas",
+        "耐克": "Nike",
+        "华为": "Huawei"
+      },
+      "model_normalization_rules": {
+        "separator": "space",
+        "uppercase": true
+      },
+      "searchable_attributes": ["capacity_liters", "material", "laptop_compatible"],
+      "identity_attributes": ["capacity_liters", "material"],
+      "variant_attributes": ["color", "size"],
+      "attribute_schema": {
+        "capacity_liters": {"type": "string"},
+        "material": {"type": "string", "enum": ["尼龙", "帆布", "涤纶", "皮革"]},
+        "laptop_compatible": {"type": "string", "enum": ["支持15.6寸", "支持14寸", "不支持"]},
+        "color": {"type": "string"},
+        "size": {"type": "string"}
+      }
+    },
+    {
+      "category_id": "smartwatch",
+      "category_name": "智能手表",
+      "aliases": ["智能手表", "智能腕表", "运动手表", "手表", "智能手环"],
+      "brand_aliases": {
+        "苹果": "Apple",
+        "华为": "Huawei",
+        "小米": "Xiaomi",
+        "三星": "Samsung",
+        "佳明": "Garmin",
+        "华米": "Amazfit",
+        "OPPO": "OPPO",
+        "荣耀": "Honor"
+      },
+      "model_normalization_rules": {
+        "separator": "space",
+        "uppercase": true
+      },
+      "searchable_attributes": ["cellular_version", "case_size", "health_sensors"],
+      "identity_attributes": ["cellular_version", "case_size"],
+      "variant_attributes": ["color", "strap_material", "band_size"],
+      "attribute_schema": {
+        "cellular_version": {"type": "string", "enum": ["蜂窝版", "GPS版", "蓝牙版"]},
+        "case_size": {"type": "string"},
+        "health_sensors": {"type": "string"},
+        "color": {"type": "string"},
+        "strap_material": {"type": "string", "enum": ["硅胶", "真皮", "尼龙", "不锈钢"]},
+        "band_size": {"type": "string"}
+      }
+    }
+  ],
+  "unit_rules": [
+    {"attribute": "capacity_liters", "unit": "L", "aliases": ["升", "l", "L"]},
+    {"attribute": "power", "unit": "W", "aliases": ["瓦", "w", "W"]},
+    {"attribute": "battery_life", "unit": "h", "aliases": ["小时", "h", "H"]}
+  ],
+  "common_brand_aliases": {
+    "苹果": "Apple",
+    "华为": "Huawei",
+    "小米": "Xiaomi",
+    "三星": "Samsung"
+  }
+}
