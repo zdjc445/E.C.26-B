@@ -1,0 +1,390 @@
+"""Checkpoint 适配器（方案 §17.1、§17.3）。
+
+- ``SQLiteCheckpointAdapter``：开发环境，stdlib sqlite3，写操作经线程池执行不阻塞事件循环。
+- ``PostgresCheckpointAdapter``：生产环境，psycopg async + 事务级 advisory lock + 乐观版本。
+
+两种实现共享同一张逻辑表 ``agent_checkpoint(session_id, state_json, state_version,
+schema_version, saved_at)``。状态序列化把 pydantic 模型 dump 成 JSON；加载时按字段
+类型重建模型实例（facade 与节点依赖 ``current_request`` / ``response`` / ``image_ref``
+等为模型实例）。``evidence_bundle`` 是纯 dataclass，同样重建。
+
+- §17.1：``schema_version`` 不兼容时拒绝加载，必须显式 migration。
+- §17.3：保存采用乐观版本检查；冲突抛 ``SessionConflictError``（advisory lock 只用于
+  生产 Postgres，开发 SQLite 由进程内锁串行化，不同 session 不受影响）。
+- ``previous_state`` 不持久化（§7.3：只由 facade 注入，避免状态无限膨胀）。
+- Checkpoint 失败必须阻断成功提交（facade 转为失败响应），不静默丢弃。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import dataclasses
+import json
+import sqlite3
+import threading
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Any, cast
+
+from pydantic import BaseModel
+
+from shijiajing_agent.config import Settings
+from shijiajing_agent.contracts import (
+    AgentRequest,
+    AgentResponse,
+    Clarification,
+    CompletionReason,
+    ImageRef,
+    IntentPatch,
+    NormalizedCandidate,
+    RankedGroup,
+    RecognitionResult,
+    RetrievalCandidate,
+    RetrievalQuery,
+    ShoppingConstraints,
+    SkuGroup,
+)
+from shijiajing_agent.domain.evidence import EvidenceBundle, GroupEvidence
+from shijiajing_agent.errors import CheckpointUnavailableError, SessionConflictError
+from shijiajing_agent.ports.checkpoint import CheckpointPort
+from shijiajing_agent.state import SCHEMA_VERSION, AgentState
+
+# 单值 pydantic 模型字段：加载时重建实例（None 时置 None）
+_SINGLE_MODEL_FIELDS: dict[str, type[BaseModel]] = {
+    "current_request": AgentRequest,
+    "image_ref": ImageRef,
+    "recognition": RecognitionResult,
+    "intent_patch": IntentPatch,
+    "effective_constraints": ShoppingConstraints,
+    "retrieval_query": RetrievalQuery,
+    "clarification": Clarification,
+    "response": AgentResponse,
+}
+
+# 列表 pydantic 模型字段
+_LIST_MODEL_FIELDS: dict[str, type[BaseModel]] = {
+    "recognition_history": RecognitionResult,
+    "candidates": RetrievalCandidate,
+    "normalized_candidates": NormalizedCandidate,
+    "sku_groups": SkuGroup,
+    "ranked_groups": RankedGroup,
+}
+
+# StrEnum 字段：加载时按值重建
+_ENUM_FIELDS: dict[str, type[StrEnum]] = {"completion_reason": CompletionReason}
+
+
+def _to_jsonable(value: Any) -> Any:
+    """pydantic 模型 / dataclass / Enum → JSON 原语（递归）。"""
+    if isinstance(value, BaseModel):
+        return value.model_dump(mode="json")
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return _to_jsonable(dataclasses.asdict(value))
+    if isinstance(value, dict):
+        mapping = cast(dict[str, Any], value)
+        return {k: _to_jsonable(v) for k, v in mapping.items()}
+    if isinstance(value, (list, tuple)):
+        seq = cast(list[Any], value)
+        return [_to_jsonable(v) for v in seq]
+    if isinstance(value, StrEnum):
+        return value.value
+    return value
+
+
+def _state_to_payload(state: AgentState) -> dict[str, Any]:
+    """持久化前清洗：剔除 previous_state，模型转 JSON 原语。"""
+    return {k: _to_jsonable(v) for k, v in state.items() if k != "previous_state"}
+
+
+def _state_from_payload(payload: dict[str, Any]) -> AgentState:
+    """按字段类型重建模型/dataclass/Enum 实例；TypedDict 记录字段原样透传。"""
+    out: dict[str, Any] = {}
+    for key, value in payload.items():
+        model = _SINGLE_MODEL_FIELDS.get(key)
+        if model is not None:
+            out[key] = model.model_validate(value) if value is not None else None
+            continue
+        model = _LIST_MODEL_FIELDS.get(key)
+        if model is not None:
+            items = cast(list[Any], value or [])
+            out[key] = [model.model_validate(item) for item in items]
+            continue
+        if key == "evidence_bundle":
+            out[key] = _evidence_from_jsonable(value)
+            continue
+        enum_cls = _ENUM_FIELDS.get(key)
+        if enum_cls is not None:
+            out[key] = enum_cls(value) if value is not None else None
+            continue
+        out[key] = value
+    return AgentState(**out)
+
+
+def _evidence_from_jsonable(value: Any) -> EvidenceBundle | None:
+    if value is None:
+        return None
+    payload = cast(dict[str, Any], value)
+    raw_groups = cast(list[Any], payload.get("groups") or [])
+    groups = [GroupEvidence(**cast(dict[str, Any], g)) for g in raw_groups]
+    raw_notices = cast(list[Any], payload.get("notices") or [])
+    notices = [str(n) for n in raw_notices]
+    return EvidenceBundle(
+        query_summary=str(payload.get("query_summary") or ""),
+        groups=groups,
+        notices=notices,
+    )
+
+
+_DDL = """
+CREATE TABLE IF NOT EXISTS agent_checkpoint (
+    session_id     TEXT PRIMARY KEY,
+    state_json     TEXT NOT NULL,
+    state_version  INTEGER NOT NULL,
+    schema_version TEXT NOT NULL,
+    saved_at       TEXT NOT NULL
+)
+"""
+
+
+class SQLiteCheckpointAdapter:
+    """开发环境 Checkpoint（stdlib sqlite3，线程池执行，不阻塞事件循环）。"""
+
+    def __init__(self, dsn: str) -> None:
+        path = dsn
+        for prefix in ("sqlite:///", "sqlite://"):
+            if path.startswith(prefix):
+                path = path[len(prefix) :]
+                break
+        if not path:
+            raise ValueError("SHIJIAJING_CHECKPOINT_DSN 不能为空")
+        self._path = path
+        self._lock = threading.Lock()
+        self._conn: sqlite3.Connection | None = None
+        self._closed = False
+
+    def _connect(self) -> sqlite3.Connection:
+        if self._conn is None:
+            conn = sqlite3.connect(self._path, check_same_thread=False)
+            conn.execute(_DDL)
+            conn.commit()
+            self._conn = conn
+        return self._conn
+
+    def close(self) -> None:
+        with self._lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
+            self._closed = True
+
+    # ------------------------------------------------------------------
+    async def load(self, session_id: str) -> tuple[AgentState, int] | None:
+        return await asyncio.to_thread(self._load_sync, session_id)
+
+    async def save(self, session_id: str, state: AgentState, expected_version: int | None) -> int:
+        return await asyncio.to_thread(self._save_sync, session_id, state, expected_version)
+
+    # ------------------------------------------------------------------
+    def _load_sync(self, session_id: str) -> tuple[AgentState, int] | None:
+        with self._lock:
+            if self._closed:
+                raise CheckpointUnavailableError("Checkpoint adapter 已关闭")
+            conn = self._connect()
+            try:
+                row = conn.execute(
+                    "SELECT state_json, state_version, schema_version"
+                    " FROM agent_checkpoint WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()
+            except sqlite3.Error as exc:
+                raise CheckpointUnavailableError(f"checkpoint 读取失败: {exc}") from exc
+            if row is None:
+                return None
+            state_json, version, stored_schema = row
+            if stored_schema != SCHEMA_VERSION:
+                raise CheckpointUnavailableError(
+                    f"Checkpoint schema 版本不兼容：存储 {stored_schema}，"
+                    f"当前 {SCHEMA_VERSION}，需显式迁移"
+                )
+            try:
+                payload = json.loads(state_json)
+            except json.JSONDecodeError as exc:
+                raise CheckpointUnavailableError(f"checkpoint 数据损坏: {exc}") from exc
+            return _state_from_payload(payload), int(version)
+
+    def _save_sync(self, session_id: str, state: AgentState, expected_version: int | None) -> int:
+        with self._lock:
+            if self._closed:
+                raise CheckpointUnavailableError("Checkpoint adapter 已关闭")
+            conn = self._connect()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                row = conn.execute(
+                    "SELECT state_version FROM agent_checkpoint WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()
+                stored = int(row[0]) if row else 0
+                if expected_version is not None and stored != expected_version:
+                    conn.rollback()
+                    raise SessionConflictError(
+                        f"乐观版本冲突：期望 {expected_version}，实际 {stored}"
+                    )
+                new_version = stored + 1
+                # §17：state_version 由 Checkpoint 维护，随状态一起持久化
+                state["state_version"] = new_version
+                conn.execute(
+                    "INSERT INTO agent_checkpoint"
+                    " (session_id, state_json, state_version, schema_version, saved_at)"
+                    " VALUES (?, ?, ?, ?, ?)"
+                    " ON CONFLICT(session_id) DO UPDATE SET"
+                    " state_json = excluded.state_json,"
+                    " state_version = excluded.state_version,"
+                    " schema_version = excluded.schema_version,"
+                    " saved_at = excluded.saved_at",
+                    (
+                        session_id,
+                        json.dumps(_state_to_payload(state), ensure_ascii=False),
+                        new_version,
+                        SCHEMA_VERSION,
+                        datetime.now(UTC).isoformat(),
+                    ),
+                )
+                conn.commit()
+            except sqlite3.Error as exc:
+                conn.rollback()
+                raise CheckpointUnavailableError(f"checkpoint 写入失败: {exc}") from exc
+            return new_version
+
+
+_PG_DDL = """
+CREATE TABLE IF NOT EXISTS agent_checkpoint (
+    session_id     TEXT PRIMARY KEY,
+    state_json     TEXT NOT NULL,
+    state_version  BIGINT NOT NULL,
+    schema_version TEXT NOT NULL,
+    saved_at       TIMESTAMPTZ NOT NULL
+)
+"""
+
+
+class PostgresCheckpointAdapter:
+    """生产环境 Checkpoint（psycopg async + 事务级 advisory lock + 乐观版本）。
+
+    同一 session 的并发写由 ``pg_advisory_xact_lock(hashtext(session_id))`` 在事务内
+    串行化（§17.3）；不同 session 互不阻塞。版本冲突或任何数据库错误都回滚事务。
+    """
+
+    def __init__(self, dsn: str, *, max_size: int = 4) -> None:
+        if not dsn:
+            raise ValueError("SHIJIAJING_CHECKPOINT_DSN 不能为空")
+        self._dsn = dsn
+        self._pool = self._build_pool(dsn, max_size)
+        self._ddl_done = False
+
+    @staticmethod
+    def _build_pool(dsn: str, max_size: int) -> Any:
+        # psycopg 为可选依赖（pyproject `postgres` extra），仅构造该适配器时导入
+        from psycopg_pool import AsyncConnectionPool
+
+        return AsyncConnectionPool(dsn, min_size=1, max_size=max_size, open=False)
+
+    async def _ready(self) -> Any:
+        pool = self._pool
+        if pool is None:
+            raise CheckpointUnavailableError("Checkpoint adapter 已关闭")
+        if pool.closed:
+            await pool.open()
+        if not self._ddl_done:
+            async with pool.connection() as conn:
+                await conn.execute(_PG_DDL)
+            self._ddl_done = True
+        return pool
+
+    async def close(self) -> None:
+        if self._pool is not None:
+            await self._pool.close()
+            self._pool = None
+
+    # ------------------------------------------------------------------
+    async def load(self, session_id: str) -> tuple[AgentState, int] | None:
+        try:
+            pool = await self._ready()
+            async with pool.connection() as conn:
+                row = await (
+                    await conn.execute(
+                        "SELECT state_json, state_version, schema_version"
+                        " FROM agent_checkpoint WHERE session_id = %s",
+                        (session_id,),
+                    )
+                ).fetchone()
+        except CheckpointUnavailableError:
+            raise
+        except Exception as exc:
+            raise CheckpointUnavailableError(f"checkpoint 读取失败: {exc}") from exc
+        if row is None:
+            return None
+        state_json, version, stored_schema = row
+        if stored_schema != SCHEMA_VERSION:
+            raise CheckpointUnavailableError(
+                f"Checkpoint schema 版本不兼容：存储 {stored_schema}，"
+                f"当前 {SCHEMA_VERSION}，需显式迁移"
+            )
+        try:
+            payload = json.loads(state_json)
+        except json.JSONDecodeError as exc:
+            raise CheckpointUnavailableError(f"checkpoint 数据损坏: {exc}") from exc
+        return _state_from_payload(payload), int(version)
+
+    async def save(self, session_id: str, state: AgentState, expected_version: int | None) -> int:
+        try:
+            pool = await self._ready()
+            async with pool.connection() as conn:
+                async with conn.transaction():
+                    await conn.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (session_id,))
+                    row = await (
+                        await conn.execute(
+                            "SELECT state_version FROM agent_checkpoint WHERE session_id = %s",
+                            (session_id,),
+                        )
+                    ).fetchone()
+                    stored = int(row[0]) if row else 0
+                    if expected_version is not None and stored != expected_version:
+                        raise SessionConflictError(
+                            f"乐观版本冲突：期望 {expected_version}，实际 {stored}"
+                        )
+                    new_version = stored + 1
+                    # §17：state_version 由 Checkpoint 维护，随状态一起持久化
+                    state["state_version"] = new_version
+                    await conn.execute(
+                        "INSERT INTO agent_checkpoint"
+                        " (session_id, state_json, state_version, schema_version, saved_at)"
+                        " VALUES (%s, %s, %s, %s, %s)"
+                        " ON CONFLICT (session_id) DO UPDATE SET"
+                        " state_json = EXCLUDED.state_json,"
+                        " state_version = EXCLUDED.state_version,"
+                        " schema_version = EXCLUDED.schema_version,"
+                        " saved_at = EXCLUDED.saved_at",
+                        (
+                            session_id,
+                            json.dumps(_state_to_payload(state), ensure_ascii=False),
+                            new_version,
+                            SCHEMA_VERSION,
+                            datetime.now(UTC),
+                        ),
+                    )
+        except SessionConflictError:
+            raise
+        except Exception as exc:
+            raise CheckpointUnavailableError(f"checkpoint 写入失败: {exc}") from exc
+        return new_version
+
+
+def make_checkpoint(settings: Settings) -> CheckpointPort:
+    """按配置构建 Checkpoint 适配器（sqlite / postgres）。"""
+    dsn = settings.checkpoint_dsn or ""
+    backend = (settings.checkpoint_backend or "sqlite").lower()
+    if backend == "sqlite":
+        return SQLiteCheckpointAdapter(dsn)
+    if backend == "postgres":
+        return PostgresCheckpointAdapter(dsn)
+    raise ValueError(f"未知 checkpoint_backend: {backend}（支持 sqlite / postgres）")
