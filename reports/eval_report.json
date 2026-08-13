@@ -1,0 +1,407 @@
+{
+  "generated_at": "2026-08-13T09:56:00+00:00",
+  "source": "offline",
+  "gate": true,
+  "blocking_failures": [],
+  "blocking_pending": [],
+  "datasets": {
+    "recognition": {
+      "kind": "recognition",
+      "n_rows": 4,
+      "n_recorded": 3,
+      "digest": "9ab33e6c2ad99dd8"
+    },
+    "intent": {
+      "kind": "intent",
+      "n_rows": 4,
+      "n_recorded": 3,
+      "digest": "17035fd6a72bb7a4"
+    },
+    "retrieval": {
+      "kind": "retrieval",
+      "n_rows": 3,
+      "n_recorded": 2,
+      "digest": "7dc92fb58b421cb3"
+    },
+    "same_item": {
+      "kind": "same_item",
+      "n_rows": 5,
+      "n_recorded": 0,
+      "digest": "76598cb0905895aa"
+    },
+    "ranking": {
+      "kind": "ranking",
+      "n_rows": 3,
+      "n_recorded": 0,
+      "digest": "d8f656321db5f261"
+    },
+    "workflow": {
+      "kind": "workflow",
+      "n_rows": 3,
+      "n_recorded": 3,
+      "digest": "f0490463afb0ce47"
+    }
+  },
+  "metrics": [
+    {
+      "name": "structural_output_success_rate",
+      "value": 1.0,
+      "n": 3,
+      "pending": 1,
+      "source": "offline",
+      "threshold": 0.99,
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "category_accuracy",
+      "value": 1.0,
+      "n": 3,
+      "pending": 1,
+      "source": "offline",
+      "threshold": 0.9,
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "brand_exact_match",
+      "value": 0.666667,
+      "n": 3,
+      "pending": 1,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "model_exact_match",
+      "value": 0.666667,
+      "n": 3,
+      "pending": 1,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "attribute_macro_f1",
+      "value": 0.888889,
+      "n": 3,
+      "pending": 1,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "expected_calibration_error",
+      "value": 0.296667,
+      "n": 3,
+      "pending": 1,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "intent_field_macro_f1",
+      "value": 1.0,
+      "n": 3,
+      "pending": 1,
+      "source": "offline",
+      "threshold": 0.92,
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "clear_operation_accuracy",
+      "value": 1.0,
+      "n": 3,
+      "pending": 1,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "conflict_detection_recall",
+      "value": 1.0,
+      "n": 1,
+      "pending": 2,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "sku_recall_at_5",
+      "value": 1.0,
+      "n": 2,
+      "pending": 1,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "sku_recall_at_10",
+      "value": 1.0,
+      "n": 2,
+      "pending": 1,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "sku_recall_at_20",
+      "value": 1.0,
+      "n": 2,
+      "pending": 1,
+      "source": "offline",
+      "threshold": 0.9,
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "spu_recall_at_20",
+      "value": 1.0,
+      "n": 2,
+      "pending": 1,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "mrr_at_10",
+      "value": 1.0,
+      "n": 2,
+      "pending": 1,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "hard_filter_satisfaction_rate",
+      "value": 1.0,
+      "n": 2,
+      "pending": 1,
+      "source": "offline",
+      "threshold": 1.0,
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "zero_result_rate",
+      "value": 0.0,
+      "n": 2,
+      "pending": 1,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "same_item_pairwise_precision",
+      "value": 1.0,
+      "n": 5,
+      "pending": 0,
+      "source": "offline",
+      "threshold": 0.98,
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "same_item_pairwise_recall",
+      "value": 1.0,
+      "n": 5,
+      "pending": 0,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "same_item_pairwise_f1",
+      "value": 1.0,
+      "n": 5,
+      "pending": 0,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "false_comparison_rate",
+      "value": 0.0,
+      "n": 5,
+      "pending": 0,
+      "source": "offline",
+      "threshold": 0.01,
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "sku_split_accuracy",
+      "value": 1.0,
+      "n": 2,
+      "pending": 3,
+      "source": "offline",
+      "threshold": 0.97,
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "ndcg_at_5",
+      "value": 1.0,
+      "n": 3,
+      "pending": 0,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "ndcg_at_10",
+      "value": 1.0,
+      "n": 3,
+      "pending": 0,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "constraint_satisfaction_rate",
+      "value": 1.0,
+      "n": 8,
+      "pending": 0,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "top1_price_correct",
+      "value": 1.0,
+      "n": 2,
+      "pending": 1,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "explanation_factual_consistency_rate",
+      "value": 1.0,
+      "n": 7,
+      "pending": 0,
+      "source": "offline",
+      "threshold": 1.0,
+      "passed": true,
+      "note": "模板解释按构造一致（内容仅来自证据）；模型文本需 live 校验"
+    },
+    {
+      "name": "explanation_template_self_verify_rate",
+      "value": 0.0,
+      "n": 7,
+      "pending": 0,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": "严格校验器对排名序号与标题数字存在误报，仅作参考"
+    },
+    {
+      "name": "task_success_rate",
+      "value": 1.0,
+      "n": 3,
+      "pending": 0,
+      "source": "offline",
+      "threshold": 0.85,
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "clarification_appropriateness",
+      "value": 1.0,
+      "n": 3,
+      "pending": 0,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "correction_success_rate",
+      "value": 1.0,
+      "n": 1,
+      "pending": 2,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "vlm_avoided_after_correction_rate",
+      "value": 1.0,
+      "n": 3,
+      "pending": 0,
+      "source": "offline",
+      "threshold": 1.0,
+      "passed": true,
+      "note": ""
+    },
+    {
+      "name": "fallback_rate",
+      "value": 0.0,
+      "n": 3,
+      "pending": 0,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "avg_model_calls_per_turn",
+      "value": 2.0,
+      "n": 3,
+      "pending": 0,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "multi_turn_state_exact",
+      "value": 0.666667,
+      "n": 3,
+      "pending": 0,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "latency_p50_ms",
+      "value": 585.0,
+      "n": 4,
+      "pending": 0,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    },
+    {
+      "name": "latency_p95_ms",
+      "value": 850.0,
+      "n": 4,
+      "pending": 0,
+      "source": "offline",
+      "threshold": null,
+      "passed": null,
+      "note": ""
+    }
+  ]
+}
