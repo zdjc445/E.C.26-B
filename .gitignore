@@ -13,3 +13,6 @@ build/
 .env
 !*.env.example
 evals/reports/*.tmp
+
+# Local Harbor submission archives
+harbor/taxonomy-product-matching/*.zip
