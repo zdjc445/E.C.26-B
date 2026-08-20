@@ -1,15 +1,33 @@
+# ===== Python =====
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
 dist/
 build/
+
+# ===== 工具缓存与临时目录 =====
 .pytest_cache/
+# pytest 项目内 basetemp（Windows 系统 Temp 目录 ACL 异常，见 pyproject.toml）
 .pytest_tmp/
 .ruff_cache/
 .pyright/
+# Codex 会话临时目录
+.codex_tmp/
+
+# ===== 本地配置与数据 =====
+.env
 *.sqlite3
 *.db
-.env
-!*.env.example
+
+# ===== 运行时产物 =====
 evals/reports/*.tmp
+
+# ===== 演示文档工具产物 =====
+*.pptx.inspect.ndjson
+# pptx 拆解出的幻灯片图片，可由原文件重新生成
+识价镜_Agent_技术面试演示/
+
+# ===== 系统文件 =====
+Thumbs.db
+Desktop.ini
