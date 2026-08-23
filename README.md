@@ -100,8 +100,8 @@ uv run shijiajing-eval --live --output-datasets-dir <dir>  # 真实数据实时�
 - 全部外部能力通过 Protocol 端口注入（VLM/意图/改写/解释/检索/Checkpoint/Trace/指标）
 - 幂等（request_id）、乐观版本冲突重放、同会话并发控制
 - 详细：[docs/architecture.md](docs/architecture.md)、[docs/workflow.md](docs/workflow.md)
-- 受控 Multi-Agent 入口：[docs/multi_agent.md](docs/multi_agent.md)。shadow 模式不提交 Memory
-  副作用；双层恢复、正式对照评测和发布门禁完成前，不切换默认模式。
+- 受控 Multi-Agent 入口：[docs/multi_agent.md](docs/multi_agent.md)。shadow 模式执行隔离的旧图/新图
+  对照且不提交 Memory、账本、事件或缓存副作用；正式评测、性能和生产外部证据门禁完成前，不切换默认模式。
 
 ## 文档
 

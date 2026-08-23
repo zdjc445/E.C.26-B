@@ -120,6 +120,13 @@
   读取后还必须通过对应的 Pydantic、硬过滤或事实一致性校验，损坏载荷按 miss 处理，
   不得改变业务结果。Cache get/set/delete 故障增加 `cache_failure_total` 指标，
   同样不阻断业务。
+- Multi-Agent 的 Supervisor checkpoint 保存 `ExecutionPlan`、`SupervisorState`、活动
+  `AgentInterrupt` 和 `resume_history`；Agent task checkpoint 使用
+  `session/turn/plan/task` 稳定 namespace。恢复先合并同 hash 的 `AgentResultV2`，冲突则拒绝覆盖。
+- `AgentResume` 只允许对应 interrupt 的结构化 resume payload；clarification、recognition review、
+  same-item review 和 memory confirmation 都在原 plan 上追加/替换 task，不重跑已经完成的 task。
+- `MemoryCommit` 只能在 Supervisor 设置 `memory_authorized` 后派发；shadow 模式跳过 commit，
+  重复 resume 通过 `resume_history` 幂等处理。
 
 ## 7. 错误码（errors.py）
 

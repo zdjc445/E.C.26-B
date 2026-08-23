@@ -32,12 +32,15 @@ multi_agent/contracts.py  → 2.0 任务/结果/计划协议（兼容导出）
 multi_agent/planner.py    → 确定性 DAG、预算、依赖与 handoff 门禁
 multi_agent/registry.py   → 五个 Specialist Agent 的唯一 dispatch 注册表
 multi_agent/agents/       → 五类私有 input/state/output invocation
-multi_agent/supervisor.py → ready-task barrier、结果归并、规范约束与副作用授权
+multi_agent/dispatcher.py → Send/Command 动态派发与 ready-task barrier
+multi_agent/supervisor.py → 结果归并、规范约束、HITL、checkpoint 与副作用授权
+multi_agent/shadow.py     → 旧 Workflow/新 Supervisor 只读业务不变量对照
 ```
 
 `SHIJIAJING_ORCHESTRATION_MODE` 默认 `workflow`。`multi_agent_shadow` 运行受控任务但跳过
-Memory commit，`multi_agent` 才作为受控主路径；这两种模式目前不替换 legacy native HITL
-checkpoint，正式发布仍需按升级方案第 16 节完成恢复和外部门禁。
+Memory commit、账本、事件与缓存写入，且执行旧图/新图对照；`multi_agent` 作为受控主路径时
+使用 Supervisor/task 双层 native checkpoint 和四类 HITL resume。默认仍不切换，正式评测、性能
+阈值和生产外部证据必须通过升级方案第 16 节发布门禁。
 
 依赖方向严格单向：`nodes/ → domain/ + ports/`，`adapters/ → ports/ + domain/`，
 `domain/` 不依赖任何适配器。
