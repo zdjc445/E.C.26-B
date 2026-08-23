@@ -708,11 +708,11 @@ token、fallback 和错误码，不携带思维链或原始内容。
 | 阶段 | 状态 | 已落地范围 | 未完成入口 |
 |---|---|---|---|
 | 阶段 1：协议与兼容层 | 已完成 | 2.0 任务/结果、严格 discriminator、计划 DAG、SupervisorState、幂等 reducer；1.x 契约未删除；native Supervisor checkpoint 适配 | — |
-| 阶段 2：固定计划 Multi-Agent | 执行中 | registry、五个 Agent wrapper、固定任务 DAG、Facade 模式入口 | 新旧路径逐案例对照与持久化事件投影 |
+| 阶段 2：固定计划 Multi-Agent | 执行中 | registry、五个 Agent wrapper、固定任务 DAG、Facade 模式入口、shadow 业务不变量对照 | 冻结数据集逐案例产物与持久化事件投影 |
 | 阶段 3：私有状态 | 已完成 | 五类私有 invocation state；Retrieval wrapper 持有同款/SKU/排序算法；Supervisor/Agent task native namespace 实际读写与恢复 | — |
-| 阶段 4：动态 Planner 与 handoff | 执行中 | 确定性 Planner、PlanValidator、ready-task barrier、受控 skip、handoff 输入授权门禁、SupervisorPlannerPort deterministic adapter | LangGraph Send/Command 实际接入、模型 Planner fallback/replan |
-| 阶段 5：恢复、HITL 与副作用 | 未开始 | 复用旧 workflow 的 HITL/ledger 基础设施 | 双层 native 恢复、memory confirmation 与唯一 commit 的端到端路径 |
-| 阶段 6：灰度发布 | 执行中 | 三种配置模式，默认 workflow；shadow 禁止 Memory commit | 新旧结果正式对照、发布门禁和外部证据 |
+| 阶段 4：动态 Planner 与 handoff | 已完成 | 确定性 Planner、PlanValidator、ready-task barrier、受控 skip、handoff 输入授权门禁、Send/Command、结构化 Planner fallback、受控 retry/replan | — |
+| 阶段 5：恢复、HITL 与副作用 | 已完成 | Supervisor/task native checkpoint、clarification/recognition/same-item/memory confirmation、授权 commit、重复 resume 幂等 | 生产 Memory mutation ledger 仍由真实适配器验收 |
+| 阶段 6：灰度发布 | 执行中 | 三种配置模式，默认 workflow；shadow 隔离旧图/新图对照、禁止 Memory/账本/事件/缓存写入；release gate 支持 shadow report | 冻结数据集正式报告、性能报告和生产外部证据 |
 
 ### 阶段 1：协议与兼容层
 

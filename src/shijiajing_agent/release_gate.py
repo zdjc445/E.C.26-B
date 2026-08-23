@@ -23,6 +23,7 @@ from pydantic import ValidationError
 
 from shijiajing_agent.benchmark import BenchmarkReport
 from shijiajing_agent.evals import validate_report_payload
+from shijiajing_agent.multi_agent.shadow import validate_shadow_report_payload
 
 RELEASE_GATE_SCHEMA_VERSION = "1.0"
 PRODUCTION_EVIDENCE_CHECKS = (
@@ -102,6 +103,7 @@ def evaluate_release_gate(
     backup_summary: Path | None = None,
     eval_report: Path | None = None,
     benchmark_report: Path | None = None,
+    shadow_report: Path | None = None,
     production_evidence_manifest: Path | None = None,
     check_client_tools: bool = True,
 ) -> ReleaseGateReport:
@@ -111,6 +113,8 @@ def evaluate_release_gate(
         _check_eval_report(eval_report),
         _check_benchmark_report(benchmark_report),
     ]
+    if shadow_report is not None:
+        checks.append(_check_shadow_report(shadow_report))
     if check_client_tools:
         checks.append(_check_client_tools())
     checks.extend(_check_production_evidence(production_evidence_manifest))
@@ -119,6 +123,17 @@ def evaluate_release_gate(
         ready=all(check.status is ReleaseCheckStatus.PASSED for check in checks),
         checks=tuple(checks),
     )
+
+
+def _check_shadow_report(path: Path | None) -> ReleaseCheck:
+    check_id = "multi_agent_shadow"
+    payload = _load_json(path)
+    if payload is None:
+        return _pending(check_id, "缺少 Multi-Agent shadow 对照 JSON 报告", path)
+    validation_error = validate_shadow_report_payload(payload)
+    if validation_error is not None:
+        return _failed(check_id, validation_error, path)
+    return _passed(check_id, "旧 Workflow 与 Multi-Agent 冻结用例对照通过", path)
 
 
 def build_production_evidence_manifest(

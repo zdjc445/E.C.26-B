@@ -180,6 +180,10 @@ class NativeTurnInput(TypedDict, total=False):
     pending_memory_mutations: list[MemoryMutation]
     agent_results: list[AgentResult]
     active_interrupt: AgentInterrupt | None
+    hitl_stage: str | None
+    hitl_completed: Annotated[list[str], _merge_history]
+    resume_history: Annotated[list[str], _merge_history]
+    memory_authorized: bool
     resume_consumed: bool
     fusion_version: str | None
     rerank_version: str | None

@@ -36,6 +36,8 @@ class MultiAgentCheckpointPort(Protocol):
         self, namespace: str, state: SupervisorState, expected_version: int | None
     ) -> int: ...
 
+    async def load_active(self, session_id: str) -> tuple[str, SupervisorState, int] | None: ...
+
     async def load_task(self, namespace: str) -> AgentResultV2 | None: ...
 
     async def save_task(self, namespace: str, result: AgentResultV2) -> None: ...
@@ -47,6 +49,7 @@ class InMemoryMultiAgentCheckpoint:
     def __init__(self) -> None:
         self._supervisor: dict[str, tuple[SupervisorState, int]] = {}
         self._tasks: dict[str, AgentResultV2] = {}
+        self._active: dict[str, str] = {}
 
     async def load_supervisor(self, namespace: str) -> tuple[SupervisorState, int] | None:
         saved = self._supervisor.get(namespace)
@@ -61,7 +64,15 @@ class InMemoryMultiAgentCheckpoint:
             raise ValueError("Supervisor checkpoint version conflict")
         version = current_version + 1
         self._supervisor[namespace] = (deepcopy(state), version)
+        self._active[namespace.split("/", 1)[0]] = namespace
         return version
+
+    async def load_active(self, session_id: str) -> tuple[str, SupervisorState, int] | None:
+        namespace = self._active.get(session_id)
+        if namespace is None:
+            return None
+        loaded = await self.load_supervisor(namespace)
+        return (namespace, loaded[0], loaded[1]) if loaded is not None else None
 
     async def load_task(self, namespace: str) -> AgentResultV2 | None:
         result = self._tasks.get(namespace)
@@ -84,6 +95,7 @@ class LangGraphMultiAgentCheckpoint:
 
     _SUPERVISOR_KEY = "__shijiajing_multi_agent_supervisor__"
     _TASK_KEY = "__shijiajing_multi_agent_task__"
+    _ACTIVE_KEY = "__shijiajing_multi_agent_active__"
 
     def __init__(self, saver: BaseCheckpointSaver[str]) -> None:
         self._saver = saver
@@ -147,7 +159,24 @@ class LangGraphMultiAgentCheckpoint:
             raise ValueError("Supervisor checkpoint version conflict")
         version = current_version + 1
         await self._save_value(namespace, self._SUPERVISOR_KEY, state, version)
+        await self._save_value(
+            f"{namespace.split('/', 1)[0]}/__active__",
+            self._ACTIVE_KEY,
+            {"namespace": namespace},
+            version,
+        )
         return version
+
+    async def load_active(self, session_id: str) -> tuple[str, SupervisorState, int] | None:
+        loaded = await self._load_value(f"{session_id}/__active__", self._ACTIVE_KEY)
+        if loaded is None or not isinstance(loaded[0], dict):
+            return None
+        active_value = cast(dict[str, Any], loaded[0])
+        namespace = active_value.get("namespace")
+        if not isinstance(namespace, str):
+            return None
+        supervisor = await self.load_supervisor(namespace)
+        return (namespace, supervisor[0], supervisor[1]) if supervisor is not None else None
 
     async def load_task(self, namespace: str) -> AgentResultV2 | None:
         loaded = await self._load_value(namespace, self._TASK_KEY)

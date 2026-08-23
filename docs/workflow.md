@@ -20,8 +20,9 @@ SPU/SKU 分组、排序结果、证据、解释、响应、bounded `recent_turns
 每个 Specialist 只接收自身的 `AgentTaskInput`，通过 `AgentResultV2` 返回 proposal。Retrieval
 Agent 继续持有确定性查询改写硬过滤、同款 complete-link、SKU 拆分、价格聚合和排序；Explanation
 降级只使用模板，不重新执行 Retrieval。`multi_agent_shadow` 明确跳过 Memory commit，避免
-评测路径产生副作用；配置 native saver 时，受控路径会按 Supervisor/task namespace 恢复已完成
-结果。默认模式仍是 legacy `workflow`，端到端 HITL resume 和正式发布门禁完成前不得切换默认值。
+评测路径产生副作用，并执行隔离旧图/新图的业务不变量对照；配置 native saver 时，受控路径会按
+Supervisor、active interrupt 和 task namespace 恢复已完成结果。默认模式仍是 legacy `workflow`，
+正式评测、性能和生产外部证据门禁完成前不得切换默认值。
 
 ## 2. 节点与路由
 

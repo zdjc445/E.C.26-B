@@ -469,6 +469,8 @@ class RetrievalTaskInput(BaseModel):
     index_version: str | None = None
     fusion_version: str | None = None
     rerank_version: str | None = None
+    same_item_review_action: Literal["accept", "split"] | None = None
+    same_item_review_offer_ids: list[str] = Field(default_factory=list[str])
 
 
 class ExplanationTaskInput(BaseModel):
@@ -537,6 +539,7 @@ class RetrievalTaskOutput(BaseModel):
     ranked_groups: list[RankedGroup] = Field(default_factory=lambda: list[RankedGroup]())
     fallback_used: bool = False
     relaxed_attributes: list[str] = Field(default_factory=list[str])
+    same_item_review_pairs: list[MatchPair] = Field(default_factory=lambda: list[MatchPair]())
 
 
 class ExplanationTaskOutput(BaseModel):
@@ -822,6 +825,7 @@ class ExecutionPlanPatch(BaseModel):
     skip_task_ids: list[str] = Field(default_factory=list[str])
     retry_task_ids: list[str] = Field(default_factory=list[str])
     add_tasks: list[AgentTaskV2] = Field(default_factory=list[AgentTaskV2])
+    replace_task_ids: dict[str, str] = Field(default_factory=dict[str, str])
 
 
 # ---------------------------------------------------------------------------

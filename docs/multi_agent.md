@@ -2,7 +2,8 @@
 
 > 当前状态：legacy `workflow` 保持原有 Supervisor + 专业子图路径；受控 Multi-Agent
 > 已增加 2.0 协议、确定性计划、registry、五类私有 Agent invocation、双层 native
-> checkpoint namespace 和三种灰度模式。端到端 HITL resume、正式新旧对照和发布门禁仍未完成。
+> checkpoint namespace、Send/Command 派发、受控 replan、四类 HITL resume 和三种灰度模式。
+> shadow 对照报告与发布门禁已提供；正式外部证据仍需部署环境生成。
 > 目标 Multi-Agent 架构和分阶段迁移方案见
 > [`docs/plans/multi_agent_upgrade_plan.md`](plans/multi_agent_upgrade_plan.md)。
 
@@ -22,8 +23,12 @@
   不直接写 Supervisor 规范状态。
 - `workflow`（默认）不改变；`multi_agent_shadow` 禁止 Memory commit；`multi_agent` 执行受控
   任务路径。三种模式由 `SHIJIAJING_ORCHESTRATION_MODE` 选择。
-- 配置了现有 LangGraph native saver 时，`multi_agent` 会把 Supervisor plan 和每个 task result
-  分别保存到稳定 namespace，并在重放时先恢复已完成 task；未配置时使用纯内存执行。
+- 配置了现有 LangGraph native saver 时，`multi_agent` 会把 Supervisor plan、活动 interrupt
+  和每个 task result 分别保存到稳定 namespace，并在重放时先恢复已完成 task；未配置时使用纯内存执行。
+- `GuardedSupervisorPlanner` 对结构化 Planner 的异常、非法 DAG 和非法 replan patch 统一回退到
+  确定性 Planner；可恢复失败只生成新的 retry task，不覆盖原 task 结果。
+- `multi_agent_shadow` 会在隔离的只读旧图副本与新 Supervisor 之间比较 status、识别、有效约束、
+  候选分组和澄清结果，并在响应 notice 中标记 `shadow_compare:match|mismatch`。
 
 ## 1. 子图入口
 

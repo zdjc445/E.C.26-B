@@ -13,7 +13,7 @@ import asyncio
 import time
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, cast
 
 from langchain_core.runnables import RunnableConfig
@@ -52,6 +52,7 @@ from shijiajing_agent.nodes.input_nodes import make_initial_state, make_native_t
 from shijiajing_agent.nodes.memory_nodes import append_turn_summary_node
 from shijiajing_agent.ports.cache import VersionedCachePort
 from shijiajing_agent.ports.checkpoint import CheckpointPort
+from shijiajing_agent.ports.dependencies import SupervisorPlannerPort
 from shijiajing_agent.ports.event_store import EventStorePort
 from shijiajing_agent.ports.memory import MemoryPort
 from shijiajing_agent.ports.models import (
@@ -126,6 +127,7 @@ class AgentDependencies:
     memory: MemoryPort | None = None
     cache: VersionedCachePort | None = None
     event_store: EventStorePort | None = None
+    supervisor_planner: SupervisorPlannerPort | None = None
 
 
 class AgentFacade:
@@ -222,7 +224,7 @@ class AgentFacade:
     async def start(self, request: AgentRequest, context: AgentExecutionContext) -> AgentTurnResult:
         """native thread start；没有 native runtime 时兼容包装 legacy run。"""
         if self._deps.settings.orchestration_mode != "workflow":
-            return AgentTurnResult(response=await self._run_multi_agent(request, context))
+            return await self._start_multi_agent(request, context)
         if context.memory_enabled and context.memory_owner_id is None:
             return AgentTurnResult(
                 response=self._bare_failed_response(
@@ -442,6 +444,8 @@ class AgentFacade:
         context: AgentExecutionContext,
     ) -> AgentTurnResult:
         """恢复 native interrupt；校验 interrupt_id、session 和 owner 后执行一次。"""
+        if self._deps.settings.orchestration_mode != "workflow":
+            return await self._resume_multi_agent(session_id, resume, context)
         if self._deps.graph_checkpointer is None:
             request = AgentRequest.model_validate(
                 {"session_id": session_id, "request_id": "resume", "text": "resume"}
@@ -671,23 +675,45 @@ class AgentFacade:
                 )
                 from shijiajing_agent.multi_agent.supervisor import MultiAgentSupervisor
 
+                shadow_mode = self._deps.settings.orchestration_mode == "multi_agent_shadow"
                 multi_agent_checkpoint = (
                     LangGraphMultiAgentCheckpoint(self._deps.graph_checkpointer)
-                    if self._deps.graph_checkpointer is not None
+                    if self._deps.graph_checkpointer is not None and not shadow_mode
                     else None
                 )
 
                 async with asyncio.timeout(self._deps.settings.turn_timeout_seconds):
                     outcome = await MultiAgentSupervisor(
                         self._deps,
+                        planner_port=self._deps.supervisor_planner,
                         checkpoint=multi_agent_checkpoint,
                     ).run(
                         request,
                         context=context,
-                        shadow=self._deps.settings.orchestration_mode == "multi_agent_shadow",
+                        pause_for_hitl=False,
+                        shadow=shadow_mode,
                     )
                 response = outcome.response
-                await self._ledger_save(request.session_id, request.request_id, response)
+                if shadow_mode:
+                    from shijiajing_agent.multi_agent.shadow import compare_responses
+
+                    legacy_response = await self._run_legacy_shadow(request)
+                    comparison = compare_responses(
+                        f"{request.session_id}:{request.request_id}",
+                        legacy_response,
+                        response,
+                    )
+                    result_label = "match" if comparison.equivalent else "mismatch"
+                    response = response.model_copy(
+                        update={
+                            "notices": [
+                                *response.notices,
+                                f"shadow_compare:{result_label}",
+                            ]
+                        }
+                    )
+                if not shadow_mode:
+                    await self._ledger_save(request.session_id, request.request_id, response)
                 return response
             except RequestLedgerUnavailableError:
                 return self._bare_failed_response(
@@ -706,6 +732,166 @@ class AgentFacade:
                     request,
                     ErrorCode.INTERNAL_ERROR,
                     "处理失败，请稍后重试。",
+                )
+
+    async def _run_legacy_shadow(self, request: AgentRequest) -> AgentResponse:
+        """运行旧图的只读副本，隔离 Memory、缓存、账本和事件写入。"""
+        shadow_settings = replace(
+            self._deps.settings,
+            orchestration_mode="workflow",
+            memory_enabled=False,
+            memory_recall_enabled=False,
+            memory_commit_enabled=False,
+            hitl_enabled=False,
+        )
+        shadow_deps = replace(
+            self._deps,
+            settings=shadow_settings,
+            graph_checkpointer=None,
+            request_ledger=None,
+            memory=None,
+            cache=None,
+            event_store=None,
+        )
+        try:
+            response, _ = await AgentFacade(shadow_deps)._run_once(request, None)
+            return response
+        except Exception:
+            return self._bare_failed_response(
+                request,
+                ErrorCode.INTERNAL_ERROR,
+                "旧 Workflow shadow 执行失败。",
+            )
+
+    async def _start_multi_agent(
+        self,
+        request: AgentRequest,
+        context: AgentExecutionContext,
+    ) -> AgentTurnResult:
+        """受控路径的 native start；interrupt 时保留原 plan/task checkpoint。"""
+        if context.memory_enabled and context.memory_owner_id is None:
+            return AgentTurnResult(
+                response=self._bare_failed_response(
+                    request,
+                    ErrorCode.INVALID_REQUEST,
+                    "启用记忆时必须提供可信 memory_owner_id。",
+                )
+            )
+        if self._deps.settings.hitl_enabled and self._deps.graph_checkpointer is None:
+            return AgentTurnResult(
+                response=self._bare_failed_response(
+                    request,
+                    ErrorCode.INVALID_REQUEST,
+                    "Multi-Agent HITL resume 需要 native persistence。",
+                )
+            )
+        async with self._session_lock(request.session_id):
+            cached = await self._ledger_get(request.session_id, request.request_id)
+            if cached is not None:
+                return AgentTurnResult(response=cached)
+            try:
+                from shijiajing_agent.multi_agent.checkpoint import (
+                    LangGraphMultiAgentCheckpoint,
+                )
+                from shijiajing_agent.multi_agent.supervisor import MultiAgentSupervisor
+
+                checkpoint = (
+                    LangGraphMultiAgentCheckpoint(self._deps.graph_checkpointer)
+                    if self._deps.graph_checkpointer is not None
+                    else None
+                )
+                async with asyncio.timeout(self._deps.settings.turn_timeout_seconds):
+                    outcome = await MultiAgentSupervisor(
+                        self._deps,
+                        planner_port=self._deps.supervisor_planner,
+                        checkpoint=checkpoint,
+                    ).run(
+                        request,
+                        context=context,
+                        pause_for_hitl=True,
+                        shadow=self._deps.settings.orchestration_mode == "multi_agent_shadow",
+                    )
+                if outcome.interrupt is not None:
+                    return AgentTurnResult(interrupt=outcome.interrupt)
+                await self._ledger_save(request.session_id, request.request_id, outcome.response)
+                return AgentTurnResult(response=outcome.response)
+            except TimeoutError:
+                return AgentTurnResult(
+                    response=self._bare_failed_response(
+                        request, ErrorCode.TURN_TIMEOUT, "处理超时，请稍后重试。"
+                    )
+                )
+            except RequestLedgerUnavailableError:
+                return AgentTurnResult(
+                    response=self._bare_failed_response(
+                        request,
+                        ErrorCode.REQUEST_LEDGER_UNAVAILABLE,
+                        "请求结果账本不可用，请稍后重试。",
+                    )
+                )
+            except Exception:
+                return AgentTurnResult(
+                    response=self._bare_failed_response(
+                        request, ErrorCode.INTERNAL_ERROR, "处理失败，请稍后重试。"
+                    )
+                )
+
+    async def _resume_multi_agent(
+        self,
+        session_id: str,
+        resume: AgentResume,
+        context: AgentExecutionContext,
+    ) -> AgentTurnResult:
+        """受控路径 resume：复用已保存的 Supervisor plan/task。"""
+        async with self._session_lock(session_id):
+            try:
+                from shijiajing_agent.multi_agent.checkpoint import (
+                    LangGraphMultiAgentCheckpoint,
+                )
+                from shijiajing_agent.multi_agent.supervisor import MultiAgentSupervisor
+
+                checkpoint = (
+                    LangGraphMultiAgentCheckpoint(self._deps.graph_checkpointer)
+                    if self._deps.graph_checkpointer is not None
+                    else None
+                )
+                async with asyncio.timeout(self._deps.settings.turn_timeout_seconds):
+                    outcome = await MultiAgentSupervisor(
+                        self._deps,
+                        planner_port=self._deps.supervisor_planner,
+                        checkpoint=checkpoint,
+                    ).resume(
+                        session_id,
+                        resume,
+                        context,
+                        shadow=self._deps.settings.orchestration_mode == "multi_agent_shadow",
+                    )
+                if outcome.interrupt is not None:
+                    return outcome
+                if outcome.response is not None:
+                    await self._ledger_save(
+                        outcome.response.session_id,
+                        outcome.response.request_id,
+                        outcome.response,
+                    )
+                return outcome
+            except TimeoutError:
+                request = AgentRequest.model_validate(
+                    {"session_id": session_id, "request_id": "resume", "text": "resume"}
+                )
+                return AgentTurnResult(
+                    response=self._bare_failed_response(
+                        request, ErrorCode.TURN_TIMEOUT, "处理超时，请稍后重试。"
+                    )
+                )
+            except Exception:
+                request = AgentRequest.model_validate(
+                    {"session_id": session_id, "request_id": "resume", "text": "resume"}
+                )
+                return AgentTurnResult(
+                    response=self._bare_failed_response(
+                        request, ErrorCode.INTERNAL_ERROR, "resume 处理失败。"
+                    )
                 )
 
     async def _ledger_get(self, session_id: str, request_id: str) -> AgentResponse | None:

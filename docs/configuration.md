@@ -106,9 +106,9 @@ export SHIJIAJING_ARK_API_KEY=...
 | `SHIJIAJING_MAX_SUPERVISOR_REPLANS` | 2 | 单轮受控 replan 上限 |
 | `SHIJIAJING_AGENT_TASK_TIMEOUT_SECONDS` | 30 | 单 Agent task deadline 默认值 |
 
-`multi_agent_shadow` 的 Memory commit 被 Supervisor 跳过；seed/provisional 运行不能作为正式
-发布证据。阶段 5 的 Supervisor/Agent native checkpoint、HITL resume 和正式新旧对照尚未完成，
-因此不能仅通过切换模式宣称达到 Definition of Done。
+`multi_agent_shadow` 的 Memory commit、账本、事件和缓存写入均被隔离；seed/provisional 运行不能作为正式
+发布证据。`shijiajing-release-check --shadow-report` 可校验冻结用例的对照报告；正式评测、性能和
+生产外部证据仍必须通过后，才允许切换默认模式。
 
 `native` 启动要求 `SHIJIAJING_CHECKPOINT_DSN` 和非 `disabled` 的 Request Ledger；
 `SHIJIAJING_CHECKPOINT_DSN` 对 `legacy` 和 `native` 两种 Checkpoint 模式都必填，避免

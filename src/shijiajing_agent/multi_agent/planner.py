@@ -49,7 +49,7 @@ class DeterministicPlanner:
         plan_id: str | None = None,
     ) -> ExecutionPlan:
         plan_id = plan_id or f"plan:{request.session_id}:{request.request_id}"
-        task_budget = AgentTaskBudget()
+        task_budget = AgentTaskBudget(max_retries=1)
         tasks: list[AgentTaskV2] = []
 
         def add(
@@ -235,31 +235,85 @@ class DeterministicSupervisorPlanner:
 
     async def revise_plan(self, request: SupervisorReplanningInput) -> ExecutionPlanPatch:
         retry_ids = set(request.failed_task_ids)
-        retry_tasks = [
-            task.model_copy(
-                update={
-                    "attempt": task.attempt + 1,
-                    "idempotency_key": f"{task.idempotency_key}:retry:{task.attempt + 1}",
-                }
-            )
-            for task in request.plan.tasks
-            if task.task_id in retry_ids
-        ]
-        if retry_tasks:
-            retried_by_id = {task.task_id: task for task in retry_tasks}
-            PlanValidator().validate(
-                request.plan.model_copy(
+        retry_tasks: list[AgentTaskV2] = []
+        replacements: dict[str, str] = {}
+        for task in request.plan.tasks:
+            if task.task_id not in retry_ids:
+                continue
+            retry_id = f"{task.task_id}:retry:{task.attempt + 1}"
+            replacements[task.task_id] = retry_id
+            retry_tasks.append(
+                task.model_copy(
                     update={
-                        "tasks": [
-                            retried_by_id.get(task.task_id, task) for task in request.plan.tasks
-                        ]
+                        "task_id": retry_id,
+                        "parent_task_id": task.task_id,
+                        "attempt": task.attempt + 1,
+                        "idempotency_key": f"{task.idempotency_key}:retry:{task.attempt + 1}",
                     }
                 )
             )
+        if retry_tasks:
+            retried_by_id = {task.task_id: task for task in retry_tasks}
+            replaced_tasks: list[AgentTaskV2] = []
+            for task in request.plan.tasks:
+                dependencies = [replacements.get(parent, parent) for parent in task.depends_on]
+                replaced_tasks.append(task.model_copy(update={"depends_on": dependencies}))
+            replaced_tasks.extend(retried_by_id.values())
+            PlanValidator().validate(request.plan.model_copy(update={"tasks": replaced_tasks}))
         return ExecutionPlanPatch(
             retry_task_ids=sorted(retry_ids),
             add_tasks=retry_tasks,
+            replace_task_ids=replacements,
         )
+
+
+class GuardedSupervisorPlanner:
+    """可选结构化 Planner 的安全门面；异常或非法计划回退确定性 Planner。"""
+
+    def __init__(
+        self,
+        deterministic: DeterministicPlanner,
+        candidate: Any | None = None,
+    ) -> None:
+        self._deterministic = deterministic
+        self._candidate = candidate
+
+    async def create_plan(self, request: SupervisorPlanningInput) -> ExecutionPlan:
+        if self._candidate is not None:
+            try:
+                proposed = await self._candidate.create_plan(request)
+                return PlanValidator().validate(proposed)
+            except Exception:
+                pass
+        return self._deterministic.create_plan(
+            request.request,
+            context=request.execution_context,
+            taxonomy_version=request.taxonomy_version,
+        )
+
+    async def revise_plan(self, request: SupervisorReplanningInput) -> ExecutionPlanPatch:
+        if self._candidate is not None:
+            try:
+                proposed = await self._candidate.revise_plan(request)
+                PlanValidator().validate(apply_plan_patch(request.plan, proposed))
+                return proposed
+            except Exception:
+                pass
+        return await DeterministicSupervisorPlanner(self._deterministic).revise_plan(request)
+
+
+def apply_plan_patch(plan: ExecutionPlan, patch: ExecutionPlanPatch) -> ExecutionPlan:
+    """将结构化 replan patch 应用到计划，并重新校验依赖。"""
+    existing = {task.task_id: task for task in plan.tasks}
+    for task in patch.add_tasks:
+        if task.task_id in existing:
+            raise PlanValidationError(f"replan task_id 重复: {task.task_id}")
+        existing[task.task_id] = task
+    tasks: list[AgentTaskV2] = []
+    for task in existing.values():
+        dependencies = [patch.replace_task_ids.get(parent, parent) for parent in task.depends_on]
+        tasks.append(task.model_copy(update={"depends_on": dependencies}))
+    return PlanValidator().validate(plan.model_copy(update={"tasks": tasks}))
 
 
 def approve_handoff(

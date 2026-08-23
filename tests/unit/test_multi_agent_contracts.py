@@ -6,6 +6,8 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from shijiajing_agent.contracts import (
+    AgentExecutionContext,
+    AgentRequest,
     AgentResultV2,
     AgentTaskInput,
     AgentTaskKind,
@@ -16,11 +18,16 @@ from shijiajing_agent.contracts import (
     IntentTaskOutput,
     NodeStatus,
     SpecialistAgentName,
+    SupervisorPlanningInput,
     content_hash,
 )
 from shijiajing_agent.errors import CapabilityDeniedError, TaskResultConflictError
 from shijiajing_agent.multi_agent.capabilities import validate_capability
-from shijiajing_agent.multi_agent.planner import DeterministicPlanner, PlanValidator
+from shijiajing_agent.multi_agent.planner import (
+    DeterministicPlanner,
+    GuardedSupervisorPlanner,
+    PlanValidator,
+)
 from shijiajing_agent.state import merge_task_results
 
 
@@ -101,3 +108,35 @@ def test_capability_allowlist_rejects_forbidden_memory_access() -> None:
     validate_capability(SpecialistAgentName.RECOGNITION, "vision")
     with pytest.raises(CapabilityDeniedError):
         validate_capability(SpecialistAgentName.RECOGNITION, "memory_store")
+
+
+@pytest.mark.asyncio
+async def test_invalid_structured_planner_result_falls_back_to_deterministic_plan() -> None:
+    request = AgentRequest(session_id="s", request_id="planner-fallback", text="耳机")
+    deterministic = DeterministicPlanner()
+    invalid = deterministic.create_plan(request)
+    invalid = invalid.model_copy(
+        update={
+            "tasks": [
+                task for task in invalid.tasks if task.task_kind is not AgentTaskKind.PARSE_INTENT
+            ]
+        }
+    )
+
+    class InvalidPlanner:
+        async def create_plan(self, _request: SupervisorPlanningInput) -> ExecutionPlan:
+            return invalid
+
+        async def revise_plan(self, _request: object) -> object:
+            raise AssertionError("not called")
+
+    guarded = GuardedSupervisorPlanner(deterministic, InvalidPlanner())
+    plan = await guarded.create_plan(
+        SupervisorPlanningInput(
+            request=request,
+            execution_context=AgentExecutionContext(),
+            taxonomy_version="test-taxonomy",
+        )
+    )
+    assert any(task.task_kind is AgentTaskKind.PARSE_INTENT for task in plan.tasks)
+    PlanValidator().validate(plan)

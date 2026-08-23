@@ -170,6 +170,37 @@ def test_release_gate_fails_closed_without_formal_and_production_evidence(tmp_pa
     )
 
 
+def test_release_gate_checks_shadow_report_when_supplied(tmp_path: Path) -> None:
+    shadow = tmp_path / "shadow.json"
+    _write(
+        shadow,
+        {
+            "schema_version": "1.0",
+            "mode": "multi_agent_shadow",
+            "case_count": 1,
+            "equivalent_count": 1,
+            "equivalent_rate": 1.0,
+            "side_effects_blocked": True,
+            "gate_passed": True,
+            "cases": [
+                {
+                    "case_id": "frozen-1",
+                    "equivalent": True,
+                    "legacy_signature": {},
+                    "multi_agent_signature": {},
+                    "differences": [],
+                    "side_effects_blocked": True,
+                }
+            ],
+        },
+    )
+
+    report = evaluate_release_gate(shadow_report=shadow, check_client_tools=False)
+
+    shadow_check = next(check for check in report.checks if check.check_id == "multi_agent_shadow")
+    assert shadow_check.status.value == "passed"
+
+
 def test_release_gate_passes_only_when_all_machine_checks_and_hashes_pass(
     tmp_path: Path, monkeypatch
 ) -> None:

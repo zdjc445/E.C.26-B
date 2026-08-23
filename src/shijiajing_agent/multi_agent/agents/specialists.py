@@ -18,6 +18,7 @@ from shijiajing_agent.contracts import (
     ExplanationTaskOutput,
     IntentTaskInput,
     IntentTaskOutput,
+    MatchPair,
     MemoryTaskInput,
     MemoryTaskOutput,
     NodeStatus,
@@ -229,7 +230,34 @@ class RetrievalAgent:
                 review_threshold=self._deps.settings.same_item_review_threshold,
             )
             pairs = matcher.generate_candidates(normalized)
+            review_pairs = [
+                MatchPair(
+                    offer_a_id=pair.a_id,
+                    offer_b_id=pair.b_id,
+                    same_item_score=pair.score,
+                    title_similarity=pair.title_similarity,
+                    identity_overlap=pair.identity_overlap,
+                    image_similarity=pair.image_similarity,
+                    source_key_signal=pair.source_key_signal,
+                    hard_conflicts=pair.hard_conflicts,
+                    verdict="review",
+                )
+                for left, right in pairs
+                if (pair := matcher.judge_pair(normalized[left], normalized[right])).verdict
+                == "review"
+            ]
             clusters = matcher.cluster(normalized, pairs)
+            if data.same_item_review_action == "split" and data.same_item_review_offer_ids:
+                review_ids = set(data.same_item_review_offer_ids)
+                split_clusters: list[list[int]] = []
+                for cluster in clusters:
+                    remaining = [
+                        index for index in cluster if normalized[index].offer_id not in review_ids
+                    ]
+                    split_clusters.extend([[index] for index in cluster if index not in remaining])
+                    if remaining:
+                        split_clusters.append(remaining)
+                clusters = split_clusters
             splitter = SkuSplitter(self._deps.taxonomy)
             groups: list[SkuGroup] = []
             for cluster in clusters:
@@ -244,6 +272,7 @@ class RetrievalAgent:
                 normalized_candidates=normalized,
                 ranked_groups=ranking.ranked,
                 fallback_used=retrieval.fallback_used,
+                same_item_review_pairs=review_pairs,
             )
             return result_for(
                 task,

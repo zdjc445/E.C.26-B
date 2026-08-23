@@ -44,6 +44,7 @@ class AgentDependenciesPort(Protocol):
     memory: MemoryPort | None
     cache: VersionedCachePort | None
     event_store: EventStorePort | None
+    supervisor_planner: SupervisorPlannerPort | None
 
 
 class AgentGraphDependenciesPort(AgentDependenciesPort, Protocol):
