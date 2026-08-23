@@ -14,7 +14,7 @@ from typing import TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# 型号分隔符与空白标准化（§12.3 第 5 步）：- _ / · 统一为空格
+# 型号分隔符与空白标准化：- _ / · 统一为空格。
 _MODEL_SEPARATORS = re.compile(r"[\s\-_/·]+")
 
 
@@ -130,7 +130,7 @@ class Taxonomy:
         return self._brand_alias.get(key, key if len(key) >= 2 else None)
 
     def normalize_model(self, raw: str | None, category_id: str | None) -> str | None:
-        """型号分隔符和空白标准化（§12.3 第 5 步）。"""
+        """型号分隔符和空白标准化。"""
         if not raw:
             return None
         text = _MODEL_SEPARATORS.sub(" ", raw.strip())

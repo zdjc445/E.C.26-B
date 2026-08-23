@@ -1,28 +1,31 @@
-"""检索节点：查询改写、混合召回、零结果放宽、候选标准化（方案 §13、§11.4）。
+"""检索节点：查询改写、混合召回、零结果放宽、候选标准化。
 
 - ``rewrite_query``：模型只能改写 ``query_text`` 与扩展 ``soft_terms``；
-  任何 ``hard_filters`` 变化都会被拒绝并进入确定性拼接（§11.4）。
-- ``retrieve_candidates``：Milvus 失败时适配器内部降级本地词法索引（§13.7）。
-- ``relax_recognition_constraints``：零结果时只放宽识别产生且未锁定的字段（§13.6）。
-- ``normalize_candidates``：单条坏数据隔离，超阈值（全部非法）时失败（§9.2）。
+  任何 ``hard_filters`` 变化都会被拒绝并进入确定性拼接。
+- ``retrieve_candidates``：Milvus 失败时适配器内部降级本地词法索引。
+- ``relax_recognition_constraints``：零结果时只放宽识别产生且未锁定的字段。
+- ``normalize_candidates``：单条坏数据隔离，全部非法时失败。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from shijiajing_agent.contracts import HardFilters, RetrievalQuery
-from shijiajing_agent.domain.filters import HardFilterBuilder
+from shijiajing_agent.contracts import HardFilters, RetrievalCandidate, RetrievalQuery
+from shijiajing_agent.domain.cache_policy import safe_get, safe_set, versioned_key
+from shijiajing_agent.domain.filters import HardFilterBuilder, offer_matches_hard_filters
 from shijiajing_agent.domain.normalization import TaxonomyNormalizer
+from shijiajing_agent.domain.retrieval_reranking import CandidateRelevanceReranker
 from shijiajing_agent.errors import RetrievalUnavailableError
-from shijiajing_agent.nodes.node_support import clear_dirty, timed
+from shijiajing_agent.nodes.node_support import clear_dirty, record_cache_event, timed
+from shijiajing_agent.ports.dependencies import AgentDependenciesPort
 from shijiajing_agent.ports.models import QueryRewritePort
 from shijiajing_agent.ports.retrieval import ProductRetrievalPort
 from shijiajing_agent.state import AgentState
 
 
-def build_deterministic_query(deps: Any, state: AgentState) -> RetrievalQuery:
-    """确定性查询拼接（§11.4）：硬过滤来自约束构建，软词来自识别字段。"""
+def build_deterministic_query(deps: AgentDependenciesPort, state: AgentState) -> RetrievalQuery:
+    """确定性查询拼接：硬过滤来自约束构建，软词来自识别字段。"""
     req = state["current_request"]
     constraints = state.get("effective_constraints")
     recognition = state.get("recognition")
@@ -56,8 +59,8 @@ def build_deterministic_query(deps: Any, state: AgentState) -> RetrievalQuery:
     return query
 
 
-def make_rewrite_query_node(deps: Any) -> Any:
-    """查询改写（§11.4）。校验硬过滤不被篡改；失败/篡改 → 确定性拼接。"""
+def make_rewrite_query_node(deps: AgentDependenciesPort) -> Any:
+    """查询改写。校验硬过滤不被篡改；失败/篡改 → 确定性拼接。"""
 
     rewrite_model: QueryRewritePort = deps.query_rewrite
 
@@ -73,10 +76,47 @@ def make_rewrite_query_node(deps: Any) -> Any:
         req = state["current_request"]
         constraints = state.get("effective_constraints")
         recognition = state.get("recognition")
+        cache_key = versioned_key(
+            {
+                "text": req.text or "",
+                "constraints": constraints.model_dump(mode="json") if constraints else None,
+                "recognition": recognition.model_dump(mode="json") if recognition else None,
+            },
+            {
+                "model": deps.settings.ark_text_model,
+                "prompt": "v1",
+                "taxonomy": deps.taxonomy.taxonomy_version,
+            },
+        )
+        cached = await safe_get(deps.cache, "query_rewrite", cache_key, metrics=deps.metrics)
+        cached_query = None
+        cached_payload = cached.get("retrieval_query") if isinstance(cached, dict) else None
+        # 缺少 query_text 时必须按 miss 处理，不能把空查询误当作模型改写结果并改变召回结果。
+        if isinstance(cached_payload, dict) and "query_text" in cached_payload:
+            try:
+                candidate = RetrievalQuery.model_validate(cached_payload)
+                if candidate.hard_filters == base.hard_filters:
+                    cached_query = candidate
+            except Exception:
+                cached_query = None
+        await record_cache_event(
+            deps,
+            state,
+            node_name="rewrite_query",
+            namespace="query_rewrite",
+            cache_key=cache_key,
+            hit=cached_query is not None,
+        )
+        if cached_query is not None:
+            return {
+                "retrieval_query": cached_query,
+                "next_action": "query_ready",
+                **clear_dirty(state, "query_dirty"),
+            }
         try:
             rewritten = await rewrite_model.rewrite(req.text or "", constraints, recognition)
             if rewritten.hard_filters != base.hard_filters:
-                # 篡改硬过滤：拒绝并进入确定性拼接（§11.4）
+                # 篡改硬过滤：拒绝并进入确定性拼接
                 fallback_used = True
             else:
                 query = rewritten
@@ -98,13 +138,21 @@ def make_rewrite_query_node(deps: Any) -> Any:
                     "fallback_provider": "deterministic",
                 },
             ]
+        await safe_set(
+            deps.cache,
+            "query_rewrite",
+            cache_key,
+            {"retrieval_query": query.model_dump(mode="json")},
+            deps.settings.query_rewrite_cache_ttl_seconds,
+            metrics=deps.metrics,
+        )
         return delta
 
     return rewrite_query_node
 
 
-def make_retrieve_candidates_node(deps: Any) -> Any:
-    """混合召回（§13.4）。零结果时记录状态供路由判断。"""
+def make_retrieve_candidates_node(deps: AgentDependenciesPort) -> Any:
+    """混合召回。零结果时记录状态供路由判断。"""
 
     retrieval: ProductRetrievalPort = deps.retrieval
 
@@ -117,6 +165,61 @@ def make_retrieve_candidates_node(deps: Any) -> Any:
         if query is None:
             return {"next_action": "no_results"}
         try:
+            cache_key = None
+            image = state.get("image_ref")
+            if deps.settings.retrieval_index_version:
+                cache_key = versioned_key(
+                    {
+                        "query": query.model_dump(mode="json"),
+                        "image_sha256": image.sha256 if image is not None else None,
+                        "top_k": deps.settings.retrieval_top_k_per_channel,
+                        "union_limit": deps.settings.retrieval_union_limit,
+                    },
+                    {
+                        "index": deps.settings.retrieval_index_version,
+                        "fusion": deps.settings.retrieval_fusion_strategy,
+                        "rerank": CandidateRelevanceReranker.version
+                        if deps.settings.retrieval_rerank_enabled
+                        else None,
+                    },
+                )
+                cached = await safe_get(deps.cache, "retrieval", cache_key, metrics=deps.metrics)
+                cached_candidates: list[RetrievalCandidate] | None = None
+                if isinstance(cached, dict) and isinstance(cached.get("candidates"), list):
+                    try:
+                        parsed = [
+                            RetrievalCandidate.model_validate(item) for item in cached["candidates"]
+                        ]
+                        if all(
+                            offer_matches_hard_filters(item.offer, query.hard_filters)
+                            for item in parsed
+                        ):
+                            cached_candidates = parsed
+                    except Exception:
+                        cached_candidates = None
+                await record_cache_event(
+                    deps,
+                    state,
+                    node_name="retrieve_candidates",
+                    namespace="retrieval",
+                    cache_key=cache_key,
+                    hit=cached_candidates is not None,
+                )
+                if cached_candidates is not None:
+                    return {
+                        "candidates": cached_candidates,
+                        "next_action": "results" if cached_candidates else "no_results",
+                        "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
+                        "retrieval_index_version": (
+                            cached.get("index_version") if isinstance(cached, dict) else None
+                        ),
+                        "fusion_version": (
+                            cached.get("fusion_version") if isinstance(cached, dict) else None
+                        ),
+                        "rerank_version": (
+                            cached.get("rerank_version") if isinstance(cached, dict) else None
+                        ),
+                    }
             result = await retrieval.search(
                 query,
                 image=state.get("image_ref"),
@@ -132,16 +235,27 @@ def make_retrieve_candidates_node(deps: Any) -> Any:
                     {
                         "node_name": "retrieve_candidates",
                         "error_code": exc.code.value,
-                        "message": str(exc),
+                        "message": exc.user_message,
                     },
                 ],
             }
         candidates = result.candidates
+        rerank_version = result.rerank_version
+        if deps.settings.retrieval_rerank_enabled and candidates:
+            candidates = CandidateRelevanceReranker().rerank(
+                candidates,
+                query,
+                deps.settings.retrieval_rerank_limit,
+            )
+            rerank_version = CandidateRelevanceReranker.version
         next_action = "results" if candidates else "no_results"
         delta: dict[str, Any] = {
             "candidates": candidates,
             "next_action": next_action,
             "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
+            "retrieval_index_version": result.index_version,
+            "fusion_version": result.fusion_version,
+            "rerank_version": rerank_version,
         }
         if result.fallback_used:
             delta["retrieval_fallback_used"] = True
@@ -157,13 +271,27 @@ def make_retrieve_candidates_node(deps: Any) -> Any:
                     "fallback_provider": "local_lexical",
                 },
             ]
+        if cache_key is not None:
+            await safe_set(
+                deps.cache,
+                "retrieval",
+                cache_key,
+                {
+                    "candidates": [item.model_dump(mode="json") for item in candidates],
+                    "index_version": result.index_version,
+                    "fusion_version": result.fusion_version,
+                    "rerank_version": rerank_version,
+                },
+                deps.settings.retrieval_cache_ttl_seconds,
+                metrics=deps.metrics,
+            )
         return delta
 
     return retrieve_candidates_node
 
 
-def make_relax_recognition_constraints_node(deps: Any) -> Any:
-    """零结果放宽（§13.6）：只放宽识别产生且未锁定的字段，最多一次。"""
+def make_relax_recognition_constraints_node(deps: AgentDependenciesPort) -> Any:
+    """零结果放宽：只放宽识别产生且未锁定的字段，最多一次。"""
 
     @timed("relax_recognition_constraints")
     async def relax_recognition_constraints_node(state: AgentState) -> dict[str, Any]:
@@ -177,7 +305,7 @@ def make_relax_recognition_constraints_node(deps: Any) -> Any:
         )
         result = builder.relax(query.model_copy(deep=True), constraints)
         if not result.relaxed_fields:
-            # §13.6：已尝试放宽但无可放宽字段（如全部来自用户输入）→ 结束
+            # 已尝试放宽但无可放宽字段（如全部来自用户输入）→ 结束
             return {"relaxation_attempted": True, "next_action": "no_results"}
         flags = clear_dirty(state, "query_dirty")["dirty_flags"]
         flags["retrieval_dirty"] = True
@@ -188,7 +316,7 @@ def make_relax_recognition_constraints_node(deps: Any) -> Any:
             "relaxation_attempted": True,
             "notices": list(state.get("notices") or []) + result.notices,
             "next_action": "rewrite",
-            # §13.6：放宽是查询级覆盖，模型改写会从约束重建硬过滤（撤销放宽），
+            # 放宽是查询级覆盖，模型改写会从约束重建硬过滤（撤销放宽），
             # 因此清除 query_dirty 跳过改写、只重跑检索。
             "dirty_flags": flags,
         }
@@ -196,8 +324,8 @@ def make_relax_recognition_constraints_node(deps: Any) -> Any:
     return relax_recognition_constraints_node
 
 
-def make_normalize_candidates_node(deps: Any) -> Any:
-    """候选标准化（§12.3）。单条坏数据隔离；全部非法 → PRODUCT_SCHEMA_INVALID。"""
+def make_normalize_candidates_node(deps: AgentDependenciesPort) -> Any:
+    """候选标准化。单条坏数据隔离；全部非法 → PRODUCT_SCHEMA_INVALID。"""
 
     @timed("normalize_candidates")
     async def normalize_candidates_node(state: AgentState) -> dict[str, Any]:
@@ -205,10 +333,12 @@ def make_normalize_candidates_node(deps: Any) -> Any:
             if state.get("normalized_candidates"):
                 return {"next_action": "candidates_ready"}
         candidates = state.get("candidates") or []
+        matching_limit = deps.settings.matching_candidate_limit
+        candidate_window = candidates[:matching_limit]
         normalizer = TaxonomyNormalizer(deps.taxonomy)
         normalized: list[Any] = []
         bad: list[str] = []
-        for c in candidates:
+        for c in candidate_window:
             try:
                 nc = normalizer.normalize_offer(c.offer)
                 nc.recall_score = c.recall_score
@@ -226,6 +356,8 @@ def make_normalize_candidates_node(deps: Any) -> Any:
                 raise ProductSchemaInvalidError("全部候选商品数据格式非法")
         else:
             notices = list(state.get("notices") or [])
+        if len(candidates) > matching_limit:
+            notices.append(f"同款匹配候选超过上限，已截断至 {matching_limit} 条")
         return {
             "normalized_candidates": normalized,
             "notices": notices,

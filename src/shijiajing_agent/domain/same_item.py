@@ -27,6 +27,35 @@ class TitleSimilarityFn(Protocol):
 class ImageSimilarityFn(Protocol):
     def __call__(self, offer_a: Offer, offer_b: Offer) -> float | None: ...
 
+    # 权重（工厂与匹配器共用，保持单一来源）。
+
+
+_SAME_ACCEPT = 0.82
+_SAME_REVIEW = 0.68
+
+
+def default_title_similarity(a: str, b: str) -> float:
+    """生产默认标题相似度：token 相似度（无外部依赖，可离线复现）。"""
+    return TaxonomyNormalizer.title_token_similarity(a, b)
+
+
+def default_same_item_matcher(
+    taxonomy: Taxonomy,
+    *,
+    accept_threshold: float = _SAME_ACCEPT,
+    review_threshold: float = _SAME_REVIEW,
+) -> SameItemMatcher:
+    """统一 SameItemMatcher 工厂（§10）：生产节点与评测共用同一工厂与参数。
+
+    本阶段不改变评分公式；后续如生产接入图像相似度，只需扩展该工厂。
+    """
+    return SameItemMatcher(
+        taxonomy,
+        PairSimilarityProviders(title=default_title_similarity),
+        accept_threshold=accept_threshold,
+        review_threshold=review_threshold,
+    )
+
 
 @dataclass(frozen=True)
 class PairSimilarityProviders:
@@ -46,16 +75,15 @@ class PairResult:
     hard_conflicts: list[str] = dc_field(default_factory=list[str])
     verdict: str = "different"
 
+    # 权重。
 
-# 方案 §14.4 权重
+
 _BASE_WEIGHTS = {
     "title": 0.35,
     "identity": 0.30,
     "image": 0.25,
     "source_key": 0.10,
 }
-_SAME_ACCEPT = 0.82
-_SAME_REVIEW = 0.68
 _TITLE_PAIR_CANDIDATE_THRESHOLD = 0.85
 
 
@@ -76,7 +104,7 @@ class SameItemMatcher:
 
     # ------------------------------------------------------------------
     def generate_candidates(self, candidates: list[NormalizedCandidate]) -> list[tuple[int, int]]:
-        """§14.2 同款候选对生成（索引对）。"""
+        """同款候选对生成（索引对）。"""
         pairs: list[tuple[int, int]] = []
         n = len(candidates)
         for i in range(n):
@@ -86,7 +114,7 @@ class SameItemMatcher:
         return pairs
 
     def _pair_eligible(self, a: NormalizedCandidate, b: NormalizedCandidate) -> bool:
-        # 品类不同直接否决（§14.2）
+        # 品类不同直接否决。
         if (
             a.normalized_category_id
             and b.normalized_category_id
@@ -118,7 +146,7 @@ class SameItemMatcher:
 
     # ------------------------------------------------------------------
     def judge_pair(self, a: NormalizedCandidate, b: NormalizedCandidate) -> PairResult:
-        """§14.3–14.4 成对判定：硬冲突否决 → 分数 → 结论。"""
+        """成对判定：硬冲突否决 → 分数 → 结论。"""
         hard: list[str] = []
         cat_a, cat_b = a.normalized_category_id, b.normalized_category_id
         if cat_a and cat_b and cat_a != cat_b:
@@ -127,7 +155,7 @@ class SameItemMatcher:
             hard.append("brand")
         if a.normalized_model and b.normalized_model and a.normalized_model != b.normalized_model:
             hard.append("model")
-        # identity attributes 冲突（§14.3）
+        # identity attributes 冲突。
         identity_keys = set(a.normalized_identity) | set(b.normalized_identity)
         for key in identity_keys:
             va, vb = a.normalized_identity.get(key), b.normalized_identity.get(key)
@@ -164,7 +192,7 @@ class SameItemMatcher:
         )
         source_signal = 1.0 if same_key else 0.0
 
-        # 缺失维度不参与，其余权重重新归一化（§14.4）
+        # 缺失维度不参与，其余权重重新归一化。
         dims = {"title": title_sim}
         if identity_overlap is not None:
             dims["identity"] = identity_overlap
@@ -200,7 +228,7 @@ class SameItemMatcher:
     def cluster(
         self, candidates: list[NormalizedCandidate], pairs: list[tuple[int, int]]
     ) -> list[list[int]]:
-        """§14.5 complete-link 层次聚类。
+        """complete-link 层次聚类。
 
         合并两个簇时，跨簇每一对 Offer 都必须满足同款阈值或具有相同的权威 same_item_key，
         避免 A≈B、B≈C 导致 A 与 C 被错误传递合并。

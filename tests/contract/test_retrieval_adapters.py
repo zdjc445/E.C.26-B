@@ -83,6 +83,7 @@ class FakeTextEmbedding:
     def __init__(self, vectors: dict[str, list[float]]) -> None:
         self._vectors = vectors
         self.calls: list[list[str]] = []
+        self.close_calls = 0
 
     @property
     def dimension(self) -> int:
@@ -91,6 +92,9 @@ class FakeTextEmbedding:
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
         self.calls.append(texts)
         return [self._vectors.get(t, [0.0, 0.0, 0.0, 0.0]) for t in texts]
+
+    async def close(self) -> None:
+        self.close_calls += 1
 
 
 class FakeImageEmbedding:
@@ -113,6 +117,7 @@ class FakeMilvusClient:
         self.distance = distance or {}
         self.fail = fail
         self.calls: list[dict[str, Any]] = []
+        self.close_calls = 0
 
     def search(
         self,
@@ -136,6 +141,9 @@ class FakeMilvusClient:
                 continue
             rows.append({"id": offer_id, "distance": d, "entity": doc})
         return [rows[:limit]]
+
+    def close(self) -> None:
+        self.close_calls += 1
 
 
 def make_settings(**overrides: Any) -> Settings:
@@ -290,6 +298,23 @@ def test_milvus_config_missing() -> None:
         )
 
 
+async def test_milvus_close_releases_owned_resources_once(tmp_path: Path) -> None:
+    text_embeddings = FakeTextEmbedding({})
+    client = FakeMilvusClient([])
+    adapter = MilvusHybridRetrievalAdapter(
+        make_settings(),
+        text_embeddings=text_embeddings,
+        local_fallback=LocalLexicalRetrievalAdapter(tmp_path / "snapshot.jsonl"),
+        client=client,
+    )
+
+    await adapter.close()
+    await adapter.close()
+
+    assert client.close_calls == 1
+    assert text_embeddings.close_calls == 1
+
+
 async def test_milvus_text_fusion_formula(tmp_path: Path) -> None:
     """§13.4 文本公式：recall = Σ(weight×signal) / Σ(available weights)。
 
@@ -405,7 +430,7 @@ async def test_milvus_fallback_to_local_same_protocol(tmp_path: Path) -> None:
     )
     assert isinstance(result, RetrievalResult)
     assert result.fallback_used is True
-    assert "milvus_unavailable" in (result.fallback_reason or "")
+    assert result.fallback_reason == "milvus_unavailable"
     # 查询词 索尼/耳机 均命中 → o2 词法分最高
     assert result.candidates[0].offer.offer_id == "o2"
     assert metrics.counts.get("provider_fallback_total") == 1

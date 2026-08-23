@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -20,7 +21,11 @@ from shijiajing_agent.contracts import (
     RetrievalQuery,
 )
 from shijiajing_agent.domain.same_item import SameItemMatcher
-from shijiajing_agent.errors import ModelOutputInvalidError, VisionUnavailableError
+from shijiajing_agent.errors import (
+    ModelOutputInvalidError,
+    RequestLedgerUnavailableError,
+    VisionUnavailableError,
+)
 from shijiajing_agent.graph import build_graph
 from shijiajing_agent.nodes.input_nodes import make_initial_state
 from shijiajing_agent.ports.retrieval import RetrievalResult
@@ -58,6 +63,83 @@ async def test_text_success_full_pipeline(deps_factory: Any, facade_factory: Any
     assert response.effective_constraints.max_price.value == 2000.0
     assert response.trace_id
     assert "1899" in response.message
+
+
+@pytest.mark.asyncio
+async def test_matching_candidate_limit_truncates_after_retrieval(
+    deps_factory: Any, facade_factory: Any
+) -> None:
+    settings = replace(Settings(), matching_candidate_limit=1)
+    deps, fakes = deps_factory(settings)
+    fakes["retrieval"].sequence = [two_candidate_result()]
+
+    response = await facade_factory(deps).run(req(text="索尼耳机", request_id="matching-limit"))
+
+    assert response.groups
+    assert response.groups[0].group.offer_count == 1
+    saved_state = fakes["checkpoint"].store["s1"][0]
+    assert len(saved_state["candidates"]) == 2
+    assert len(saved_state["normalized_candidates"]) == 1
+    assert "同款匹配候选超过上限，已截断至 1 条" in saved_state["notices"]
+
+
+@pytest.mark.asyncio
+async def test_legacy_recent_turns_are_independent_of_long_term_memory(
+    deps_factory: Any, facade_factory: Any
+) -> None:
+    """legacy workflow 也必须在长期 Memory 关闭时恢复并追加 bounded conversation memory。"""
+    deps, fakes = deps_factory()
+    fakes["retrieval"].sequence = [two_candidate_result(), two_candidate_result()]
+    facade = facade_factory(deps)
+
+    first = await facade.run(req(text="索尼耳机", request_id="r1"))
+    second = await facade.run(req(text="索尼耳机", request_id="r2"))
+
+    assert first.status == AgentStatus.SUCCESS
+    assert second.status == AgentStatus.SUCCESS
+    saved = fakes["checkpoint"].store["s1"][0]
+    assert [summary.request_id for summary in saved["recent_turns"]] == ["r1", "r2"]
+
+
+@pytest.mark.asyncio
+async def test_legacy_run_maps_request_ledger_write_failure_to_typed_response(
+    deps_factory: Any, facade_factory: Any
+) -> None:
+    deps, _ = deps_factory()
+
+    class FailingLedger:
+        async def get_response(self, session_id: str, request_id: str) -> None:
+            del session_id, request_id
+            return None
+
+        async def save_response(
+            self, session_id: str, request_id: str, response: Any, expected_absent: bool = True
+        ) -> None:
+            del session_id, request_id, response, expected_absent
+            raise RequestLedgerUnavailableError("injected ledger write failure")
+
+    deps.request_ledger = FailingLedger()
+    response = await facade_factory(deps).run(req(text="索尼耳机", request_id="ledger-write"))
+
+    assert response.status is AgentStatus.FAILED
+    assert response.message == "请求结果账本不可用，请稍后重试。"
+
+
+@pytest.mark.asyncio
+async def test_recognition_intent_barrier_precedes_constraint_merge(
+    deps_factory: Any, facade_factory: Any
+) -> None:
+    """两条 understanding 分支都完成后才允许进入 join/约束合并。"""
+    deps, fakes = deps_factory()
+    fakes["retrieval"].sequence = [two_candidate_result()]
+
+    response = await facade_factory(deps).run(req(text="索尼耳机"))
+
+    assert response.status == AgentStatus.SUCCESS
+    edges = {(edge.source, edge.target) for edge in build_graph(deps).get_graph().edges}
+    assert ("recognition_done", "join_understanding") in edges
+    assert ("intent_done", "join_understanding") in edges
+    assert ("join_understanding", "merge_constraints") in edges
 
 
 # ---------------------------------------------------------------------------
@@ -144,11 +226,17 @@ async def test_correction_skips_vlm(deps_factory: Any, facade_factory: Any) -> N
         req(
             text=None,
             request_id="r2",
-            correction=RecognitionCorrection(recognition_id=rec_id, brand="Sony"),
+            correction=RecognitionCorrection(
+                recognition_id=rec_id,
+                brand="Sony",
+                model="WH-1000XM4",
+            ),
         )
     )
     assert r2.status == AgentStatus.SUCCESS
     assert fakes["vision"].calls == 1, "修正轮不得再次调用 VLM"
+    assert r2.recognition is not None
+    assert r2.recognition.model == "WH 1000XM4"
     assert r2.effective_constraints.brand.source == ConstraintSource.USER_CORRECTION
     assert fakes["retrieval"].calls == 2, "品牌来源变化应触发重查"
 
@@ -348,6 +436,9 @@ async def test_matching_exception_independent_display(
     assert len(response.groups) == 2
     saved = fakes["checkpoint"].store["s1"][0]
     assert saved.get("spu_clusters") == [[0], [1]]
+    assert all(
+        "matcher exploded" not in str(error.get("message")) for error in saved.get("errors", [])
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -497,3 +588,4 @@ async def test_workflow_step_limit_failed_with_trace(
     # 失败状态本身也被保存（保留 Checkpoint）
     assert saved.get("response") is not None
     assert saved.get("response").status == AgentStatus.FAILED
+    assert [summary.request_id for summary in saved["recent_turns"]] == [response.request_id]

@@ -10,11 +10,14 @@
 from __future__ import annotations
 
 import shutil
+from contextlib import AsyncExitStack
+from inspect import isawaitable
 from pathlib import Path
 
 import pytest
 
 import shijiajing_agent
+import shijiajing_agent.deps as deps_module
 from shijiajing_agent.adapters.local_retrieval import LocalLexicalRetrievalAdapter
 from shijiajing_agent.adapters.milvus_retrieval import MilvusHybridRetrievalAdapter
 from shijiajing_agent.config import Settings
@@ -88,7 +91,7 @@ def test_make_deps_missing_config_raises_precise() -> None:
         make_deps(Settings())
     message = str(excinfo.value)
     assert "缺少必要配置" in message
-    for name in ("ARK_API_KEY", "MILVUS_URI", "TAXONOMY_PATH", "LOCAL_PRODUCT_SNAPSHOT_PATH"):
+    for name in ("ARK_API_KEY", "MILVUS_URI", "CHECKPOINT_DSN", "LOCAL_PRODUCT_SNAPSHOT_PATH"):
         assert name in message
 
 
@@ -111,10 +114,119 @@ def test_make_deps_assembles_with_full_config(tmp_path: Path) -> None:
         taxonomy_path=str(taxonomy_file),
         local_product_snapshot_path=str(snapshot),
         checkpoint_dsn=str(tmp_path / "checkpoint.db"),
-        trace_dsn="mock-dsn",
     )
     deps = make_deps(settings)
     assert deps.taxonomy is not None
     # Milvus 配置齐全 → 走 Milvus 混合检索（不发起网络）
     assert isinstance(deps.retrieval, MilvusHybridRetrievalAdapter)
+    assert deps.retrieval._metrics is deps.metrics
+    assert deps.vision._client._metrics is deps.metrics
     assert deps.checkpoint is not None
+
+
+def test_make_deps_assembles_with_local_snapshot_only(tmp_path: Path) -> None:
+    """本地快照是 Milvus 三件套的正式替代配置，不要求同时提供 Milvus。"""
+    snapshot = tmp_path / "offers.jsonl"
+    snapshot.write_text(make_offer("o-local", price=1999.0).model_dump_json(), encoding="utf-8")
+    settings = Settings(
+        ark_api_key="mock-key",
+        ark_base_url="https://mock-ark.example/v1",
+        ark_vision_model="mock-vision",
+        ark_text_model="mock-text",
+        embedding_model="mock-embed",
+        local_product_snapshot_path=str(snapshot),
+        checkpoint_dsn=str(tmp_path / "checkpoint.db"),
+    )
+    deps = make_deps(settings)
+    assert isinstance(deps.retrieval, LocalLexicalRetrievalAdapter)
+
+
+def test_local_snapshot_does_not_require_embedding_model(tmp_path: Path) -> None:
+    """本地词法检索不构造 embedding port，因此不应要求 embedding model。"""
+    snapshot = tmp_path / "offers.jsonl"
+    snapshot.write_text(
+        make_offer("o-local-no-embedding", price=1999.0).model_dump_json(), encoding="utf-8"
+    )
+    settings = Settings(
+        ark_api_key="mock-key",
+        ark_base_url="https://mock-ark.example/v1",
+        ark_vision_model="mock-vision",
+        ark_text_model="mock-text",
+        local_product_snapshot_path=str(snapshot),
+        checkpoint_dsn=str(tmp_path / "checkpoint.db"),
+    )
+
+    deps = make_deps(settings)
+
+    assert isinstance(deps.retrieval, LocalLexicalRetrievalAdapter)
+    assert deps.retrieval._metrics is deps.metrics
+
+
+def test_milvus_requires_embedding_model(tmp_path: Path) -> None:
+    settings = Settings(
+        ark_api_key="mock-key",
+        ark_base_url="https://mock-ark.example/v1",
+        ark_vision_model="mock-vision",
+        ark_text_model="mock-text",
+        milvus_uri="https://mock-milvus.example:19530",
+        milvus_token="mock-token",
+        milvus_collection="products_v1",
+        local_product_snapshot_path=str(tmp_path / "offers.jsonl"),
+        checkpoint_dsn=str(tmp_path / "checkpoint.db"),
+    )
+
+    assert settings.validate(require_real_adapters=True) == ["EMBEDDING_MODEL"]
+
+
+@pytest.mark.asyncio
+async def test_make_deps_registers_owners_before_later_construction_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    close_order: list[str] = []
+
+    class ConstructedResource:
+        def __init__(self, name: str) -> None:
+            self._name = name
+
+        async def close(self) -> None:
+            close_order.append(self._name)
+
+    trace = ConstructedResource("trace")
+    vision = ConstructedResource("vision")
+
+    monkeypatch.setattr(deps_module, "make_trace_sink", lambda _: trace)
+    monkeypatch.setattr(
+        deps_module,
+        "build_ark_models",
+        lambda *args, **kwargs: (vision, object(), object(), object()),
+    )
+
+    def fail_retrieval(*args, **kwargs):
+        raise RuntimeError("retrieval construction failed")
+
+    monkeypatch.setattr(deps_module, "make_retrieval", fail_retrieval)
+
+    settings = Settings(
+        ark_api_key="mock-key",
+        ark_base_url="https://mock-ark.example/v1",
+        ark_vision_model="mock-vision",
+        ark_text_model="mock-text",
+        local_product_snapshot_path=str(tmp_path / "offers.jsonl"),
+        checkpoint_dsn=str(tmp_path / "checkpoint.db"),
+    )
+
+    async def close_resource(resource: ConstructedResource) -> None:
+        result = resource.close()
+        if isawaitable(result):
+            await result
+
+    async with AsyncExitStack() as stack:
+        with pytest.raises(RuntimeError, match="retrieval construction failed"):
+            deps_module.make_deps(
+                settings,
+                resource_registrar=lambda resource: stack.push_async_callback(
+                    close_resource, resource
+                ),
+            )
+
+    assert close_order == ["vision", "trace"]

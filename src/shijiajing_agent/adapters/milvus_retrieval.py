@@ -1,12 +1,12 @@
-"""Milvus 混合召回适配器（方案 §13）。
+"""Milvus 混合召回适配器。
 
 - dense 文本 + sparse 词法 + （可选）图像三个通道并行取 Top K，并集按融合分
-  排序截断 union_limit（§13.4）。
-- 每信号在当前候选集 min-max 归一化到 [0,1]；融合权重按 §13.4 文本/图片公式；
+  排序截断 union_limit。
+- 每信号在当前候选集 min-max 归一化到 [0,1]；融合权重按文本/图片公式；
   缺失通道按可用权重重新归一化。
-- 硬过滤生成 Milvus filter 表达式（§13.5），与本地降级 ``offer_matches_hard_filters``
+- 硬过滤生成 Milvus filter 表达式，与本地降级 ``offer_matches_hard_filters``
   同一语义（价格比较字段均为 ``price``）。
-- Milvus 失败/超时/schema 不匹配 → 本地词法降级（§13.7），``fallback_used=true``；
+- Milvus 失败/超时/schema 不匹配 → 本地词法降级，``fallback_used=true``；
   本地快照也不可用 → 抛 ``RetrievalUnavailableError``。
 - 图像通道只在图片可用且图像向量 provider 已配置时执行，缺失时如实不参与融合。
 """
@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+from inspect import isawaitable
 from typing import Any, cast
 
 from shijiajing_agent.adapters.embeddings import UnavailableImageEmbedding
@@ -32,12 +33,14 @@ from shijiajing_agent.contracts import (
     RetrievalCandidate,
     RetrievalQuery,
 )
+from shijiajing_agent.domain.retrieval_fusion import ReciprocalRankFusion, WeightedScoreFusion
 from shijiajing_agent.errors import RetrievalUnavailableError
 from shijiajing_agent.ports.milvus import MilvusClientPort, make_milvus_client
 from shijiajing_agent.ports.models import ImageEmbeddingPort, TextEmbeddingPort
+from shijiajing_agent.ports.observability import MetricsPort
 from shijiajing_agent.ports.retrieval import RetrievalResult
 
-# 所有 Offer 标量字段 + 三个 JSON 属性字段（§13.2 Collection 字段）
+# 所有 Offer 标量字段 + 三个 JSON 属性字段。
 _OUTPUT_FIELDS = [
     "offer_id",
     "platform",
@@ -70,10 +73,6 @@ _OUTPUT_FIELDS = [
     "source_payload_ref",
 ]
 
-# §13.4 融合权重
-_TEXT_WEIGHTS = {"dense": 0.50, "sparse": 0.30, "metadata": 0.20}
-_IMAGE_WEIGHTS = {"dense": 0.35, "sparse": 0.20, "image": 0.25, "metadata": 0.20}
-
 
 def escape_milvus_string(value: str) -> str:
     """Milvus filter 表达式字符串转义（单引号包裹）。"""
@@ -81,7 +80,7 @@ def escape_milvus_string(value: str) -> str:
 
 
 def build_filter_expr(hf: HardFilters) -> str:
-    """§13.5 硬过滤 → Milvus filter 表达式。空过滤返回空字符串。"""
+    """硬过滤 → Milvus filter 表达式。空过滤返回空字符串。"""
     parts: list[str] = []
     if hf.category_id:
         parts.append(f"category_id == {escape_milvus_string(hf.category_id)}")
@@ -111,7 +110,7 @@ class MilvusHybridRetrievalAdapter:
         text_embeddings: TextEmbeddingPort,
         local_fallback: LocalLexicalRetrievalAdapter,
         image_embeddings: ImageEmbeddingPort | None = None,
-        metrics: Any | None = None,
+        metrics: MetricsPort | None = None,
         client: MilvusClientPort | None = None,
     ) -> None:
         missing = [
@@ -130,6 +129,39 @@ class MilvusHybridRetrievalAdapter:
         self._local = local_fallback
         self._metrics = metrics
         self._client = client  # 测试注入 FakeMilvusClient；None 时按配置构建
+        self._closed = False
+
+    async def setup(self) -> None:
+        """Milvus 与 Embedding 客户端按首次检索惰性连接；此处统一完成生命周期契约。"""
+
+    async def close(self) -> None:
+        """关闭适配器持有的 Milvus、Embedding 与本地兜底资源。"""
+        if self._closed:
+            return
+        self._closed = True
+        first_error: BaseException | None = None
+        seen: set[int] = set()
+        for resource in (
+            self._client,
+            self._text_embeddings,
+            self._image_embeddings,
+            self._local,
+        ):
+            if resource is None or id(resource) in seen:
+                continue
+            seen.add(id(resource))
+            close = getattr(resource, "close", None)
+            if close is None:
+                continue
+            try:
+                result = close()
+                if isawaitable(result):
+                    await result
+            except BaseException as exc:
+                if first_error is None:
+                    first_error = exc
+        if first_error is not None:
+            raise first_error
 
     def _real_client(self) -> MilvusClientPort:
         if self._client is None:
@@ -152,8 +184,8 @@ class MilvusHybridRetrievalAdapter:
             )
         except RetrievalUnavailableError:
             raise
-        except Exception as exc:
-            # §13.7：Milvus 连接失败/超时/schema 不匹配 → 本地词法降级
+        except Exception:
+            # Milvus 连接失败/超时/schema 不匹配 → 本地词法降级
             if self._metrics is not None:
                 self._metrics.inc("provider_fallback_total", {"provider": "local_lexical"})
             result = await self._local.search(
@@ -164,7 +196,9 @@ class MilvusHybridRetrievalAdapter:
                 category_names=category_names,
             )
             result.fallback_used = True
-            result.fallback_reason = f"milvus_unavailable: {exc}"
+            # 底层异常可能包含 host、DSN 或供应商响应；只把固定原因带入 AgentState，
+            # 详细异常不进入 Checkpoint/Event payload，适配器仅增加降级指标。
+            result.fallback_reason = "milvus_unavailable"
             return result
 
     async def _search_milvus(
@@ -235,7 +269,6 @@ class MilvusHybridRetrievalAdapter:
             )
 
         # 图像通道：只在有图片且 provider 可用时执行
-        image_channel = False
         if image is not None:
             try:
                 image_vec = await self._image_embeddings.embed_image(image)
@@ -254,20 +287,22 @@ class MilvusHybridRetrievalAdapter:
                 self._collect(
                     image_hits, results_by_id, channel_scores["image"], sources_by_id, "image"
                 )
-                image_channel = True
 
         # 并集截断
         candidates = list(results_by_id.values())
         if len(candidates) > union_limit:
             candidates = candidates[:union_limit]
         if not candidates:
-            return RetrievalResult(candidates=[], total_found=0)
+            return RetrievalResult(
+                candidates=[],
+                total_found=0,
+                index_version=self._settings.retrieval_index_version,
+                fusion_version="weighted-v1",
+            )
 
-        # 每信号在当前候选集归一化（§13.4）
+        # 每信号在当前候选集归一化
         for channel in ("dense", "sparse", "image"):
             _min_max_normalize(channel_scores[channel], candidates)
-        weights = _pick_weights(image_channel, channel_scores)
-
         ranked: list[RetrievalCandidate] = []
         for row in candidates:
             offer = _entity_to_offer(row)
@@ -277,15 +312,6 @@ class MilvusHybridRetrievalAdapter:
                 "image": channel_scores["image"].get(offer.offer_id),
             }
             meta = metadata_match(query, offer)  # 恒为 [0,1] 的 float，metadata 通道恒参与
-            used, denom = 0.0, 0.0
-            for name, weight in weights.items():
-                if name == "metadata":
-                    used += weight * meta
-                    denom += weight
-                elif scores.get(name) is not None:
-                    used += weight * (scores[name] or 0.0)
-                    denom += weight
-            recall = used / denom if denom else 0.0
             ranked.append(
                 RetrievalCandidate(
                     offer=offer,
@@ -293,11 +319,44 @@ class MilvusHybridRetrievalAdapter:
                     sparse_score=scores["sparse"],
                     image_similarity=scores["image"],
                     metadata_match=meta,
-                    recall_score=recall,
+                    recall_score=0.0,
                     channel_sources=sources_by_id.get(offer.offer_id, []),
                 )
             )
-        ranked.sort(key=lambda c: c.recall_score, reverse=True)
+        weighted = WeightedScoreFusion()
+        ranked = weighted.fuse({"all": ranked}, union_limit)
+        fusion_version = weighted.version
+        if self._settings.retrieval_fusion_strategy == "rrf":
+            channel_results: dict[str, list[RetrievalCandidate]] = {}
+            score_fields = {
+                "dense": "dense_text_score",
+                "sparse": "sparse_score",
+                "image": "image_similarity",
+                "metadata": "metadata_match",
+            }
+            for channel, field in score_fields.items():
+                channel_candidates = [
+                    candidate.model_copy(
+                        update={"recall_score": float(getattr(candidate, field) or 0.0)}
+                    )
+                    for candidate in ranked
+                    if getattr(candidate, field) is not None
+                ]
+                if channel_candidates:
+                    channel_results[channel] = sorted(
+                        channel_candidates,
+                        key=lambda candidate: (
+                            -candidate.recall_score,
+                            candidate.offer.offer_id,
+                        ),
+                    )
+            fusion = ReciprocalRankFusion(self._settings.retrieval_rrf_k)
+            ranked = fusion.fuse(channel_results, union_limit)
+            ranked = [
+                candidate.model_copy(update={"recall_score": 1.0 / rank})
+                for rank, candidate in enumerate(ranked, start=1)
+            ]
+            fusion_version = fusion.version
 
         if self._metrics is not None:
             self._metrics.inc("retrieval_candidate_count", value=float(len(ranked)))
@@ -307,6 +366,8 @@ class MilvusHybridRetrievalAdapter:
             candidates=ranked,
             total_found=len(ranked),
             channel_counts={name: len(ids) for name, ids in channel_scores.items() if ids},
+            index_version=self._settings.retrieval_index_version,
+            fusion_version=fusion_version,
         )
 
     @staticmethod
@@ -336,17 +397,8 @@ class MilvusHybridRetrievalAdapter:
                 src.append(channel)
 
 
-def _pick_weights(
-    image_channel: bool, channel_scores: dict[str, dict[str, float]]
-) -> dict[str, float]:
-    """§13.4 权重：按是否有图像通道选公式；缺失通道由融合循环剔除分母。"""
-    weights = dict(_IMAGE_WEIGHTS) if image_channel else dict(_TEXT_WEIGHTS)
-    # dense 缺失时（embedding 成功但通道空集不影响），融合循环按可用通道归一化
-    return weights
-
-
 def _min_max_normalize(scores: dict[str, float], candidates: list[dict[str, Any]]) -> None:
-    """把通道分数在候选集内 min-max 到 [0,1]（§13.4）。"""
+    """把通道分数在候选集内 min-max 到 [0,1]。"""
     values: list[float] = []
     for c in candidates:
         cid = c.get("offer_id")

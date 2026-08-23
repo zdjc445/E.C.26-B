@@ -18,6 +18,7 @@ import json
 import re
 import time
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass
 from importlib.resources import files as _pkg_files
 from typing import Any, cast
@@ -39,6 +40,7 @@ from shijiajing_agent.domain.evidence import EvidenceBundle
 from shijiajing_agent.domain.filters import HardFilterBuilder
 from shijiajing_agent.domain.taxonomy import Taxonomy
 from shijiajing_agent.errors import ModelOutputInvalidError, VisionUnavailableError
+from shijiajing_agent.ports.observability import MetricsPort
 
 # ---------------------------------------------------------------------------
 # Prompt 加载与版本
@@ -72,6 +74,27 @@ class ModelCallRecord:
     output_hash: str | None = None
     token_usage: dict[str, int] | None = None
     error: str | None = None
+
+
+_MODEL_CALLS: ContextVar[list[ModelCallRecord] | None] = ContextVar(
+    "shijiajing_model_calls", default=None
+)
+
+
+def record_model_call(record: ModelCallRecord) -> None:
+    """按当前异步执行上下文暂存模型调用，供节点计时器消费。"""
+    records: list[ModelCallRecord] | None = _MODEL_CALLS.get()
+    if records is None:
+        records = []
+        _MODEL_CALLS.set(records)
+    records.append(record)
+
+
+def take_model_calls() -> list[ModelCallRecord]:
+    """取出并清空当前节点的模型调用记录。"""
+    records: list[ModelCallRecord] = _MODEL_CALLS.get() or []
+    _MODEL_CALLS.set(None)
+    return records
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +166,7 @@ class ArkModelClient:
         settings: Settings,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
-        metrics: Any | None = None,
+        metrics: MetricsPort | None = None,
         on_call: Callable[[ModelCallRecord], None] | None = None,
     ) -> None:
         missing = settings.missing_models()
@@ -153,7 +176,7 @@ class ArkModelClient:
             )
         self._settings = settings
         self._metrics = metrics
-        self._on_call = on_call
+        self._on_call = on_call or record_model_call
         http_client = httpx.AsyncClient(transport=transport) if transport else None
         # max_retries=0：重试由本适配器按 max_network_attempts 控制，避免 SDK 内部重试叠加
         self._client = AsyncOpenAI(
@@ -162,12 +185,16 @@ class ArkModelClient:
             http_client=http_client,
             max_retries=0,
         )
+        self._closed = False
 
     @property
     def settings(self) -> Settings:
         return self._settings
 
     async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         await self._client.close()
 
     async def chat(
@@ -374,6 +401,13 @@ class ArkVisionModel:
         self._client = client
         self._version, self._prompt = load_prompt("vision.md")
 
+    async def setup(self) -> None:
+        """Ark 客户端按首次请求惰性建立连接；保留统一 runtime 生命周期入口。"""
+
+    async def close(self) -> None:
+        """关闭共享 Ark 客户端；runtime 将此适配器作为客户端所有者注册。"""
+        await self._client.close()
+
     async def recognize(self, image: ImageRef, taxonomy: Taxonomy) -> RecognitionResult:
         system = self._prompt.replace("{{TAXONOMY_SUMMARY}}", summarize_taxonomy(taxonomy))
         user = (
@@ -408,6 +442,10 @@ class ArkIntentModel:
         self._client = client
         self._version, self._prompt = load_prompt("intent.md")
 
+    async def close(self) -> None:
+        """关闭共享 Ark 客户端；重复关闭由客户端本身幂等处理。"""
+        await self._client.close()
+
     async def extract_intent(
         self, text: str, prev_constraints: ShoppingConstraints | None, taxonomy: Taxonomy
     ) -> IntentPatch:
@@ -437,7 +475,7 @@ class ArkIntentModel:
 
 
 class _QueryRewriteOutput(BaseModel):
-    """模型侧改写契约：只能改 query_text / soft_terms / negative_terms（§11.4）。"""
+    """模型侧改写契约：只能改 query_text / soft_terms / negative_terms。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -447,11 +485,15 @@ class _QueryRewriteOutput(BaseModel):
 
 
 class ArkQueryRewrite:
-    """查询改写（§11.4）。硬过滤由系统确定性构建，模型输出与基础硬过滤不一致即篡改。"""
+    """查询改写。硬过滤由系统确定性构建，模型输出与基础硬过滤不一致即篡改。"""
 
     def __init__(self, client: ArkModelClient) -> None:
         self._client = client
         self._version, self._prompt = load_prompt("query_rewrite.md")
+
+    async def close(self) -> None:
+        """关闭共享 Ark 客户端；重复关闭由客户端本身幂等处理。"""
+        await self._client.close()
 
     async def rewrite(
         self,
@@ -509,6 +551,10 @@ class ArkExplanationModel:
     def __init__(self, client: ArkModelClient) -> None:
         self._client = client
         self._version, self._prompt = load_prompt("explanation.md")
+
+    async def close(self) -> None:
+        """关闭共享 Ark 客户端；重复关闭由客户端本身幂等处理。"""
+        await self._client.close()
 
     async def explain(self, bundle: EvidenceBundle) -> str:
         s = self._client.settings
@@ -582,7 +628,7 @@ def build_ark_models(
     settings: Settings,
     *,
     transport: httpx.AsyncBaseTransport | None = None,
-    metrics: Any | None = None,
+    metrics: MetricsPort | None = None,
     on_call: Callable[[ModelCallRecord], None] | None = None,
 ) -> tuple[ArkVisionModel, ArkIntentModel, ArkQueryRewrite, ArkExplanationModel]:
     """构建四个 Ark 模型适配器（共享一个客户端）。测试可注入 transport。"""

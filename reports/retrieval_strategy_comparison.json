@@ -1,0 +1,37 @@
+{
+  "rrf_k": 60,
+  "limit": 20,
+  "results": [
+    {
+      "strategy": "weighted",
+      "sample_count": 2,
+      "sku_recall_at_20": 1.0,
+      "spu_recall_at_20": 1.0,
+      "mrr_at_10": 1.0,
+      "hard_filter_satisfaction_rate": 1.0,
+      "zero_result_rate": 0.0,
+      "hard_filter_violation_count": 0
+    },
+    {
+      "strategy": "rrf",
+      "sample_count": 2,
+      "sku_recall_at_20": 1.0,
+      "spu_recall_at_20": 1.0,
+      "mrr_at_10": 1.0,
+      "hard_filter_satisfaction_rate": 1.0,
+      "zero_result_rate": 0.0,
+      "hard_filter_violation_count": 0
+    },
+    {
+      "strategy": "weighted_rerank",
+      "sample_count": 2,
+      "sku_recall_at_20": 1.0,
+      "spu_recall_at_20": 1.0,
+      "mrr_at_10": 1.0,
+      "hard_filter_satisfaction_rate": 1.0,
+      "zero_result_rate": 0.0,
+      "hard_filter_violation_count": 0
+    }
+  ],
+  "recommended_strategy": "weighted"
+}

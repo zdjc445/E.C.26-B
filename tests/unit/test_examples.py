@@ -12,10 +12,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
+pytest.importorskip("examples")
 from examples import _common, correction_example, image_example, text_example
 
 from shijiajing_agent.config import Settings
-from shijiajing_agent.contracts import AgentRequest
+from shijiajing_agent.contracts import AgentRequest, AgentResponse, AgentStatus
 from tests.workflow.conftest import make_deps as make_fake_deps
 from tests.workflow.conftest import two_candidate_result
 
@@ -138,6 +140,38 @@ def test_text_example_missing_config_exits_2(
 
 def test_correction_example_requires_field() -> None:
     assert correction_example.main(["--image", "whatever.png"]) == 2
+
+
+def test_run_and_print_uses_asyncio_compat_runner(
+    monkeypatch: pytest.MonkeyPatch, patch_make_deps: dict[str, Any], capsys
+) -> None:
+    patch_make_deps["retrieval"].sequence = [two_candidate_result()]
+    calls: list[object] = []
+
+    def fake_run(coro: object) -> list[Any]:
+        calls.append(coro)
+        close = getattr(coro, "close", None)
+        if close is not None:
+            close()
+        return [
+            AgentResponse(
+                session_id="s-1",
+                request_id="r-1",
+                turn_id="t-1",
+                status=AgentStatus.SUCCESS,
+            )
+        ]
+
+    monkeypatch.setattr(_common, "run_async", fake_run)
+    assert (
+        _common.run_and_print(
+            [AgentRequest(session_id="s-1", request_id="r-1", text="索尼耳机")],
+            settings=Settings(),
+        )
+        == 0
+    )
+    assert len(calls) == 1
+    assert "第 1 轮" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------

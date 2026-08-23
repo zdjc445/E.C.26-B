@@ -8,6 +8,11 @@
 - ``same_item_pairs.jsonl``：Offer 对 + 同 SPU/SKU 标签 + 冲突原因。
 - ``ranking_dataset.jsonl``：查询 + 候选组 + 人工偏好顺序。
 - ``workflow_dataset.jsonl``：完整多轮轨迹 + 期望结果。
+- ``memory_dataset.jsonl``：owner 隔离、显式 directive、覆盖与 forget 轨迹。
+- ``multi_agent_dataset.jsonl``：子图输入/输出、汇合状态与最终业务结果。
+- ``interrupt_dataset.jsonl``：四类 interrupt 的恢复节点与副作用基线。
+- ``cache_dataset.jsonl``：版本向量、hit/miss、模型调用次数与结果摘要。
+- ``retrieval_strategy_dataset.jsonl``：weighted、RRF、weighted+rerank 三组共享候选夹具。
 
 数据来源分两种，报告如实标注：
 
@@ -25,9 +30,10 @@ import hashlib
 import json
 import math
 import statistics
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,6 +43,7 @@ from shijiajing_agent.contracts import (
     IntentPatch,
     Offer,
     Preference,
+    RankedGroup,
     RecognitionResult,
     ShoppingConstraints,
     SkuGroup,
@@ -50,9 +57,24 @@ from shijiajing_agent.domain.evidence import (
 from shijiajing_agent.domain.filters import offer_matches_hard_filters
 from shijiajing_agent.domain.normalization import TaxonomyNormalizer
 from shijiajing_agent.domain.ranking import GroupRanker
-from shijiajing_agent.domain.same_item import PairSimilarityProviders, SameItemMatcher
+from shijiajing_agent.domain.same_item import default_same_item_matcher
 from shijiajing_agent.domain.sku import SkuSplitter
 from shijiajing_agent.domain.taxonomy import Taxonomy
+from shijiajing_agent.eval_data import (
+    GATE_ELIGIBLE_FALSE,
+    TRUST_LEVEL_PROVISIONAL,
+    EvalAssetRef,
+    EvalSampleMeta,
+)
+from shijiajing_agent.eval_engineering import (
+    CacheSample,
+    InterruptSample,
+    MemorySample,
+    MultiAgentSample,
+    RetrievalStrategySample,
+)
+
+EVAL_REPORT_SCHEMA_VERSION = "1.0"
 
 # ---------------------------------------------------------------------------
 # 数据集行模型
@@ -73,9 +95,11 @@ class RecognitionSample(BaseModel):
 
     id: str
     image: ImageRef | None = None
+    asset: EvalAssetRef | None = None
     text: str | None = None
     expected: RecognitionExpected
     recorded: RecognitionResult | None = None
+    meta: EvalSampleMeta | None = None
 
 
 class IntentRecorded(IntentPatch):
@@ -96,6 +120,7 @@ class IntentSample(BaseModel):
     expected_clear: list[str] = Field(default_factory=list[str])
     conflict: bool = False
     recorded: IntentRecorded | None = None
+    meta: EvalSampleMeta | None = None
 
 
 class RetrievalRecorded(BaseModel):
@@ -117,6 +142,17 @@ class RetrievalSample(BaseModel):
     expected_sku_ids: list[str] = Field(default_factory=list[str])
     expected_top_sku_ids: list[str] = Field(default_factory=list[str])
     recorded: RetrievalRecorded | None = None
+    meta: EvalSampleMeta | None = None
+
+
+class SameItemRecorded(BaseModel):
+    """live 同款判定输出（§10）：与生产 matcher 工厂同源，不写回 expected。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    verdict: Literal["same", "review", "different"]
+    score: float = Field(ge=0, le=1)
+    hard_conflicts: list[str] = Field(default_factory=list[str])
 
 
 class SameItemSample(BaseModel):
@@ -128,6 +164,18 @@ class SameItemSample(BaseModel):
     same_spu: bool
     same_sku: bool = False
     conflict_reason: str | None = None
+    recorded: SameItemRecorded | None = None
+    meta: EvalSampleMeta | None = None
+
+
+class RankingRecorded(BaseModel):
+    """live 排序输出（§10）：真实 GroupRanker 排序 + 解释文本。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ranked_group_ids: list[str]
+    explanation: str | None = None
+    explanation_verified: bool | None = None
 
 
 class RankingSample(BaseModel):
@@ -137,6 +185,8 @@ class RankingSample(BaseModel):
     query: dict[str, Any]
     groups: list[dict[str, Any]]
     preferred_order: list[str]
+    recorded: RankingRecorded | None = None
+    meta: EvalSampleMeta | None = None
 
 
 class WorkflowRecorded(BaseModel):
@@ -145,6 +195,8 @@ class WorkflowRecorded(BaseModel):
     status: str | None = None
     clarification: bool | None = None
     group_ids: list[str] = Field(default_factory=list[str])
+    sku_ids: list[str] = Field(default_factory=list[str])
+    final_constraints: dict[str, Any] | None = None
     correction_success: bool | None = None
     vlm_called_after_correction: bool | None = None
     fallback_used: bool | None = None
@@ -160,9 +212,12 @@ class WorkflowSample(BaseModel):
     turns: list[dict[str, Any]]
     expected_status: str
     expected_group_ids: list[str] = Field(default_factory=list[str])
+    expected_sku_ids: list[str] = Field(default_factory=list[str])
+    expected_final_constraints: dict[str, Any] | None = None
     expected_clarification: bool = False
     expected_correction_success: bool = True
     recorded: WorkflowRecorded | None = None
+    meta: EvalSampleMeta | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +231,11 @@ DATASET_FILES: dict[str, tuple[str, type[BaseModel]]] = {
     "same_item": ("same_item_pairs.jsonl", SameItemSample),
     "ranking": ("ranking_dataset.jsonl", RankingSample),
     "workflow": ("workflow_dataset.jsonl", WorkflowSample),
+    "memory": ("memory_dataset.jsonl", MemorySample),
+    "multi_agent": ("multi_agent_dataset.jsonl", MultiAgentSample),
+    "interrupt": ("interrupt_dataset.jsonl", InterruptSample),
+    "cache": ("cache_dataset.jsonl", CacheSample),
+    "retrieval_strategy": ("retrieval_strategy_dataset.jsonl", RetrievalStrategySample),
 }
 
 
@@ -200,7 +260,7 @@ def load_dataset(path: Path, model: type[BaseModel]) -> list[BaseModel]:
 
 
 def load_all_datasets(datasets_dir: Path) -> dict[str, list[BaseModel]]:
-    """加载全部六类数据集；缺失文件按空集处理并记入报告。"""
+    """加载全部十一类数据集；缺失文件按空集处理并记入报告。"""
     datasets: dict[str, list[BaseModel]] = {}
     for kind, (filename, model) in DATASET_FILES.items():
         path = datasets_dir / filename
@@ -283,15 +343,6 @@ def _ece(confs: list[float], corrects: list[bool], bins: int = 10) -> float:
     return total
 
 
-def _bigram_jaccard(a: str, b: str) -> float:
-    """字符 bigram Jaccard（离线评测固定注入的确定性标题相似度）。"""
-    a_bg = {a[i : i + 2] for i in range(len(a) - 1)}
-    b_bg = {b[i : i + 2] for i in range(len(b) - 1)}
-    if not a_bg or not b_bg:
-        return 0.0
-    return len(a_bg & b_bg) / len(a_bg | b_bg)
-
-
 # ---------------------------------------------------------------------------
 # 单指标结果与阈值
 # ---------------------------------------------------------------------------
@@ -304,7 +355,7 @@ class Threshold:
     blocking: bool
 
 
-# §22.3 第一版验收阈值（阻断指标未达标不得发布）
+# 第一版验收阈值（阻断指标未达标不得发布）。
 _THRESHOLDS: dict[str, Threshold] = {
     "structural_output_success_rate": Threshold("ge", 0.99, False),
     "category_accuracy": Threshold("ge", 0.90, False),
@@ -356,7 +407,13 @@ class EvalReport:
     source: str
     datasets: dict[str, DatasetInfo]
     metrics: list[MetricResult]
-    gate: bool  # True = 所有阻断指标达标
+    gate: bool  # True = 所有阻断指标达标（已测量部分）
+    trust_level: str = TRUST_LEVEL_PROVISIONAL
+    label_method: str = "agent_only"
+    metric_gate_passed: bool = False
+    release_gate_eligible: bool = False
+    release_gate_passed: bool = False
+    pending_reasons: list[str] = field(default_factory=list[str])
 
     @property
     def blocking_failures(self) -> list[MetricResult]:
@@ -596,7 +653,11 @@ def evaluate_retrieval(samples: list[RetrievalSample], source: str) -> list[Metr
 def evaluate_same_item(
     samples: list[SameItemSample], taxonomy: Taxonomy, source: str
 ) -> list[MetricResult]:
-    """§22.2 同款：成对 P/R/F1、false comparison rate、SKU 拆分准确率（真实领域代码）。"""
+    """§22.2 同款：成对 P/R/F1、false comparison rate、SKU 拆分准确率（真实领域代码）。
+
+    §10：与生产节点共用 ``default_same_item_matcher`` 工厂（不使用评测专用
+    ``_bigram_jaccard`` 替代生产相似度）；live 写入的 ``recorded`` 存在时直接采用。
+    """
     n = len(samples)
     names = (
         "same_item_pairwise_precision",
@@ -608,7 +669,7 @@ def evaluate_same_item(
     if not n:
         return [_metric(name, None, 0, 0, source) for name in names]
 
-    matcher = SameItemMatcher(taxonomy, PairSimilarityProviders(title=_bigram_jaccard))
+    matcher = default_same_item_matcher(taxonomy)
     normalizer = TaxonomyNormalizer(taxonomy)
     splitter = SkuSplitter(taxonomy)
 
@@ -620,7 +681,10 @@ def evaluate_same_item(
         b = Offer.model_validate(sample.offer_b)
         na = normalizer.normalize_offer(a)
         nb = normalizer.normalize_offer(b)
-        verdict = matcher.judge_pair(na, nb).verdict
+        if sample.recorded is not None:
+            verdict = sample.recorded.verdict
+        else:
+            verdict = matcher.judge_pair(na, nb).verdict
         predicted_same = verdict == "same"
         if predicted_same and sample.same_spu:
             tp += 1
@@ -645,7 +709,7 @@ def evaluate_same_item(
     ]
 
 
-def _group_evidence(g: SkuGroup, rank: int) -> GroupEvidence:
+def group_evidence(g: SkuGroup, rank: int) -> GroupEvidence:
     platforms = sorted({o.platform for o in g.offers if o.platform})
     lo = f"{g.min_price:g}" if g.min_price is not None else "—"
     hi = f"{g.max_price:g}" if g.max_price is not None else "—"
@@ -691,14 +755,28 @@ def evaluate_ranking(
     top1_n = 0
     template_n = 0
     template_self_ok = 0
+    model_text_n = 0
+    model_text_ok = 0
     pref_values = {p.value for p in Preference}
     for sample in samples:
         groups = [SkuGroup.model_validate(g) for g in sample.groups]
         query = sample.query
         sort_by = SortBy(query.get("sort_by") or SortBy.RECOMMENDED.value)
         prefs = [Preference(p) for p in query.get("preferences", []) if p in pref_values]
-        result = ranker.rank(groups, ShoppingConstraints(), sort_by=sort_by, preferences=prefs)
-        ranked_ids = [r.group.group_id for r in result.ranked]
+        if sample.recorded is not None:
+            # live 已用生产 GroupRanker 排序（§10），直接采用真实输出
+            ranked = [
+                rg
+                for gid in sample.recorded.ranked_group_ids
+                for rg in groups
+                if rg.group_id == gid
+            ]
+            ranked_ids = [rg.group_id for rg in ranked]
+            result_ranked = [RankedGroup(group=rg, rank=i + 1) for i, rg in enumerate(ranked)]
+        else:
+            result = ranker.rank(groups, ShoppingConstraints(), sort_by=sort_by, preferences=prefs)
+            ranked_ids = [r.group.group_id for r in result.ranked]
+            result_ranked = result.ranked
         ndcg5.append(_ndcg(ranked_ids, sample.preferred_order, 5))
         ndcg10.append(_ndcg(ranked_ids, sample.preferred_order, 10))
 
@@ -710,21 +788,29 @@ def evaluate_ranking(
                     constraint_ok += 1
 
         lowest_price_intent = sort_by == SortBy.PRICE_ASC or Preference.LOWEST_PRICE in prefs
-        if lowest_price_intent and result.ranked and result.ranked[0].group.min_price is not None:
-            top1_n += 1
-            prices = [g.min_price for g in groups if g.min_price is not None]
-            if prices:
-                top1_ok += int(result.ranked[0].group.min_price == min(prices))
+        if lowest_price_intent and ranked_ids and groups:
+            first = next((g for g in groups if g.group_id == ranked_ids[0]), None)
+            if first is not None and first.min_price is not None:
+                top1_n += 1
+                prices = [g.min_price for g in groups if g.min_price is not None]
+                if prices:
+                    top1_ok += int(first.min_price == min(prices))
 
-        for i, rg in enumerate(result.ranked, start=1):
+        for i, rg in enumerate(result_ranked, start=1):
             bundle = EvidenceBundle(
                 query_summary=str(query.get("text", "")),
-                groups=[_group_evidence(rg.group, i)],
+                groups=[group_evidence(rg.group, i)],
                 notices=[],
             )
             # §11.5：模板解释只引用证据字段，按构造一致（真实管线中模型文本须过
             # 严格校验，未过则回退模板）；严格校验器对排名序号与标题数字有误报，
             # 单独作为参考指标 reporting。
+            if sample.recorded is not None and sample.recorded.explanation:
+                text = sample.recorded.explanation
+                model_text_n += 1
+                ok, _ = checker.verify(text, bundle)
+                model_text_ok += int(ok)
+                continue
             text = checker.template_explanation(bundle)
             template_n += 1
             ok, _ = checker.verify(text, bundle)
@@ -761,11 +847,13 @@ def evaluate_ranking(
         ),
         _metric(
             "explanation_factual_consistency_rate",
-            1.0 if template_n else None,
-            template_n,
+            (template_n + model_text_ok) / (template_n + model_text_n)
+            if (template_n + model_text_n)
+            else None,
+            template_n + model_text_n,
             0,
             source,
-            note="模板解释按构造一致（内容仅来自证据）；模型文本需 live 校验",
+            note="模板解释按构造一致（内容仅来自证据）；模型文本由严格校验器 live 校验",
         ),
         _metric(
             "explanation_template_self_verify_rate",
@@ -891,6 +979,33 @@ def evaluate_workflow(samples: list[WorkflowSample], source: str) -> list[Metric
     return out
 
 
+def _constraints_match(actual: dict[str, Any] | None, expected: dict[str, Any] | None) -> bool:
+    """有效约束匹配：两侧 None 视为跳过；缺失键视为 None；值逐一比较。"""
+    if expected is None:
+        return True
+    if actual is None:
+        return False
+    for key, exp_value in expected.items():
+        if actual.get(key) != exp_value:
+            return False
+    return True
+
+
+def workflow_state_exact(sample: WorkflowSample, rec: WorkflowRecorded) -> bool:
+    """§7.4 provisional state_exact：比较最终状态、Gold SKU 集合、澄清状态与有效约束。
+
+    种子数据（无 expected_sku_ids）保持旧语义：只比较运行时 group_id 集合。
+    """
+    if not sample.expected_sku_ids:
+        return set(rec.group_ids) == set(sample.expected_group_ids)
+    return (
+        rec.status == sample.expected_status
+        and set(rec.sku_ids) == set(sample.expected_sku_ids)
+        and rec.clarification == sample.expected_clarification
+        and _constraints_match(rec.final_constraints, sample.expected_final_constraints)
+    )
+
+
 # ---------------------------------------------------------------------------
 # 报告生成与门禁
 # ---------------------------------------------------------------------------
@@ -903,8 +1018,12 @@ def compute_report(
     source: str,
     generated_at: str,
     datasets_dir: Path | None = None,
+    trust_level: str = TRUST_LEVEL_PROVISIONAL,
+    label_method: str = "agent_only",
+    gate_eligible: bool = GATE_ELIGIBLE_FALSE,
+    pending_reasons: list[str] | None = None,
 ) -> EvalReport:
-    """汇总全部评测器结果，判定第 22.3 节门禁。"""
+    """汇总全部评测器结果，判定门禁与发布资格（§11 可信等级语义）。"""
     metrics: list[MetricResult] = []
     metrics.extend(
         evaluate_recognition(cast(list[RecognitionSample], datasets.get("recognition", [])), source)
@@ -936,25 +1055,54 @@ def compute_report(
             digest=dataset_digest(path) if path is not None and path.exists() else None,
         )
 
-    gate = all(
+    # §11：metric_gate_passed 只表示已测指标是否达到当前阈值；
+    # release_gate_eligible 只有 frozen + 人工仲裁标签才为 true。
+    metric_gate_passed = all(
         m.passed
         for m in metrics
         if m.threshold is not None and m.threshold.blocking and m.passed is not None
+    )
+    blocking_gate_passed = all(
+        m.passed is True for m in metrics if m.threshold is not None and m.threshold.blocking
+    )
+    release_gate_eligible = (
+        trust_level == "frozen" and label_method == "adjudicated" and gate_eligible
     )
     return EvalReport(
         generated_at=generated_at,
         source=source,
         datasets=infos,
         metrics=metrics,
-        gate=gate,
+        gate=metric_gate_passed,
+        trust_level=trust_level,
+        label_method=label_method,
+        metric_gate_passed=metric_gate_passed,
+        release_gate_eligible=release_gate_eligible,
+        release_gate_passed=blocking_gate_passed and release_gate_eligible,
+        pending_reasons=list(pending_reasons or []),
     )
+
+
+def _gate_text(report: EvalReport) -> str:
+    return "✅ 已测阻断指标全部达标" if report.metric_gate_passed else "❌ 未达标或未测量"
+
+
+def _eligible_text(report: EvalReport) -> str:
+    return "✅ 具备" if report.release_gate_eligible else "❌ 不具备（需 frozen + 人工仲裁）"
 
 
 def report_to_json(report: EvalReport) -> dict[str, Any]:
     return {
+        "schema_version": EVAL_REPORT_SCHEMA_VERSION,
         "generated_at": report.generated_at,
         "source": report.source,
         "gate": report.gate,
+        "trust_level": report.trust_level,
+        "label_method": report.label_method,
+        "metric_gate_passed": report.metric_gate_passed,
+        "release_gate_eligible": report.release_gate_eligible,
+        "release_gate_passed": report.release_gate_passed,
+        "pending_reasons": report.pending_reasons,
         "blocking_failures": [m.name for m in report.blocking_failures],
         "blocking_pending": [m.name for m in report.blocking_pending],
         "datasets": {k: d.__dict__ for k, d in report.datasets.items()},
@@ -965,7 +1113,15 @@ def report_to_json(report: EvalReport) -> dict[str, Any]:
                 "n": m.n,
                 "pending": m.pending,
                 "source": m.source,
-                "threshold": m.threshold.value if m.threshold else None,
+                "threshold": (
+                    {
+                        "op": m.threshold.op,
+                        "value": m.threshold.value,
+                        "blocking": m.threshold.blocking,
+                    }
+                    if m.threshold
+                    else None
+                ),
                 "passed": m.passed,
                 "note": m.note,
             }
@@ -974,16 +1130,199 @@ def report_to_json(report: EvalReport) -> dict[str, Any]:
     }
 
 
+def validate_report_payload(payload: Mapping[str, Any]) -> str | None:
+    """校验 ``report_to_json`` 产物及其门禁派生字段的一致性。"""
+    required_keys = {
+        "schema_version",
+        "generated_at",
+        "source",
+        "gate",
+        "trust_level",
+        "label_method",
+        "metric_gate_passed",
+        "release_gate_eligible",
+        "release_gate_passed",
+        "pending_reasons",
+        "blocking_failures",
+        "blocking_pending",
+        "datasets",
+        "metrics",
+    }
+    if set(payload) != required_keys:
+        return "正式评测报告字段集合无效"
+    if payload["schema_version"] != EVAL_REPORT_SCHEMA_VERSION:
+        return "正式评测报告 schema_version 无效"
+    if not isinstance(payload["generated_at"], str) or not payload["generated_at"]:
+        return "正式评测报告 generated_at 无效"
+    source = payload["source"]
+    if source not in {"offline", "live"}:
+        return "正式评测报告 source 无效"
+    if payload["trust_level"] not in {"provisional", "frozen"}:
+        return "正式评测报告 trust_level 无效"
+    if payload["label_method"] not in {"agent_only", "human", "adjudicated"}:
+        return "正式评测报告 label_method 无效"
+    for key in (
+        "gate",
+        "metric_gate_passed",
+        "release_gate_eligible",
+        "release_gate_passed",
+    ):
+        if not isinstance(payload[key], bool):
+            return f"正式评测报告 {key} 必须是布尔值"
+    for key in ("pending_reasons", "blocking_failures", "blocking_pending"):
+        value = payload[key]
+        if not isinstance(value, list):
+            return f"正式评测报告 {key} 必须是字符串列表"
+        values = cast(list[Any], value)
+        if any(not isinstance(item, str) for item in values):
+            return f"正式评测报告 {key} 必须是字符串列表"
+
+    datasets_value = payload["datasets"]
+    if not isinstance(datasets_value, Mapping):
+        return "正式评测报告 datasets 集合无效"
+    datasets = cast(Mapping[str, Any], datasets_value)
+    if set(datasets) != set(DATASET_FILES):
+        return "正式评测报告 datasets 集合无效"
+    for kind in DATASET_FILES:
+        info_value = datasets[kind]
+        if not isinstance(info_value, Mapping):
+            return f"正式评测报告 dataset {kind} 结构无效"
+        info = cast(Mapping[str, Any], info_value)
+        if set(info) != {"kind", "n_rows", "n_recorded", "digest"}:
+            return f"正式评测报告 dataset {kind} 字段集合无效"
+        if info["kind"] != kind:
+            return f"正式评测报告 dataset {kind} kind 不一致"
+        for key in ("n_rows", "n_recorded"):
+            value = info[key]
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                return f"正式评测报告 dataset {kind} {key} 无效"
+        if info["n_recorded"] > info["n_rows"]:
+            return f"正式评测报告 dataset {kind} recorded 数量超过总行数"
+        digest = info["digest"]
+        if digest is not None and (
+            not isinstance(digest, str)
+            or len(digest) != 16
+            or any(char not in "0123456789abcdef" for char in digest)
+        ):
+            return f"正式评测报告 dataset {kind} digest 无效"
+        if payload["trust_level"] == "frozen" and digest is None:
+            return f"正式评测报告 frozen dataset {kind} 缺少 digest"
+
+    metrics_value = payload["metrics"]
+    if not isinstance(metrics_value, list):
+        return "正式评测报告 metrics 不能为空"
+    raw_metrics = cast(list[Any], metrics_value)
+    if not raw_metrics:
+        return "正式评测报告 metrics 不能为空"
+    metrics: list[Mapping[str, Any]] = []
+    metric_names: set[str] = set()
+    metric_keys = {"name", "value", "n", "pending", "source", "threshold", "passed", "note"}
+    for item_value in raw_metrics:
+        if not isinstance(item_value, Mapping):
+            return "正式评测报告 metric 结构无效"
+        item = cast(Mapping[str, Any], item_value)
+        if set(item) != metric_keys:
+            return "正式评测报告 metric 字段集合无效"
+        name = item["name"]
+        if not isinstance(name, str) or not name or name in metric_names:
+            return "正式评测报告 metric name 无效或重复"
+        metric_names.add(name)
+        metrics.append(item)
+        if item["source"] != source:
+            return f"正式评测报告 metric {name} source 不一致"
+        for key in ("n", "pending"):
+            value = item[key]
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                return f"正式评测报告 metric {name} {key} 无效"
+        value = item["value"]
+        if value is not None and (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(float(value))
+        ):
+            return f"正式评测报告 metric {name} value 无效"
+        if not isinstance(item["note"], str):
+            return f"正式评测报告 metric {name} note 无效"
+
+        expected_threshold = _THRESHOLDS.get(name)
+        threshold_value = item["threshold"]
+        if expected_threshold is None:
+            if threshold_value is not None or item["passed"] is not None:
+                return f"正式评测报告 metric {name} 不应包含 threshold/passed"
+            continue
+        if not isinstance(threshold_value, Mapping):
+            return f"正式评测报告 metric {name} 缺少完整 threshold"
+        threshold = cast(Mapping[str, Any], threshold_value)
+        if set(threshold) != {"op", "value", "blocking"}:
+            return f"正式评测报告 metric {name} threshold 字段集合无效"
+        if (
+            threshold["op"] != expected_threshold.op
+            or threshold["blocking"] != expected_threshold.blocking
+            or not isinstance(threshold["blocking"], bool)
+            or not isinstance(threshold["value"], (int, float))
+            or isinstance(threshold["value"], bool)
+            or not math.isfinite(float(threshold["value"]))
+            or not math.isclose(float(threshold["value"]), expected_threshold.value)
+        ):
+            return f"正式评测报告 metric {name} threshold 与代码定义不一致"
+        passed = item["passed"]
+        if passed is not None and not isinstance(passed, bool):
+            return f"正式评测报告 metric {name} passed 无效"
+        if value is None:
+            expected_passed: bool | None = None
+        elif expected_threshold.op == "ge":
+            expected_passed = float(value) >= expected_threshold.value
+        elif expected_threshold.op == "le":
+            expected_passed = float(value) <= expected_threshold.value
+        else:
+            expected_passed = math.isclose(float(value), expected_threshold.value, abs_tol=1e-9)
+        if passed != expected_passed:
+            return f"正式评测报告 metric {name} passed 与 threshold/value 不一致"
+
+    blocking_names = {name for name, threshold in _THRESHOLDS.items() if threshold.blocking}
+    if not blocking_names.issubset(metric_names):
+        return "正式评测报告缺少阻断指标"
+    blocking_metrics: list[Mapping[str, Any]] = []
+    for item in metrics:
+        threshold_value = item["threshold"]
+        if isinstance(threshold_value, Mapping):
+            threshold = cast(Mapping[str, Any], threshold_value)
+            if threshold.get("blocking") is True:
+                blocking_metrics.append(item)
+    expected_failures = [item["name"] for item in blocking_metrics if item["passed"] is False]
+    expected_pending = [item["name"] for item in blocking_metrics if item["passed"] is None]
+    if payload["blocking_failures"] != expected_failures:
+        return "正式评测报告 blocking_failures 与 metrics 不一致"
+    if payload["blocking_pending"] != expected_pending:
+        return "正式评测报告 blocking_pending 与 metrics 不一致"
+    measured = [item["passed"] for item in blocking_metrics if item["passed"] is not None]
+    metric_gate_passed = all(measured)
+    blocking_gate_passed = all(item["passed"] is True for item in blocking_metrics)
+    if (
+        payload["gate"] is not metric_gate_passed
+        or payload["metric_gate_passed"] is not metric_gate_passed
+    ):
+        return "正式评测报告 gate 与 metrics 不一致"
+    expected_release_gate = blocking_gate_passed and payload["release_gate_eligible"]
+    if payload["release_gate_passed"] is not expected_release_gate:
+        return "正式评测报告 release_gate_passed 与 metrics 不一致"
+    return None
+
+
 def report_to_markdown(report: EvalReport) -> str:
     lines = [
         "# 识价镜 Agent 离线评测报告",
         "",
         f"- 生成时间：{report.generated_at}",
         f"- 数据来源：{report.source}",
-        f"- 门禁结果：{'✅ 阻断指标全部达标' if report.gate else '❌ 存在阻断指标未达标或未测量'}",
+        f"- 可信等级：{report.trust_level}",
+        f"- 标签方法：{report.label_method}",
+        f"- 指标门禁：{_gate_text(report)}",
+        f"- 发布门禁资格：{_eligible_text(report)}",
+        f"- 发布门禁结果：{'✅ 通过' if report.release_gate_passed else '❌ 未通过'}",
         "",
-        "> 说明：仓库内数据集为回归种子样例。正式冻结评测需要真实商品快照与",
-        "> 模型输出，见 docs/evaluation.md。",
+        "> 说明：仓库内数据集为回归种子样例或 provisional 数据；只有 frozen + 人工",
+        "> 仲裁标签 + 全部阻断指标达标才可作为发布门禁，见 docs/evaluation.md。",
         "",
         "## 数据集",
         "",
@@ -1029,11 +1368,16 @@ def report_to_markdown(report: EvalReport) -> str:
         lines.append("### 阻断指标待测（需 live 数据补齐）")
         for m in report.blocking_pending:
             lines.append(f"- {m.name}：未测量")
+    if report.pending_reasons:
+        lines.append("")
+        lines.append("### 缺失配置（指标保持 pending 的原因）")
+        for reason in report.pending_reasons:
+            lines.append(f"- {reason}")
     return "\n".join(lines) + "\n"
 
 
 def gate_check(report: EvalReport) -> bool:
-    """§22.3：所有已测量的阻断指标必须达标；未测量的阻断指标使门禁不通过。"""
+    """所有已测量的阻断指标必须达标；未测量的阻断指标使门禁不通过。"""
     return all(
         m.passed is True for m in report.metrics if m.threshold is not None and m.threshold.blocking
     )

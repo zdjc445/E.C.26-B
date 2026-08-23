@@ -1,0 +1,93 @@
+{
+  "run_id": "run-20260822-115618-333",
+  "started_at": "2026-08-22T03:56:18.3430148Z",
+  "ended_at": "2026-08-22T03:56:43.2026832Z",
+  "status": "passed",
+  "error": null,
+  "exit_code": 0,
+  "transcript": "transcript.log",
+  "commands": [
+    "docker compose --project-name shijiajing-phase2-26484 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml up -d",
+    "uv run pytest -q -m integration tests/contract/test_native_checkpointers.py",
+    "uv run pytest -q -m integration tests/contract/test_request_ledger.py",
+    "uv run pytest -q -m integration tests/contract/test_memory_adapters.py",
+    "uv run pytest -q -m integration tests/contract/test_cache_adapters.py",
+    "uv run pytest -q -m integration tests/contract/test_event_store.py",
+    "uv run shijiajing-preflight --storage-only --verify-trace --json",
+    "docker compose --project-name shijiajing-phase2-26484 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml logs --no-color",
+    "docker compose --project-name shijiajing-phase2-26484 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml down"
+  ],
+  "command_results": [
+    {
+      "command": "docker compose --project-name shijiajing-phase2-26484 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml up -d",
+      "started_at": "2026-08-22T03:56:18.3733573Z",
+      "ended_at": "2026-08-22T03:56:19.5593483Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_native_checkpointers.py",
+      "started_at": "2026-08-22T03:56:25.3414771Z",
+      "ended_at": "2026-08-22T03:56:28.2095723Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_request_ledger.py",
+      "started_at": "2026-08-22T03:56:28.2100950Z",
+      "ended_at": "2026-08-22T03:56:30.8442898Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_memory_adapters.py",
+      "started_at": "2026-08-22T03:56:30.8447172Z",
+      "ended_at": "2026-08-22T03:56:33.4219017Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_cache_adapters.py",
+      "started_at": "2026-08-22T03:56:33.4224412Z",
+      "ended_at": "2026-08-22T03:56:35.9344160Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_event_store.py",
+      "started_at": "2026-08-22T03:56:35.9348182Z",
+      "ended_at": "2026-08-22T03:56:38.5068902Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run shijiajing-preflight --storage-only --verify-trace --json",
+      "started_at": "2026-08-22T03:56:38.5072599Z",
+      "ended_at": "2026-08-22T03:56:41.0546346Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-26484 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml logs --no-color",
+      "started_at": "2026-08-22T03:56:41.0602273Z",
+      "ended_at": "2026-08-22T03:56:41.3423123Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-26484 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml down",
+      "started_at": "2026-08-22T03:56:41.3436215Z",
+      "ended_at": "2026-08-22T03:56:43.0862870Z",
+      "exit_code": 0,
+      "status": "passed"
+    }
+  ],
+  "health": {
+    "postgres": "healthy",
+    "otel-collector": "healthy"
+  },
+  "services_kept": false,
+  "postgres_port": 55432,
+  "otlp_http_port": 44318,
+  "otlp_grpc_port": 44317
+}

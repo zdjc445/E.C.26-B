@@ -1,21 +1,22 @@
-"""商品快照 → Milvus 索引（方案 §13.1–13.3）。
+"""商品快照 → Milvus 索引。
 
 CLI：``shijiajing-index-products``
 
 - 读 JSONL 商品快照（每行一个 Offer）。
-- 用 TaxonomyNormalizer 标准化品类/品牌/型号/属性（§12.3）。
+- 用 TaxonomyNormalizer 标准化品类/品牌/型号/属性。
 - 构造 ``search_text``（§13.3 拼接顺序）。
 - 文本 dense 向量 + sparse 词法向量（与查询侧同一 tokenizer/权重语义）。
 - 分批 upsert（默认 100 条/批）。
 
 注意：真实商品源没有提供的字段保持 null，本工具绝不生成评分、销量、
-店铺类型、优惠或运费（§13.2、§19）。
+店铺类型、优惠或运费。
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter
 from pathlib import Path
 
 from shijiajing_agent.adapters.embeddings import ArkTextEmbedding
@@ -25,6 +26,7 @@ from shijiajing_agent.contracts import Offer, SellerType
 from shijiajing_agent.domain.normalization import TaxonomyNormalizer, build_search_text
 from shijiajing_agent.domain.taxonomy import Taxonomy, TaxonomyFile
 from shijiajing_agent.ports.milvus import make_milvus_client
+from shijiajing_agent.tools.cli_support import configure_utf8_output
 
 _BATCH = 100
 
@@ -35,7 +37,7 @@ def load_taxonomy(path: str | Path) -> Taxonomy:
 
 
 def offer_to_entity(offer: Offer, taxonomy: Taxonomy, search_text: str) -> dict[str, object]:
-    """Offer → Milvus entity（§13.2 字段映射，与检索适配器 _entity_to_offer 互逆）。"""
+    """Offer → Milvus entity 字段映射，与检索适配器 _entity_to_offer 互逆。"""
     payload: dict[str, object] = {}
     for name in (
         "offer_id",
@@ -97,20 +99,42 @@ def build_entity(
     return entity
 
 
+_KEY_FIELDS = ("title", "category_id", "brand", "model", "price", "sku_key")
+
+
+def _dry_run_summary(offers: list[Offer]) -> None:
+    """dry-run 统计（§12）：总行数、合法/非法、品类分布、平台分布、空关键字段比例。"""
+    n = len(offers)
+    cat = Counter(o.category_id or "（无品类）" for o in offers)
+    platform = Counter(o.platform or "（无平台）" for o in offers)
+    print(f"dry-run：解析 {n} 行，合法 {n} 行，非法 0 行")
+    print("品类分布：" + ", ".join(f"{k}={v}" for k, v in sorted(cat.items())))
+    print("平台分布：" + ", ".join(f"{k}={v}" for k, v in sorted(platform.items())))
+    for key in _KEY_FIELDS:
+        empty = sum(1 for o in offers if getattr(o, key) in (None, ""))
+        ratio = f"{empty / n:.1%}" if n else "—"
+        print(f"空关键字段 {key}：{empty}/{n}（{ratio}）")
+
+
 def main(argv: list[str] | None = None) -> int:
+    configure_utf8_output()
     parser = argparse.ArgumentParser(description="把商品快照写入 Milvus 索引")
     parser.add_argument("snapshot", help="JSONL 商品快照路径")
     parser.add_argument("--batch", type=int, default=_BATCH, help="upsert 批大小")
     parser.add_argument(
-        "--dry-run", action="store_true", help="只解析与标准化，不写 Milvus（打印行数与失败数）"
+        "--dry-run",
+        action="store_true",
+        help="只解析与统计，不写 Milvus（§12：不需要 Ark/Milvus/Checkpoint/Trace 配置）",
     )
     args = parser.parse_args(argv)
 
     settings = load_settings()
-    missing = settings.validate(require_real_adapters=True)
-    if missing:
-        print("缺少必要配置：" + ", ".join(missing), file=sys.stderr)
-        return 2
+    # §12：dry-run 不要求外部配置，只要求 snapshot 与 taxonomy 可读
+    if not args.dry_run:
+        missing = settings.validate(require_real_adapters=True)
+        if missing:
+            print("缺少必要配置：" + ", ".join(missing), file=sys.stderr)
+            return 2
     try:
         taxonomy = load_taxonomy(settings.taxonomy_path_resolved)
     except Exception as exc:
@@ -124,6 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     entities: list[dict[str, object]] = []
+    valid_offers: list[Offer] = []
     n_offers, n_bad = 0, 0
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:
@@ -133,22 +158,25 @@ def main(argv: list[str] | None = None) -> int:
             n_offers += 1
             try:
                 offer = Offer.model_validate_json(line)
+                valid_offers.append(offer)
                 entities.append(build_entity(offer, taxonomy, normalizer))
             except Exception as exc:
                 n_bad += 1
                 print(f"第 {n_offers} 行跳过：{exc}", file=sys.stderr)
 
     if args.dry_run:
-        print(f"dry-run：解析 {n_offers} 行，跳过 {n_bad} 行，生成 {len(entities)} 条 entity")
+        _dry_run_summary(valid_offers)
+        if n_bad:
+            print(f"dry-run：{n_bad} 行非法（无法解析为标准 Offer）", file=sys.stderr)
         return 0
     if not entities:
         print("没有可索引的商品", file=sys.stderr)
         return 2
 
-    import asyncio
-
     try:
-        asyncio.run(_upsert(settings, entities, batch=args.batch))
+        from shijiajing_agent.asyncio_compat import run as run_async
+
+        run_async(_upsert(settings, entities, batch=args.batch))
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 2

@@ -1,0 +1,28 @@
+**********************
+PowerShell transcript start
+Start time: 20260822115021
+Username: LAPTOP-RE6V8K04\ZSC
+RunAs User: LAPTOP-RE6V8K04\ZSC
+Configuration Name: 
+Machine: LAPTOP-RE6V8K04 (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\Program Files\PowerShell\7\pwsh.dll -NoProfile -File .\deploy\phase2\verify.ps1 -HealthTimeoutSeconds 120
+Process ID: 45000
+PSVersion: 7.6.3
+PSEdition: Core
+GitCommitId: 7.6.3
+OS: Microsoft Windows 10.0.26200
+Platform: Win32NT
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1, 6.0, 7.0
+PSRemotingProtocolVersion: 2.4
+SerializationVersion: 1.1.0.1
+WSManStackVersion: 3.0
+**********************
+
+
+PS>TerminatingError(): "uv 命令失败：run pytest -q -m integration tests/contract/test_native_checkpointers.py"
+
+
+**********************
+PowerShell transcript end
+End time: 20260822115100
+**********************

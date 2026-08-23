@@ -16,10 +16,13 @@ from shijiajing_agent.contracts import (
     ShoppingConstraints,
     SourcedValue,
 )
+from shijiajing_agent.domain.cache_policy import safe_get, safe_set, versioned_key
 from shijiajing_agent.domain.constraints import ConstraintMerger
 from shijiajing_agent.domain.intent_rules import RuleIntentParser
+from shijiajing_agent.domain.memory_policy import apply_memory_defaults
 from shijiajing_agent.errors import ModelOutputInvalidError
-from shijiajing_agent.nodes.node_support import timed
+from shijiajing_agent.nodes.node_support import record_cache_event, timed
+from shijiajing_agent.ports.dependencies import AgentDependenciesPort
 from shijiajing_agent.ports.models import IntentModelPort
 from shijiajing_agent.state import AgentState
 
@@ -41,7 +44,7 @@ _DIRTY_QUERY_DOWNSTREAM = (
 _DIRTY_RANKING = ("ranking_dirty", "explanation_dirty")
 
 
-def make_parse_intent_node(deps: Any) -> Any:
+def make_parse_intent_node(deps: AgentDependenciesPort) -> Any:
     """文本意图抽取（§11.3）。模型失败或输出非法 → 规则解析。"""
 
     intent_model: IntentModelPort = deps.intent
@@ -57,8 +60,47 @@ def make_parse_intent_node(deps: Any) -> Any:
         )
         patch: IntentPatch | None = None
         fallback_used = False
+        cache_key = versioned_key(
+            {
+                "text": text,
+                "previous_constraints": (
+                    prev.model_dump(mode="json") if isinstance(prev, ShoppingConstraints) else None
+                ),
+            },
+            {
+                "model": deps.settings.ark_text_model,
+                "prompt": "v1",
+                "taxonomy": deps.taxonomy.taxonomy_version,
+            },
+        )
         try:
-            patch = await intent_model.extract_intent(text, prev, deps.taxonomy)
+            cached = await safe_get(deps.cache, "intent", cache_key, metrics=deps.metrics)
+            cached_patch = None
+            if isinstance(cached, dict) and isinstance(cached.get("intent_patch"), dict):
+                try:
+                    cached_patch = IntentPatch.model_validate(cached["intent_patch"])
+                except Exception:
+                    cached_patch = None
+            await record_cache_event(
+                deps,
+                state,
+                node_name="parse_intent",
+                namespace="intent",
+                cache_key=cache_key,
+                hit=cached_patch is not None,
+            )
+            if cached_patch is not None:
+                patch = cached_patch
+            else:
+                patch = await intent_model.extract_intent(text, prev, deps.taxonomy)
+                await safe_set(
+                    deps.cache,
+                    "intent",
+                    cache_key,
+                    {"intent_patch": patch.model_dump(mode="json")},
+                    deps.settings.intent_cache_ttl_seconds,
+                    metrics=deps.metrics,
+                )
         except ModelOutputInvalidError:
             fallback_used = True
         except Exception:
@@ -86,14 +128,18 @@ def make_parse_intent_node(deps: Any) -> Any:
     return parse_intent_node
 
 
-def make_merge_constraints_node(deps: Any) -> Any:
+def make_merge_constraints_node(deps: AgentDependenciesPort) -> Any:
     """合并多来源约束（§8.1），并计算 dirty_flags（§10.1 失效矩阵）。"""
 
     @timed("merge_constraints")
     async def merge_constraints_node(state: AgentState) -> dict[str, Any]:
         req: AgentRequest = state["current_request"]
         prev = state.get("previous_state")
-        prev_constraints = (prev.get("effective_constraints") if prev else None) or None
+        prev_constraints = (
+            (prev.get("effective_constraints") if prev else None)
+            or state.get("effective_constraints")
+            or None
+        )
         vision = state.get("recognition")
         patch = state.get("intent_patch")
         has_new_image = state.get("image_ref") is not None
@@ -109,8 +155,13 @@ def make_merge_constraints_node(deps: Any) -> Any:
             turn_id=str(state.get("turn_id", "")),
             subject_id=state.get("subject_id"),
         )
+        effective_constraints = result.constraints
+        if state.get("memory_context"):
+            effective_constraints = apply_memory_defaults(
+                effective_constraints, list(state.get("memory_context") or [])
+            )
         return {
-            "effective_constraints": result.constraints,
+            "effective_constraints": effective_constraints,
             "conflicts": [c.__dict__ for c in result.conflicts],
             "notices": list(state.get("notices") or []) + list(result.notices),
             "next_action": "merged",
@@ -221,7 +272,7 @@ def _compute_dirty(
     return result
 
 
-def make_validate_constraints_node(deps: Any) -> Any:
+def make_validate_constraints_node(deps: AgentDependenciesPort) -> Any:
     """约束校验：冲突进入澄清；属性必须属于品类 schema（§8.3）。"""
 
     @timed("validate_constraints")

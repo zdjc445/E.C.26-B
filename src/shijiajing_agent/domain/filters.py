@@ -1,4 +1,4 @@
-"""元数据硬过滤构建与零结果放宽（方案 §13.5、§13.6）。
+"""元数据硬过滤构建与零结果放宽。
 
 - 用户明确修正或明确输入的 brand/model 进入硬过滤。
 - 图片识别的品牌只有字段置信度 ≥ BRAND_HARD_FILTER_CONFIDENCE 才作为硬过滤；
@@ -21,7 +21,7 @@ from shijiajing_agent.contracts import (
 
 
 def offer_matches_hard_filters(offer: Offer, hf: HardFilters) -> bool:
-    """§13.5 硬过滤谓词：Milvus filter 表达式与本地词法降级共用同一语义。
+    """硬过滤谓词：Milvus filter 表达式与本地词法降级共用同一语义。
 
     价格一律按 ``price`` 字段比较（运费/优惠为 null 时无法统一计算应付价，
     与 Milvus filter 表达式保持一致，见 adapters/milvus_retrieval.py）。
@@ -65,7 +65,7 @@ class HardFilterBuilder:
         self._model_threshold = model_confidence_threshold
 
     def build(self, constraints: ShoppingConstraints) -> HardFilters:
-        """§13.5 元数据硬过滤。"""
+        """元数据硬过滤。"""
         hf = HardFilters(category_id=constraints.category_id.value)
         hf.min_price = constraints.min_price.value
         hf.max_price = constraints.max_price.value
@@ -106,7 +106,7 @@ class HardFilterBuilder:
         return None
 
     def relax(self, query: RetrievalQuery, constraints: ShoppingConstraints) -> RelaxationResult:
-        """§13.6 零结果放宽：只放宽图片识别产生且未被用户锁定的字段，顺序固定。"""
+        """零结果放宽：只放宽图片识别产生且未被用户锁定的字段，顺序固定。"""
         relaxed: list[str] = []
         notices: list[str] = []
         hf = query.hard_filters.model_copy(deep=True)

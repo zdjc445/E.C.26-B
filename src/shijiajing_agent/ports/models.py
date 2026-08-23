@@ -17,9 +17,10 @@ from shijiajing_agent.contracts import (
 )
 from shijiajing_agent.domain.evidence import EvidenceBundle
 from shijiajing_agent.domain.taxonomy import Taxonomy
+from shijiajing_agent.ports.lifecycle import ResourceLifecyclePort
 
 
-class VisionModelPort(Protocol):
+class VisionModelPort(ResourceLifecyclePort, Protocol):
     """VLM 商品识别。输入图片、taxonomy 支持品类列表与属性 schema。"""
 
     async def recognize(self, image: ImageRef, taxonomy: Taxonomy) -> RecognitionResult: ...

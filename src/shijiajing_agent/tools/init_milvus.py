@@ -1,4 +1,4 @@
-"""初始化 Milvus Collection（方案 §13.2 Collection 字段）。
+"""初始化 Milvus Collection。
 
 CLI：``shijiajing-init-milvus``
 
@@ -22,6 +22,7 @@ from pymilvus.milvus_client.index import IndexParams
 from shijiajing_agent.adapters.embeddings import ArkTextEmbedding
 from shijiajing_agent.config import Settings, load_settings
 from shijiajing_agent.ports.milvus import make_milvus_client
+from shijiajing_agent.tools.cli_support import configure_utf8_output
 
 _TEXT_DENSE_INDEX = "AUTOINDEX"
 _SPARSE_INDEX = "SPARSE_INVERTED_INDEX"
@@ -44,7 +45,7 @@ class _IndexParamsLike(Protocol):
 
 
 def _schema(dim: int, image_dim: int | None) -> tuple[CollectionSchema, _IndexParamsLike]:
-    """§13.2 逻辑字段 → pymilvus CollectionSchema 与 IndexParams。"""
+    """逻辑字段 → pymilvus CollectionSchema 与 IndexParams。"""
 
     def varchar(name: str, max_length: int) -> FieldSchema:
         return FieldSchema(name=name, dtype=DataType.VARCHAR, max_length=max_length)
@@ -87,7 +88,7 @@ def _schema(dim: int, image_dim: int | None) -> tuple[CollectionSchema, _IndexPa
     ]
     if image_dim is not None:
         fields.append(FieldSchema(name="image_dense", dtype=DataType.FLOAT_VECTOR, dim=image_dim))
-    schema = CollectionSchema(fields, description="识价镜商品比价索引（§13.2）")
+    schema = CollectionSchema(fields, description="识价镜商品比价索引")
 
     index_params = cast(_IndexParamsLike, IndexParams())
     index_params.add_index(field_name="text_dense", index_type=_TEXT_DENSE_INDEX, metric_type="IP")
@@ -100,6 +101,7 @@ def _schema(dim: int, image_dim: int | None) -> tuple[CollectionSchema, _IndexPa
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_utf8_output()
     parser = argparse.ArgumentParser(description="初始化 Milvus 商品比价 Collection")
     parser.add_argument("--drop", action="store_true", help="已存在时先删除再重建")
     args = parser.parse_args(argv)
@@ -114,9 +116,9 @@ def main(argv: list[str] | None = None) -> int:
     if raw_dim and raw_dim.strip():
         image_dim = int(raw_dim)
 
-    import asyncio
+    from shijiajing_agent.asyncio_compat import run as run_async
 
-    dim = asyncio.run(_resolve_dim(settings))
+    dim = run_async(_resolve_dim(settings))
     schema, index_params = _schema(dim, image_dim)
 
     client = make_milvus_client(settings)

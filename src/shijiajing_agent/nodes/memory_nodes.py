@@ -1,0 +1,243 @@
+"""记忆 recall / prepare / commit / turn summary 节点。"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from shijiajing_agent.adapters.event_store import memory_event_attempt, stable_event_id
+from shijiajing_agent.contracts import (
+    AgentEventRecord,
+    AgentExecutionContext,
+    AgentResponse,
+    AgentStatus,
+    CompletionReason,
+    ConversationTurnSummary,
+    MemoryMutation,
+    content_hash,
+    now_iso,
+)
+from shijiajing_agent.domain.memory_policy import (
+    build_memory_mutation,
+    build_memory_query,
+    validate_directive,
+)
+from shijiajing_agent.nodes.node_support import timed
+from shijiajing_agent.ports.dependencies import AgentDependenciesPort
+from shijiajing_agent.state import AgentState
+
+
+def _context(state: AgentState) -> AgentExecutionContext | None:
+    value = state.get("execution_context")
+    return value if isinstance(value, AgentExecutionContext) else None
+
+
+def _enabled(state: AgentState, deps: AgentDependenciesPort) -> tuple[bool, str | None]:
+    context = _context(state)
+    if context is None or not context.memory_enabled or context.memory_owner_id is None:
+        return False, None
+    if deps.memory is None:
+        return False, context.memory_owner_id
+    return True, context.memory_owner_id
+
+
+def _memory_flag(deps: AgentDependenciesPort, name: str, default: bool = True) -> bool:
+    return bool(getattr(getattr(deps, "settings", None), name, default))
+
+
+async def _record_memory_recalled(
+    state: AgentState, deps: AgentDependenciesPort, *, count: int, status: str
+) -> None:
+    """记录记忆召回结果；不写 owner、查询或记忆值。"""
+    if deps.event_store is None:
+        return
+    request = state["current_request"]
+    try:
+        await deps.event_store.append(
+            AgentEventRecord(
+                event_id=stable_event_id(
+                    request.session_id,
+                    request.request_id,
+                    str(state.get("turn_id") or ""),
+                    "memory",
+                    "recall_memory",
+                    "memory_recalled",
+                    0,
+                ),
+                session_id=request.session_id,
+                request_id=request.request_id,
+                turn_id=str(state.get("turn_id") or ""),
+                trace_id=str(state.get("trace_id") or ""),
+                agent_name="memory",
+                node_name="recall_memory",
+                event_type="memory_recalled",
+                status=status,
+                payload={"count": count},
+                occurred_at=now_iso(),
+            )
+        )
+    except Exception:
+        try:
+            deps.metrics.inc("event_store_failure_total")
+        except Exception:
+            pass
+
+
+def make_recall_memory_node(deps: AgentDependenciesPort) -> Any:
+    @timed("recall_memory")
+    async def recall_memory_node(state: AgentState) -> dict[str, Any]:
+        enabled, owner_id = _enabled(state, deps)
+        memory = deps.memory
+        if (
+            not enabled
+            or owner_id is None
+            or memory is None
+            or not _memory_flag(deps, "memory_recall_enabled")
+        ):
+            return {"memory_context": []}
+        try:
+            query = build_memory_query(state, deps.settings.memory_recall_limit)
+            memories = await memory.recall(owner_id, query)
+            await _record_memory_recalled(state, deps, count=len(memories), status="success")
+            return {"memory_context": memories}
+        except Exception:
+            await _record_memory_recalled(state, deps, count=0, status="failed")
+            notices = list(state.get("notices") or [])
+            notices.append("历史偏好读取失败，本轮未应用")
+            return {
+                "memory_context": [],
+                "notices": notices,
+            }
+
+    return recall_memory_node
+
+
+def make_prepare_memory_mutations_node(deps: AgentDependenciesPort) -> Any:
+    @timed("prepare_memory_mutations")
+    async def prepare_memory_mutations_node(state: AgentState) -> dict[str, Any]:
+        enabled, owner_id = _enabled(state, deps)
+        if not enabled or owner_id is None or not _memory_flag(deps, "memory_commit_enabled"):
+            return {"pending_memory_mutations": []}
+        patch = state.get("intent_patch")
+        directives = list(getattr(patch, "memory_directives", []) or [])
+        if not directives:
+            return {"pending_memory_mutations": []}
+        request = state["current_request"]
+        mutations: list[MemoryMutation] = []
+        for index, raw in enumerate(directives):
+            directive = validate_directive(raw, deps.taxonomy)
+            mutations.append(
+                build_memory_mutation(
+                    owner_id,
+                    request.session_id,
+                    request.request_id,
+                    index,
+                    directive,
+                )
+            )
+        return {"pending_memory_mutations": mutations}
+
+    return prepare_memory_mutations_node
+
+
+def make_commit_memory_node(deps: AgentDependenciesPort) -> Any:
+    @timed("commit_memory")
+    async def commit_memory_node(state: AgentState) -> dict[str, Any]:
+        enabled, owner_id = _enabled(state, deps)
+        memory = deps.memory
+        mutations = list(state.get("pending_memory_mutations") or [])
+        if (
+            not enabled
+            or owner_id is None
+            or memory is None
+            or not mutations
+            or not _memory_flag(deps, "memory_commit_enabled")
+        ):
+            return {"pending_memory_mutations": []}
+        try:
+            records = await memory.commit(owner_id, mutations)
+            if deps.event_store is not None:
+                for mutation in mutations:
+                    event_type = (
+                        "memory_forgotten"
+                        if mutation.operation.value in {"forget", "clear_owner"}
+                        else "memory_committed"
+                    )
+                    try:
+                        await deps.event_store.append(
+                            AgentEventRecord(
+                                event_id=stable_event_id(
+                                    state["current_request"].session_id,
+                                    state["current_request"].request_id,
+                                    str(state.get("turn_id") or ""),
+                                    "memory",
+                                    "commit_memory",
+                                    event_type,
+                                    memory_event_attempt(mutation.mutation_id),
+                                ),
+                                session_id=state["current_request"].session_id,
+                                request_id=state["current_request"].request_id,
+                                turn_id=str(state.get("turn_id") or ""),
+                                trace_id=str(state.get("trace_id") or ""),
+                                agent_name="memory",
+                                node_name="commit_memory",
+                                event_type=event_type,
+                                status="success",
+                                output_hash=content_hash({"mutation_id": mutation.mutation_id}),
+                                payload={
+                                    "mutation_id": mutation.mutation_id,
+                                    "operation": mutation.operation.value,
+                                },
+                                occurred_at=now_iso(),
+                            )
+                        )
+                    except Exception:
+                        try:
+                            deps.metrics.inc("event_store_failure_total")
+                        except Exception:
+                            pass
+            response = state.get("response")
+            if isinstance(response, AgentResponse):
+                notices = list(response.notices)
+                if records:
+                    notices.append("已按你的明确要求更新长期偏好")
+                    response = response.model_copy(update={"notices": notices})
+                    return {"response": response, "memory_context": records}
+            return {"memory_context": records}
+        except Exception:
+            notices = list(state.get("notices") or [])
+            notices.append("长期偏好保存失败，本轮结果未声明已记住")
+            response = state.get("response")
+            if isinstance(response, AgentResponse):
+                response = response.model_copy(update={"notices": notices})
+            return {"notices": notices, "response": response}
+
+    return commit_memory_node
+
+
+def append_turn_summary_node(state: AgentState, *, recent_turns_limit: int) -> dict[str, Any]:
+    request = state["current_request"]
+    response = state.get("response")
+    reason = state.get("completion_reason")
+    if reason is None and isinstance(response, AgentResponse):
+        reason = {
+            AgentStatus.SUCCESS: CompletionReason.SUCCESS,
+            AgentStatus.CLARIFICATION: CompletionReason.CLARIFICATION,
+            AgentStatus.NO_RESULTS: CompletionReason.NO_RESULTS,
+            AgentStatus.FAILED: CompletionReason.FAILED,
+        }[response.status]
+    summary = ConversationTurnSummary(
+        request_id=request.request_id,
+        turn_id=str(state.get("turn_id") or ""),
+        user_text=None,
+        user_text_sha256=content_hash(request.text) if request.text is not None else None,
+        user_text_length=len(request.text) if request.text is not None else None,
+        intent_patch=state.get("intent_patch"),
+        completion_reason=reason,
+        selected_group_ids=[
+            item.group.group_id
+            for item in (response.groups if isinstance(response, AgentResponse) else [])
+        ],
+        created_at=now_iso(),
+    )
+    turns = [*list(state.get("recent_turns") or []), summary]
+    return {"recent_turns": turns[-recent_turns_limit:]}

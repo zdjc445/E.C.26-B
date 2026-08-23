@@ -1,4 +1,4 @@
-"""字段标准化（方案 §12.3）。
+"""字段标准化。
 
 标准化顺序：
 1. Unicode 和空白规范化
@@ -136,7 +136,7 @@ class TaxonomyNormalizer:
         text = re.sub(r"\s+", " ", text)
         if not text:
             return None
-        # 单位换算（§12.3 第 3 步）
+        # 单位换算。
         for pattern, unit, factor in _UNIT_PATTERNS:
             m = pattern.match(text)
             if m:
@@ -145,7 +145,7 @@ class TaxonomyNormalizer:
                 break
         # 枚举值标准化：允许值与属性 enum 做等价匹配。
         # 存在 enum 白名单但值不匹配时返回 None，由调用方标记"属性未标准化"，
-        # 原值保留在原始 Offer 中但不参与硬匹配（§12.3 第 6 步）。
+        # 原值保留在原始 Offer 中但不参与硬匹配。
         if category_id:
             schema = self._taxonomy.get_category(category_id)
             if schema:

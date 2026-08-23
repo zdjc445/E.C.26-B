@@ -11,7 +11,7 @@ import hashlib
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -42,6 +42,7 @@ class ConstraintSource(StrEnum):
     USER_TEXT = "user_text"
     VISION = "vision"
     SELECTED_OPTION = "selected_option"
+    MEMORY_EXPLICIT = "memory_explicit"
     DEFAULT = "default"
 
 
@@ -89,7 +90,7 @@ class CompletionReason(StrEnum):
 
 
 # ---------------------------------------------------------------------------
-# 输入契约（§6.1 – §6.3）
+# 输入契约。
 # ---------------------------------------------------------------------------
 
 
@@ -176,6 +177,15 @@ class AgentRequest(BaseModel):
         return self
 
 
+class AgentExecutionContext(BaseModel):
+    """调用方可信上下文；memory_owner_id 不从普通请求 metadata 推断。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    memory_owner_id: str | None = Field(default=None, min_length=1, max_length=128)
+    memory_enabled: bool = False
+
+
 # ---------------------------------------------------------------------------
 # 识别与意图输出（§11.2 – §11.3）
 # ---------------------------------------------------------------------------
@@ -197,6 +207,66 @@ class RecognitionResult(BaseModel):
     overall_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     visible_evidence: list[str] = Field(default_factory=list[str])
     unresolved_fields: list[str] = Field(default_factory=list[str])
+
+
+class MemoryOperation(StrEnum):
+    UPSERT = "upsert"
+    FORGET = "forget"
+    CLEAR_OWNER = "clear_owner"
+
+
+class MemoryApplyMode(StrEnum):
+    CONSTRAINT_DEFAULT = "constraint_default"
+    RANKING_PRIOR = "ranking_prior"
+    NEGATIVE_PREFERENCE = "negative_preference"
+
+
+class MemoryStatus(StrEnum):
+    ACTIVE = "active"
+    FORGOTTEN = "forgotten"
+
+
+_MEMORY_SCOPE_RE = re.compile(r"^(global|category:[^:\s]+)$")
+
+
+class MemoryDirective(BaseModel):
+    """模型或调用方提出的显式长期记忆变更。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    operation: MemoryOperation
+    memory_key: str | None = None
+    value: Any = None
+    scope_key: str = "global"
+    apply_mode: MemoryApplyMode | None = None
+
+    @field_validator("scope_key")
+    @classmethod
+    def _scope_format(cls, value: str) -> str:
+        if not _MEMORY_SCOPE_RE.fullmatch(value):
+            raise ValueError("scope_key 只能是 global 或 category:<category_id>")
+        return value
+
+    @model_validator(mode="after")
+    def _operation_shape(self) -> MemoryDirective:
+        has_key = self.memory_key is not None
+        if self.operation is MemoryOperation.UPSERT:
+            if not has_key or self.value is None or self.apply_mode is None:
+                raise ValueError("UPSERT 必须提供 memory_key、value、apply_mode")
+        elif self.operation is MemoryOperation.FORGET:
+            if not has_key or self.value is not None or self.apply_mode is not None:
+                raise ValueError("FORGET 只允许提供 memory_key")
+        elif self.operation is MemoryOperation.CLEAR_OWNER:
+            if (
+                self.scope_key != "global"
+                or has_key
+                or self.value is not None
+                or self.apply_mode is not None
+            ):
+                raise ValueError(
+                    "CLEAR_OWNER 只能使用 global scope 且不能携带 key/value/apply_mode"
+                )
+        return self
 
 
 class IntentPatch(BaseModel):
@@ -226,6 +296,532 @@ class IntentPatch(BaseModel):
     needs_clarification: bool = False
     clarification_question: str | None = None
     negative_terms: list[str] = Field(default_factory=list[str])
+    memory_directives: list[MemoryDirective] = Field(default_factory=list[MemoryDirective])
+
+
+class MemoryRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    memory_id: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    memory_owner_id: str = Field(min_length=1, max_length=128)
+    memory_key: str = Field(min_length=1)
+    scope_key: str = Field(min_length=1)
+    value: Any
+    apply_mode: MemoryApplyMode
+    confidence: float = Field(ge=0.0, le=1.0)
+    status: MemoryStatus
+    source_session_id: str = Field(min_length=1, max_length=128)
+    source_request_id: str = Field(min_length=1, max_length=128)
+    version: int = Field(ge=1)
+    created_at: str = Field(min_length=1)
+    updated_at: str = Field(min_length=1)
+    expires_at: str | None = None
+
+
+class MemoryQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scope_keys: list[str] = Field(min_length=1)
+    memory_keys: list[str] = Field(default_factory=list[str])
+    limit: int = Field(ge=1, le=100)
+
+
+class MemoryMutation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mutation_id: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    operation: MemoryOperation
+    memory_key: str | None = None
+    scope_key: str = "global"
+    value: Any = None
+    apply_mode: MemoryApplyMode | None = None
+    source_session_id: str = Field(min_length=1, max_length=128)
+    source_request_id: str = Field(min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def _same_shape_as_directive(self) -> MemoryMutation:
+        MemoryDirective(
+            operation=self.operation,
+            memory_key=self.memory_key,
+            value=self.value,
+            scope_key=self.scope_key,
+            apply_mode=self.apply_mode,
+        )
+        return self
+
+
+class SpecialistAgentName(StrEnum):
+    RECOGNITION = "recognition"
+    INTENT = "intent"
+    RETRIEVAL = "retrieval"
+    EXPLANATION = "explanation"
+    MEMORY = "memory"
+
+
+class AgentTask(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=128)
+    turn_id: str = Field(min_length=1)
+    trace_id: str = Field(min_length=1)
+    agent_name: SpecialistAgentName
+    input_payload: dict[str, Any]
+    memory_context: list[MemoryRecord] = Field(default_factory=list[MemoryRecord])
+
+
+class AgentResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str = Field(min_length=1)
+    agent_name: SpecialistAgentName
+    status: NodeStatus
+    output_payload: dict[str, Any] = Field(default_factory=dict[str, Any])
+    evidence_refs: list[str] = Field(default_factory=list[str])
+    proposed_memory_mutations: list[MemoryMutation] = Field(default_factory=list[MemoryMutation])
+    notices: list[str] = Field(default_factory=list[str])
+
+
+# ---------------------------------------------------------------------------
+# 受控层级式 Multi-Agent 协议（schema 2.0）
+# ---------------------------------------------------------------------------
+
+
+class AgentTaskKind(StrEnum):
+    """Supervisor 可派发的有限任务类型。"""
+
+    RECOGNIZE = "recognition.recognize"
+    APPLY_CORRECTION = "recognition.apply_correction"
+    PARSE_INTENT = "intent.parse"
+    RETRIEVE_AND_RANK = "retrieval.retrieve_and_rank"
+    EXPLAIN = "explanation.explain"
+    MEMORY_RECALL = "memory.recall"
+    MEMORY_PREPARE = "memory.prepare"
+    MEMORY_COMMIT = "memory.commit"
+
+
+class AgentTaskBudget(BaseModel):
+    """单个任务的资源上限；任务执行器不得自行扩大这些上限。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_seconds: float = Field(default=30.0, gt=0, le=3600)
+    max_model_calls: int = Field(default=3, ge=0, le=100)
+    max_tokens: int = Field(default=8192, ge=0, le=2_000_000)
+    max_retries: int = Field(default=0, ge=0, le=10)
+
+
+class AgentTaskError(BaseModel):
+    """不泄漏供应商异常的固定任务错误。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=1, max_length=64, pattern=r"^[A-Z][A-Z0-9_]*$")
+    message: str = Field(min_length=1, max_length=256)
+    retryable: bool = False
+    fallback: str | None = Field(default=None, max_length=64)
+
+
+class AgentTaskUsage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model_calls: int = Field(default=0, ge=0)
+    input_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(default=0, ge=0)
+    duration_ms: float = Field(default=0.0, ge=0)
+    retry_count: int = Field(default=0, ge=0)
+
+
+class RecognitionTaskInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["recognition", "recognition.recognize", "recognition.apply_correction"] = (
+        "recognition"
+    )
+    image: ImageRef | None = None
+    correction: RecognitionCorrection | None = None
+    previous_recognition: RecognitionResult | None = None
+    taxonomy_version: str = Field(min_length=1)
+
+
+class IntentTaskInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["intent", "intent.parse"] = "intent"
+    text: str | None = Field(default=None, max_length=4000)
+    previous_constraints: ShoppingConstraints | None = None
+    recent_turns: list[ConversationTurnSummary] = Field(
+        default_factory=lambda: list[ConversationTurnSummary]()
+    )
+    selected_option_id: str | None = None
+
+
+class RetrievalTaskInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["retrieval", "retrieval.retrieve_and_rank"] = "retrieval"
+    constraints: ShoppingConstraints
+    recognition: RecognitionResult | None = None
+    query_text: str = ""
+    top_k: int = Field(default=100, ge=1, le=1000)
+    union_limit: int = Field(default=200, ge=1, le=5000)
+    index_version: str | None = None
+    fusion_version: str | None = None
+    rerank_version: str | None = None
+
+
+class ExplanationTaskInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["explanation", "explanation.explain"] = "explanation"
+    ranked_groups: list[RankedGroup] = Field(default_factory=lambda: list[RankedGroup]())
+    evidence_bundle: Any | None = None
+    constraints: ShoppingConstraints
+    allowed_evidence_refs: list[str] = Field(default_factory=list[str])
+
+
+class MemoryTaskInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["memory", "memory.recall", "memory.prepare", "memory.commit"] = "memory"
+    operation: Literal["recall", "prepare", "commit"]
+    session_id: str | None = None
+    request_id: str | None = None
+    memory_owner_id: str | None = Field(default=None, min_length=1, max_length=128)
+    query: MemoryQuery | None = None
+    directives: list[MemoryDirective] = Field(default_factory=list[MemoryDirective])
+    mutations: list[MemoryMutation] = Field(default_factory=list[MemoryMutation])
+    authorization_id: str | None = None
+
+
+AgentTaskInput = Annotated[
+    RecognitionTaskInput
+    | IntentTaskInput
+    | RetrievalTaskInput
+    | ExplanationTaskInput
+    | MemoryTaskInput,
+    Field(discriminator="kind"),
+]
+
+
+class RecognitionTaskOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["recognition", "recognition.recognize", "recognition.apply_correction"] = (
+        "recognition"
+    )
+    recognition: RecognitionResult | None = None
+    review_recommended: bool = False
+    fallback_reason: str | None = None
+
+
+class IntentTaskOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["intent", "intent.parse"] = "intent"
+    patch: IntentPatch | None = None
+    missing_fields: list[str] = Field(default_factory=list[str])
+    clarification_question: str | None = None
+
+
+class RetrievalTaskOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["retrieval", "retrieval.retrieve_and_rank"] = "retrieval"
+    query: RetrievalQuery | None = None
+    candidates: list[RetrievalCandidate] = Field(default_factory=lambda: list[RetrievalCandidate]())
+    normalized_candidates: list[NormalizedCandidate] = Field(
+        default_factory=lambda: list[NormalizedCandidate]()
+    )
+    ranked_groups: list[RankedGroup] = Field(default_factory=lambda: list[RankedGroup]())
+    fallback_used: bool = False
+    relaxed_attributes: list[str] = Field(default_factory=list[str])
+
+
+class ExplanationTaskOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["explanation", "explanation.explain"] = "explanation"
+    explanation_text: str = Field(default="", max_length=4000)
+    verified: bool = False
+    evidence_refs: list[str] = Field(default_factory=list[str])
+    fallback_reason: str | None = None
+
+
+class MemoryTaskOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["memory", "memory.recall", "memory.prepare", "memory.commit"] = "memory"
+    operation: Literal["recall", "prepare", "commit"]
+    records: list[MemoryRecord] = Field(default_factory=list[MemoryRecord])
+    mutations: list[MemoryMutation] = Field(default_factory=list[MemoryMutation])
+    committed: bool = False
+    saved: bool = False
+
+
+AgentTaskOutput = Annotated[
+    RecognitionTaskOutput
+    | IntentTaskOutput
+    | RetrievalTaskOutput
+    | ExplanationTaskOutput
+    | MemoryTaskOutput,
+    Field(discriminator="kind"),
+]
+
+
+class HandoffRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_agent: SpecialistAgentName
+    requested_task_kind: AgentTaskKind
+    reason_code: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_.-]+$")
+    input_refs: list[str] = Field(default_factory=list[str])
+
+
+class AgentTaskV2(BaseModel):
+    """2.0 任务协议；不包含通用 memory_context，按输入联合隔离数据。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["2.0"] = "2.0"
+    plan_id: str = Field(min_length=1, max_length=128)
+    task_id: str = Field(min_length=1, max_length=128)
+    parent_task_id: str | None = None
+    agent_name: SpecialistAgentName
+    task_kind: AgentTaskKind
+    depends_on: list[str] = Field(default_factory=list[str])
+    attempt: int = Field(default=1, ge=1, le=100)
+    idempotency_key: str = Field(min_length=1, max_length=256)
+    deadline_at: str = Field(min_length=1, max_length=64)
+    budget: AgentTaskBudget = Field(default_factory=AgentTaskBudget)
+    input: AgentTaskInput
+
+    @model_validator(mode="after")
+    def _agent_and_input_match(self) -> AgentTaskV2:
+        expected: dict[AgentTaskKind, SpecialistAgentName] = {
+            AgentTaskKind.RECOGNIZE: SpecialistAgentName.RECOGNITION,
+            AgentTaskKind.APPLY_CORRECTION: SpecialistAgentName.RECOGNITION,
+            AgentTaskKind.PARSE_INTENT: SpecialistAgentName.INTENT,
+            AgentTaskKind.RETRIEVE_AND_RANK: SpecialistAgentName.RETRIEVAL,
+            AgentTaskKind.EXPLAIN: SpecialistAgentName.EXPLANATION,
+            AgentTaskKind.MEMORY_RECALL: SpecialistAgentName.MEMORY,
+            AgentTaskKind.MEMORY_PREPARE: SpecialistAgentName.MEMORY,
+            AgentTaskKind.MEMORY_COMMIT: SpecialistAgentName.MEMORY,
+        }
+        if expected[self.task_kind] is not self.agent_name:
+            raise ValueError("agent_name 与 task_kind 不匹配")
+        input_name = {
+            SpecialistAgentName.RECOGNITION: "recognition",
+            SpecialistAgentName.INTENT: "intent",
+            SpecialistAgentName.RETRIEVAL: "retrieval",
+            SpecialistAgentName.EXPLANATION: "explanation",
+            SpecialistAgentName.MEMORY: "memory",
+        }[self.agent_name]
+        if not str(getattr(self.input, "kind", "")).startswith(input_name):
+            raise ValueError("任务 input discriminator 与 agent_name 不匹配")
+        if self.task_kind is AgentTaskKind.MEMORY_RECALL and not (
+            isinstance(self.input, MemoryTaskInput) and self.input.operation == "recall"
+        ):
+            raise ValueError("memory.recall 必须使用 recall input")
+        if self.task_kind is AgentTaskKind.MEMORY_PREPARE and not (
+            isinstance(self.input, MemoryTaskInput) and self.input.operation == "prepare"
+        ):
+            raise ValueError("memory.prepare 必须使用 prepare input")
+        if self.task_kind is AgentTaskKind.MEMORY_COMMIT and not (
+            isinstance(self.input, MemoryTaskInput) and self.input.operation == "commit"
+        ):
+            raise ValueError("memory.commit 必须使用 commit input")
+        if self.task_kind is AgentTaskKind.RECOGNIZE and isinstance(
+            self.input, RecognitionTaskInput
+        ):
+            if self.input.correction is not None:
+                raise ValueError("recognition.recognize 不得携带 correction")
+        if self.task_kind is AgentTaskKind.APPLY_CORRECTION and isinstance(
+            self.input, RecognitionTaskInput
+        ):
+            if self.input.correction is None:
+                raise ValueError("recognition.apply_correction 必须携带 correction")
+        if len(set(self.depends_on)) != len(self.depends_on):
+            raise ValueError("depends_on 不得重复")
+        return self
+
+
+class AgentResultV2(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["2.0"] = "2.0"
+    plan_id: str = Field(min_length=1, max_length=128)
+    task_id: str = Field(min_length=1, max_length=128)
+    agent_name: SpecialistAgentName
+    task_kind: AgentTaskKind
+    status: NodeStatus
+    output: AgentTaskOutput | None = None
+    error: AgentTaskError | None = None
+    evidence_refs: list[str] = Field(default_factory=list[str])
+    handoff_requests: list[HandoffRequest] = Field(default_factory=list[HandoffRequest])
+    proposed_memory_mutations: list[MemoryMutation] = Field(default_factory=list[MemoryMutation])
+    usage: AgentTaskUsage = Field(default_factory=AgentTaskUsage)
+    output_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _validate_result(self) -> AgentResultV2:
+        expected: dict[AgentTaskKind, SpecialistAgentName] = {
+            AgentTaskKind.RECOGNIZE: SpecialistAgentName.RECOGNITION,
+            AgentTaskKind.APPLY_CORRECTION: SpecialistAgentName.RECOGNITION,
+            AgentTaskKind.PARSE_INTENT: SpecialistAgentName.INTENT,
+            AgentTaskKind.RETRIEVE_AND_RANK: SpecialistAgentName.RETRIEVAL,
+            AgentTaskKind.EXPLAIN: SpecialistAgentName.EXPLANATION,
+            AgentTaskKind.MEMORY_RECALL: SpecialistAgentName.MEMORY,
+            AgentTaskKind.MEMORY_PREPARE: SpecialistAgentName.MEMORY,
+            AgentTaskKind.MEMORY_COMMIT: SpecialistAgentName.MEMORY,
+        }
+        if expected[self.task_kind] is not self.agent_name:
+            raise ValueError("result agent_name 与 task_kind 不匹配")
+        if self.status is NodeStatus.FAILED and self.error is None:
+            raise ValueError("FAILED 结果必须携带 error")
+        if self.status in {NodeStatus.SUCCESS, NodeStatus.FALLBACK} and self.output is None:
+            raise ValueError("成功或降级结果必须携带 output")
+        if self.output is not None:
+            output_name = str(getattr(self.output, "kind", ""))
+            agent_name = self.agent_name.value
+            if not output_name.startswith(agent_name):
+                raise ValueError("result output 类型与 agent_name 不匹配")
+            if self.task_kind in {
+                AgentTaskKind.RECOGNIZE,
+                AgentTaskKind.APPLY_CORRECTION,
+            } and not isinstance(self.output, RecognitionTaskOutput):
+                raise ValueError("recognition task 必须返回 RecognitionTaskOutput")
+            if self.task_kind is AgentTaskKind.PARSE_INTENT and not isinstance(
+                self.output, IntentTaskOutput
+            ):
+                raise ValueError("intent task 必须返回 IntentTaskOutput")
+            if self.task_kind is AgentTaskKind.RETRIEVE_AND_RANK and not isinstance(
+                self.output, RetrievalTaskOutput
+            ):
+                raise ValueError("retrieval task 必须返回 RetrievalTaskOutput")
+            if self.task_kind is AgentTaskKind.EXPLAIN and not isinstance(
+                self.output, ExplanationTaskOutput
+            ):
+                raise ValueError("explanation task 必须返回 ExplanationTaskOutput")
+            if self.task_kind in {
+                AgentTaskKind.MEMORY_RECALL,
+                AgentTaskKind.MEMORY_PREPARE,
+                AgentTaskKind.MEMORY_COMMIT,
+            }:
+                if not isinstance(self.output, MemoryTaskOutput):
+                    raise ValueError("memory task 必须返回 MemoryTaskOutput")
+                expected_operation = {
+                    AgentTaskKind.MEMORY_RECALL: "recall",
+                    AgentTaskKind.MEMORY_PREPARE: "prepare",
+                    AgentTaskKind.MEMORY_COMMIT: "commit",
+                }[self.task_kind]
+                if self.output.operation != expected_operation:
+                    raise ValueError("memory output operation 与 task_kind 不匹配")
+        if self.task_kind is AgentTaskKind.MEMORY_COMMIT and self.status is NodeStatus.SUCCESS:
+            if not isinstance(self.output, MemoryTaskOutput) or not self.output.committed:
+                raise ValueError("memory.commit 成功必须声明 committed")
+        return self
+
+
+class TaskRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task: AgentTaskV2
+    status: NodeStatus = NodeStatus.SKIPPED
+    result_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    started_at: str | None = None
+    finished_at: str | None = None
+    authorized: bool = False
+
+
+class SupervisorBudgetUsage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_count: int = Field(default=0, ge=0)
+    model_calls: int = Field(default=0, ge=0)
+    tokens: int = Field(default=0, ge=0)
+    elapsed_ms: float = Field(default=0.0, ge=0)
+    replans: int = Field(default=0, ge=0)
+
+
+class CanonicalUnderstanding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recognition: RecognitionResult | None = None
+    intent_patch: IntentPatch | None = None
+    constraints: ShoppingConstraints | None = None
+    memory_records: list[MemoryRecord] = Field(default_factory=list[MemoryRecord])
+
+
+class ExecutionPlan(BaseModel):
+    """经确定性校验的任务 DAG。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["2.0"] = "2.0"
+    plan_id: str = Field(min_length=1, max_length=128)
+    tasks: list[AgentTaskV2] = Field(default_factory=list[AgentTaskV2])
+    max_tasks: int = Field(default=32, ge=1, le=1000)
+    max_replans: int = Field(default=2, ge=0, le=100)
+    budget: AgentTaskBudget = Field(default_factory=lambda: AgentTaskBudget(max_seconds=60.0))
+
+    @model_validator(mode="after")
+    def _dag_is_valid(self) -> ExecutionPlan:
+        task_ids = [task.task_id for task in self.tasks]
+        if len(task_ids) != len(set(task_ids)):
+            raise ValueError("ExecutionPlan task_id 必须唯一")
+        if len(task_ids) > self.max_tasks:
+            raise ValueError("ExecutionPlan 超出任务数预算")
+        known = set(task_ids)
+        for task in self.tasks:
+            missing = set(task.depends_on) - known
+            if missing:
+                raise ValueError(f"ExecutionPlan 存在未知依赖: {sorted(missing)}")
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(task_id: str) -> None:
+            if task_id in visiting:
+                raise ValueError("ExecutionPlan 依赖图存在环")
+            if task_id in visited:
+                return
+            visiting.add(task_id)
+            task = next(item for item in self.tasks if item.task_id == task_id)
+            for dependency in task.depends_on:
+                visit(dependency)
+            visiting.remove(task_id)
+            visited.add(task_id)
+
+        for task_id in task_ids:
+            visit(task_id)
+        return self
+
+
+class SupervisorPlanningInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request: AgentRequest
+    execution_context: AgentExecutionContext = Field(default_factory=AgentExecutionContext)
+    taxonomy_version: str = Field(min_length=1)
+    previous_plan_id: str | None = None
+
+
+class SupervisorReplanningInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan: ExecutionPlan
+    task_results: dict[str, AgentResultV2] = Field(default_factory=dict[str, AgentResultV2])
+    failed_task_ids: list[str] = Field(default_factory=list[str])
+    reason_code: str = Field(min_length=1, max_length=64)
+
+
+class ExecutionPlanPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    skip_task_ids: list[str] = Field(default_factory=list[str])
+    retry_task_ids: list[str] = Field(default_factory=list[str])
+    add_tasks: list[AgentTaskV2] = Field(default_factory=list[AgentTaskV2])
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +959,8 @@ class RetrievalCandidate(BaseModel):
     image_similarity: float | None = None
     metadata_match: float = 0.0
     recall_score: float = 0.0
+    rerank_score: float | None = None
+    rerank_version: str | None = None
     channel_sources: list[str] = Field(default_factory=list[str])
 
 
@@ -493,6 +1091,103 @@ class AgentResponse(BaseModel):
     trace_id: str = Field(default="", min_length=1)
 
 
+class InterruptKind(StrEnum):
+    CLARIFICATION = "clarification"
+    RECOGNITION_REVIEW = "recognition_review"
+    SAME_ITEM_REVIEW = "same_item_review"
+    MEMORY_CONFIRMATION = "memory_confirmation"
+
+
+class AgentInterrupt(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    interrupt_id: str = Field(min_length=64, max_length=64)
+    session_id: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=128)
+    turn_id: str = Field(min_length=1)
+    trace_id: str = Field(min_length=1)
+    kind: InterruptKind
+    prompt: str = Field(min_length=1, max_length=4000)
+    payload: dict[str, Any] = Field(default_factory=dict[str, Any])
+
+
+class AgentResume(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    interrupt_id: str = Field(min_length=64, max_length=64)
+    value: dict[str, Any] = Field(default_factory=dict[str, Any])
+
+
+class ClarificationResume(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["select", "answer"]
+    option_id: str | None = None
+    text: str | None = Field(default=None, max_length=4000)
+
+    @model_validator(mode="after")
+    def _shape(self) -> ClarificationResume:
+        if self.action == "select" and not self.option_id:
+            raise ValueError("select 必须提供 option_id")
+        if self.action == "answer" and not self.text:
+            raise ValueError("answer 必须提供 text")
+        return self
+
+
+class RecognitionReviewResume(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["approve", "reject", "edit"]
+    correction: RecognitionCorrection | None = None
+
+    @model_validator(mode="after")
+    def _shape(self) -> RecognitionReviewResume:
+        if self.action == "edit" and self.correction is None:
+            raise ValueError("edit 必须提供 correction")
+        if self.action != "edit" and self.correction is not None:
+            raise ValueError("approve/reject 不能携带 correction")
+        return self
+
+
+class SameItemReviewResume(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["accept", "split"]
+
+
+class MemoryConfirmationResume(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["approve", "reject"]
+
+
+class AgentTurnResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    response: AgentResponse | None = None
+    interrupt: AgentInterrupt | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> AgentTurnResult:
+        if (self.response is None) == (self.interrupt is None):
+            raise ValueError("response 和 interrupt 必须恰好一个非空")
+        return self
+
+
+class ConversationTurnSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str = Field(min_length=1, max_length=128)
+    turn_id: str = Field(min_length=1)
+    user_text: str | None = Field(default=None, max_length=4000)
+    user_text_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    user_text_length: int | None = Field(default=None, ge=0, le=4000)
+    intent_patch: IntentPatch | None = None
+    completion_reason: CompletionReason | None = None
+    selected_group_ids: list[str] = Field(default_factory=list[str])
+    created_at: str = Field(min_length=1)
+
+
 # ---------------------------------------------------------------------------
 # 流式事件（§6.5）
 # ---------------------------------------------------------------------------
@@ -509,11 +1204,22 @@ class AgentEvent(BaseModel):
     trace_id: str
     event_type: EventType
     timestamp: str
+    agent_name: str | None = None
     node_name: str | None = None
     status: NodeStatus | None = None
     duration_ms: float | None = None
     provider: str | None = None
     model: str | None = None
+    prompt_version: str | None = None
+    taxonomy_version: str | None = None
+    retrieval_index_version: str | None = None
+    fusion_version: str | None = None
+    rerank_version: str | None = None
+    token_usage: dict[str, int] | None = None
+    cache_hit: bool | None = None
+    interrupt_kind: str | None = None
+    memory_operation_count: int | None = None
+    checkpoint_migration: str | None = None
     input_hash: str | None = None
     output_hash: str | None = None
     retry_count: int | None = None
@@ -523,6 +1229,79 @@ class AgentEvent(BaseModel):
     error_code: str | None = None
     resumed: bool | None = None
     resumed_node: str | None = None
+
+
+class AgentEventRecord(BaseModel):
+    """追加式持久化事件；不保存完整用户文本、Prompt 或模型原始输出。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(min_length=64, max_length=64)
+    session_id: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=128)
+    turn_id: str = Field(min_length=1)
+    trace_id: str = Field(min_length=1)
+    agent_name: str = Field(min_length=1, max_length=64)
+    node_name: str | None = Field(default=None, max_length=128)
+    event_type: str = Field(min_length=1, max_length=64)
+    status: str | None = Field(default=None, max_length=32)
+    input_hash: str | None = None
+    output_hash: str | None = None
+    state_version: int | None = Field(default=None, ge=0)
+    payload: dict[str, Any] = Field(default_factory=dict[str, Any])
+    occurred_at: str = Field(min_length=1)
+
+    @field_validator("payload")
+    @classmethod
+    def _payload_is_sanitized(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """事件只能携带白名单元数据，拒绝凭证、连接串和原始内容。"""
+
+        forbidden_keys = frozenset(
+            {
+                "api_key",
+                "ark_api_key",
+                "cache_dsn",
+                "checkpoint_dsn",
+                "data_url",
+                "dsn",
+                "event_store_dsn",
+                "image_uri",
+                "memory_dsn",
+                "password",
+                "prompt",
+                "prompt_text",
+                "raw_prompt",
+                "raw_response",
+                "request_ledger_dsn",
+                "secret",
+                "text",
+                "token",
+                "trace_dsn",
+                "user_text",
+            }
+        )
+
+        def visit(item: Any, path: str) -> None:
+            if isinstance(item, dict):
+                for key, child in cast(dict[Any, Any], item).items():
+                    key_text = str(key).lower()
+                    child_path = f"{path}.{key_text}"
+                    if key_text in forbidden_keys:
+                        raise ValueError(f"事件 payload 禁止字段: {child_path}")
+                    visit(child, child_path)
+                return
+            if isinstance(item, (list, tuple)):
+                sequence = cast(list[Any] | tuple[Any, ...], item)
+                for index, child in enumerate(sequence):
+                    visit(child, f"{path}[{index}]")
+                return
+            if isinstance(item, str):
+                lowered = item.lower()
+                if lowered.startswith(("data:", "postgresql://", "postgres://", "sqlite://")):
+                    raise ValueError(f"事件 payload 禁止原始资源内容: {path}")
+
+        visit(value, "payload")
+        return value
 
 
 # ---------------------------------------------------------------------------

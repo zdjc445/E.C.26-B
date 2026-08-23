@@ -1,4 +1,4 @@
-"""本地词法检索降级适配器（方案 §13.7）。
+"""本地词法检索降级适配器。
 
 - 使用与 Milvus 相同的只读商品快照（JSONL，每行一个 Offer）。
 - 执行相同的硬过滤（``offer_matches_hard_filters``，与 Milvus filter 表达式同语义）。
@@ -17,16 +17,24 @@ from shijiajing_agent.adapters.lexical import Bm25Index, tokenize
 from shijiajing_agent.contracts import Offer, RetrievalCandidate, RetrievalQuery
 from shijiajing_agent.domain.filters import offer_matches_hard_filters
 from shijiajing_agent.errors import RetrievalUnavailableError
+from shijiajing_agent.ports.observability import MetricsPort
 from shijiajing_agent.ports.retrieval import RetrievalResult
 
 
 class LocalLexicalRetrievalAdapter:
     """BM25 本地词法检索（ProductRetrievalPort 降级实现）。"""
 
-    def __init__(self, snapshot_path: Path, *, metrics: Any | None = None) -> None:
+    def __init__(self, snapshot_path: Path, *, metrics: MetricsPort | None = None) -> None:
         self._path = Path(snapshot_path)
         self._metrics = metrics
         self._loaded: tuple[list[Offer], Bm25Index, str] | None = None
+
+    async def setup(self) -> None:
+        """本地快照没有外部连接；保留统一 runtime 生命周期入口。"""
+
+    async def close(self) -> None:
+        """释放惰性索引引用，保证 runtime 关闭后不保留快照对象。"""
+        self._loaded = None
 
     # ------------------------------------------------------------------
     def _load(self) -> tuple[list[Offer], Bm25Index, str]:
@@ -105,6 +113,7 @@ class LocalLexicalRetrievalAdapter:
             total_found=total_found,
             channel_counts={"sparse": len(candidates)},
             index_version=digest,
+            fusion_version="weighted-v1",
         )
 
 

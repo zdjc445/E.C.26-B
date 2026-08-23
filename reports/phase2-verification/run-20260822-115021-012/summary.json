@@ -1,0 +1,53 @@
+{
+  "run_id": "run-20260822-115021-012",
+  "started_at": "2026-08-22T03:50:21.0227888Z",
+  "ended_at": "2026-08-22T03:51:00.8166235Z",
+  "status": "failed",
+  "error": "uv 命令失败：run pytest -q -m integration tests/contract/test_native_checkpointers.py",
+  "exit_code": 1,
+  "transcript": "transcript.log",
+  "commands": [
+    "docker compose --project-name shijiajing-phase2-45000 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml up -d",
+    "uv run pytest -q -m integration tests/contract/test_native_checkpointers.py",
+    "docker compose --project-name shijiajing-phase2-45000 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml logs --no-color",
+    "docker compose --project-name shijiajing-phase2-45000 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml down"
+  ],
+  "command_results": [
+    {
+      "command": "docker compose --project-name shijiajing-phase2-45000 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml up -d",
+      "started_at": "2026-08-22T03:50:21.0538891Z",
+      "ended_at": "2026-08-22T03:50:51.1564671Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_native_checkpointers.py",
+      "started_at": "2026-08-22T03:50:56.7947023Z",
+      "ended_at": "2026-08-22T03:50:58.6042697Z",
+      "exit_code": 4,
+      "status": "failed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-45000 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml logs --no-color",
+      "started_at": "2026-08-22T03:50:58.6163016Z",
+      "ended_at": "2026-08-22T03:50:58.8400766Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-45000 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml down",
+      "started_at": "2026-08-22T03:50:58.8413181Z",
+      "ended_at": "2026-08-22T03:51:00.7032769Z",
+      "exit_code": 0,
+      "status": "passed"
+    }
+  ],
+  "health": {
+    "postgres": "healthy",
+    "otel-collector": "healthy"
+  },
+  "services_kept": false,
+  "postgres_port": 55432,
+  "otlp_http_port": 44318,
+  "otlp_grpc_port": 44317
+}

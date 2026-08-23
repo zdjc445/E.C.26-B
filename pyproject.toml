@@ -17,6 +17,7 @@ dependencies = [
     "structlog>=24.1.0",
     "opentelemetry-api>=1.25.0",
     "opentelemetry-sdk>=1.25.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.25.0",
     "prometheus-client>=0.20.0",
     "orjson>=3.10.0",
 ]
@@ -25,6 +26,7 @@ dependencies = [
 postgres = [
     "langgraph-checkpoint-postgres>=2.0.0",
     "psycopg[binary]>=3.2.0",
+    "psycopg-pool>=3.2.0",
 ]
 dev = [
     "pytest>=8.2.0",
@@ -39,6 +41,15 @@ dev = [
 shijiajing-init-milvus = "shijiajing_agent.tools.init_milvus:main"
 shijiajing-index-products = "shijiajing_agent.tools.index_products:main"
 shijiajing-eval = "shijiajing_agent.tools.run_eval:main"
+shijiajing-build-eval = "shijiajing_agent.tools.build_eval:main"
+shijiajing-migrate-state = "shijiajing_agent.tools.migrate_state:main"
+shijiajing-repair-events = "shijiajing_agent.tools.repair_events:main"
+shijiajing-backup-sqlite = "shijiajing_agent.tools.backup_sqlite:main"
+shijiajing-backup-postgres = "shijiajing_agent.tools.backup_postgres:main"
+shijiajing-preflight = "shijiajing_agent.tools.preflight:main"
+shijiajing-reconstruct-turn = "shijiajing_agent.tools.reconstruct_turn:main"
+shijiajing-benchmark = "shijiajing_agent.tools.benchmark:main"
+shijiajing-release-check = "shijiajing_agent.tools.release_check:main"
 
 [build-system]
 requires = ["hatchling"]

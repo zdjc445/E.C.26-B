@@ -10,10 +10,11 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from shijiajing_agent.ports.lifecycle import ResourceLifecyclePort
 from shijiajing_agent.state import AgentState
 
 
-class CheckpointPort(Protocol):
+class CheckpointPort(ResourceLifecyclePort, Protocol):
     """会话 Checkpoint：按 session_id 保存/加载 super-step 状态。"""
 
     async def load(self, session_id: str) -> tuple[AgentState, int] | None:
@@ -22,4 +23,12 @@ class CheckpointPort(Protocol):
 
     async def save(self, session_id: str, state: AgentState, expected_version: int | None) -> int:
         """乐观版本检查保存。版本冲突时抛 SessionConflictError。返回新版本号。"""
+        ...
+
+    async def claim_resume(self, session_id: str, interrupt_id: str) -> bool:
+        """原子抢占一次 interrupt resume；重复 interrupt_id 返回 False。"""
+        ...
+
+    async def release_resume(self, session_id: str, interrupt_id: str) -> None:
+        """释放尚未完成的 resume 抢占，使失败恢复可以安全重试。"""
         ...

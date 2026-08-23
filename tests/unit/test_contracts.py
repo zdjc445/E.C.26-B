@@ -6,10 +6,14 @@ import pytest
 from pydantic import ValidationError
 
 from shijiajing_agent.contracts import (
+    AgentEventRecord,
     AgentRequest,
     ImageContentType,
     ImageRef,
     IntentPatch,
+    MemoryApplyMode,
+    MemoryMutation,
+    MemoryOperation,
     RecognitionCorrection,
     RecognitionResult,
     RetrievalQuery,
@@ -131,3 +135,62 @@ class TestRetrievalQuery:
     def test_reject_extra_field(self):
         with pytest.raises(ValidationError):
             RetrievalQuery(query_text="x", invented="y")
+
+
+class TestMemoryMutation:
+    def test_mutation_id_is_lowercase_sha256_hex(self):
+        mutation = MemoryMutation(
+            mutation_id="a" * 64,
+            operation=MemoryOperation.UPSERT,
+            memory_key="max_price",
+            value=1000,
+            apply_mode=MemoryApplyMode.CONSTRAINT_DEFAULT,
+            source_session_id="s1",
+            source_request_id="r1",
+        )
+        assert mutation.mutation_id == "a" * 64
+
+    def test_mutation_id_rejects_non_hex_legacy_shape(self):
+        with pytest.raises(ValidationError):
+            MemoryMutation(
+                mutation_id="g" * 64,
+                operation=MemoryOperation.UPSERT,
+                memory_key="max_price",
+                value=1000,
+                apply_mode=MemoryApplyMode.CONSTRAINT_DEFAULT,
+                source_session_id="s1",
+                source_request_id="r1",
+            )
+
+
+class TestAgentEventRecord:
+    @staticmethod
+    def _make(payload: dict[str, object]) -> AgentEventRecord:
+        return AgentEventRecord(
+            event_id="a" * 64,
+            session_id="s1",
+            request_id="r1",
+            turn_id="t1",
+            trace_id="tr1",
+            agent_name="supervisor",
+            event_type="node_completed",
+            payload=payload,
+            occurred_at="2026-08-22T00:00:00+00:00",
+        )
+
+    def test_allows_whitelisted_metadata(self) -> None:
+        event = self._make({"prompt_version": "prompt-v1", "token_usage": {"total": 2}})
+        assert event.payload["prompt_version"] == "prompt-v1"
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"prompt": "完整 prompt"},
+            {"nested": {"dsn": "postgresql://user:secret@host/db"}},
+            {"image": "data:image/jpeg;base64,AAAA"},
+            {"user_text": "完整用户文本"},
+        ],
+    )
+    def test_rejects_sensitive_payload(self, payload: dict[str, object]) -> None:
+        with pytest.raises(ValidationError, match="事件 payload"):
+            self._make(payload)

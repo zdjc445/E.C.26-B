@@ -17,3 +17,17 @@
 - `same_item_pairs.jsonl`：Offer 对 + 同 SPU/SKU 标签 + 冲突原因。
 - `ranking_dataset.jsonl`：查询 + 候选组 + 人工偏好顺序。
 - `workflow_dataset.jsonl`：完整多轮轨迹 + 期望结果。
+- `memory_dataset.jsonl`：owner、session 序列、显式 directive、覆盖与 forget 后状态。
+- `multi_agent_dataset.jsonl`：子图输入/输出、汇合状态与最终业务结果。
+- `interrupt_dataset.jsonl`：四类 interrupt 的恢复节点与副作用计数。
+- `cache_dataset.jsonl`：完整版本向量、版本变化后的 hit/miss、模型调用次数与结果摘要。
+- `retrieval_strategy_dataset.jsonl`：三种召回策略共享候选集和通道排序的比较夹具。
+
+本目录中的 `retrieval_strategy_dataset.jsonl` 只是 CI seed。正式延迟门禁要求将同一正式
+数据批次的策略比较夹具纳入冻结目录，行级 `meta.label_source` 必须为 `adjudicated`，
+且 `gold_spu_by_offer_id`/`gold_sku_by_offer_id` 必须覆盖每个候选，
+并随 `manifest.files` 做摘要校验；不能把本目录或其他 seed 目录直接声明为 `source=formal`。
+
+前四类工程夹具只验证确定性工程不变量，不用于证明线上用户偏好或商品质量；其
+执行结果另写 `engineering_eval_report`，包含四类工程夹具和六项固定不变量的独立结果；不会
+回填 `recorded`，也不会让离线商品评测报告增加质量指标。

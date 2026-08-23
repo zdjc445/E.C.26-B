@@ -1,4 +1,4 @@
-"""响应节点：澄清、无结果、证据、解释、响应组装（方案 §9.2、§11.5、§16）。
+"""响应节点：澄清、无结果、证据、解释、响应组装。
 
 - ``build_clarification``：模板生成，一次只问一个主问题（§16）。
 - ``generate_explanation``：事实一致性校验失败 → 模板解释（§11.5）。
@@ -8,17 +8,20 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import asdict
 from typing import Any
 
 from shijiajing_agent.contracts import AgentResponse, AgentStatus, ShoppingConstraints
+from shijiajing_agent.domain.cache_policy import safe_get, safe_set, versioned_key
 from shijiajing_agent.domain.constraints import ClarificationBuilder, ConstraintConflict
 from shijiajing_agent.domain.evidence import EvidenceBuilder, FactualConsistencyChecker
-from shijiajing_agent.nodes.node_support import timed
+from shijiajing_agent.nodes.node_support import record_cache_event, timed
+from shijiajing_agent.ports.dependencies import AgentDependenciesPort
 from shijiajing_agent.ports.models import ExplanationModelPort
 from shijiajing_agent.state import AgentState, ErrorRecord
 
 
-def make_build_clarification_node(deps: Any) -> Any:
+def make_build_clarification_node(deps: AgentDependenciesPort) -> Any:
     """澄清构建（§16）：冲突 → CONFLICT；缺品类 → MISSING_CATEGORY。"""
 
     @timed("build_clarification")
@@ -48,7 +51,7 @@ def make_build_clarification_node(deps: Any) -> Any:
     return build_clarification_node
 
 
-def make_build_no_results_node(deps: Any) -> Any:
+def make_build_no_results_node(deps: AgentDependenciesPort) -> Any:
     """无结果响应（§9.3 no_results）。"""
 
     @timed("build_no_results")
@@ -58,7 +61,7 @@ def make_build_no_results_node(deps: Any) -> Any:
     return build_no_results_node
 
 
-def make_build_evidence_node(deps: Any) -> Any:
+def make_build_evidence_node(deps: AgentDependenciesPort) -> Any:
     """事实证据构建（§11.5）。"""
 
     @timed("build_evidence")
@@ -71,7 +74,7 @@ def make_build_evidence_node(deps: Any) -> Any:
     return build_evidence_node
 
 
-def make_generate_explanation_node(deps: Any) -> Any:
+def make_generate_explanation_node(deps: AgentDependenciesPort) -> Any:
     """结果解释（§11.5）。模型失败或事实校验失败 → 模板解释。"""
 
     explanation_model: ExplanationModelPort = deps.explanation
@@ -85,14 +88,44 @@ def make_generate_explanation_node(deps: Any) -> Any:
         text = None
         verified = False
         fallback_used = False
+        cache_key = versioned_key(
+            {"evidence": asdict(bundle)},
+            {"model": deps.settings.ark_text_model, "prompt": "v1"},
+        )
         try:
-            candidate = await explanation_model.explain(bundle)
-            ok, _violations = checker.verify(candidate, bundle)
-            if ok:
-                text = candidate
+            cached = await safe_get(deps.cache, "explanation", cache_key, metrics=deps.metrics)
+            cached_text = None
+            if isinstance(cached, dict) and isinstance(cached.get("explanation_text"), str):
+                candidate = cached["explanation_text"]
+                if bool(cached.get("verified")) and checker.verify(candidate, bundle)[0]:
+                    cached_text = candidate
+            await record_cache_event(
+                deps,
+                state,
+                node_name="generate_explanation",
+                namespace="explanation",
+                cache_key=cache_key,
+                hit=cached_text is not None,
+            )
+            if cached_text is not None:
+                text = cached_text
                 verified = True
             else:
-                fallback_used = True
+                candidate = await explanation_model.explain(bundle)
+                ok, _violations = checker.verify(candidate, bundle)
+                if ok:
+                    text = candidate
+                    verified = True
+                    await safe_set(
+                        deps.cache,
+                        "explanation",
+                        cache_key,
+                        {"explanation_text": candidate, "verified": True},
+                        deps.settings.explanation_cache_ttl_seconds,
+                        metrics=deps.metrics,
+                    )
+                else:
+                    fallback_used = True
         except Exception:
             fallback_used = True
         if text is None:
@@ -120,7 +153,7 @@ def make_generate_explanation_node(deps: Any) -> Any:
     return generate_explanation_node
 
 
-def make_build_failed_node(deps: Any) -> Any:
+def make_build_failed_node(deps: AgentDependenciesPort) -> Any:
     """确定性失败响应（§9.3 failed）：保留 trace，不把部分结果标记为成功。"""
 
     @timed("build_failed_response")
@@ -168,7 +201,7 @@ def _summary_message(state: AgentState, status: AgentStatus) -> str:
     return "已为您完成比价。"
 
 
-def make_build_response_node(deps: Any) -> Any:
+def make_build_response_node(deps: AgentDependenciesPort) -> Any:
     """组装 AgentResponse（§6.4）。"""
 
     @timed("build_response")

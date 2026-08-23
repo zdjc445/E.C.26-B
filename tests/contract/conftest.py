@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+import os
+from collections.abc import Iterator
+from typing import Any, NoReturn
 
 import httpx
 import pytest
@@ -81,6 +83,14 @@ class FakeMetrics:
         self.observations.append((name, value))
 
 
+def _skip_or_fail_postgres(message: str) -> NoReturn:
+    """普通集成运行允许 skip；严格验收运行必须失败。"""
+
+    if os.environ.get("SHIJIAJING_REQUIRE_POSTGRES") == "1":
+        pytest.fail(message)
+    pytest.skip(message)
+
+
 @pytest.fixture
 def taxonomy() -> Taxonomy:
     data = {
@@ -117,6 +127,37 @@ def ark_settings() -> Settings:
 @pytest.fixture
 def metrics() -> FakeMetrics:
     return FakeMetrics()
+
+
+@pytest.fixture(scope="session")
+def postgres_dsn() -> Iterator[str]:
+    dsn = os.environ.get("SHIJIAJING_TEST_POSTGRES_DSN")
+    if dsn:
+        yield dsn
+        return
+
+    # integration 模式下优先自动提供隔离数据库；普通测试不会创建容器。
+    # Docker 不可用时必须明确 skip，不把环境问题伪装成 contract 通过。
+    try:
+        from testcontainers.community.postgres import PostgresContainer
+
+        container: Any = PostgresContainer(
+            image="postgres:16-alpine",
+            username="shijiajing",
+            password="shijiajing",
+            dbname="shijiajing_test",
+        )
+        container.start()
+    except Exception as exc:
+        _skip_or_fail_postgres(
+            "未设置 SHIJIAJING_TEST_POSTGRES_DSN，且 Testcontainers PostgreSQL 不可用："
+            f"{type(exc).__name__}: {exc}"
+        )
+
+    try:
+        yield container.get_connection_url(driver=None)
+    finally:
+        container.stop()
 
 
 @pytest.fixture

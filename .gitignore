@@ -23,6 +23,9 @@ build/
 # ===== 运行时产物 =====
 evals/reports/*.tmp
 
+# ===== Phase 1 provisional：私有原始证据（禁止提交，方案 §3）=====
+/evals/private/
+
 # ===== 演示文档工具产物 =====
 *.pptx.inspect.ndjson
 # pptx 拆解出的幻灯片图片，可由原文件重新生成

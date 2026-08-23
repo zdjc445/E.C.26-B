@@ -11,10 +11,11 @@ from typing import Any
 from shijiajing_agent.contracts import ShoppingConstraints, SortBy
 from shijiajing_agent.domain.ranking import GroupRanker
 from shijiajing_agent.nodes.node_support import timed
+from shijiajing_agent.ports.dependencies import AgentDependenciesPort
 from shijiajing_agent.state import AgentState
 
 
-def make_rank_groups_node(deps: Any) -> Any:
+def make_rank_groups_node(deps: AgentDependenciesPort) -> Any:
     """多阶段排序（§15.2–15.4）。"""
 
     @timed("rank_groups")

@@ -1,0 +1,63 @@
+"""Multi-Agent 契约的稳定导出入口。
+
+2.0 协议与历史 1.x 契约共存于 ``shijiajing_agent.contracts``，这里提供方案建议的
+包路径，避免调用方依赖实现文件布局。
+"""
+
+from shijiajing_agent.contracts import (
+    AgentResultV2,
+    AgentTaskBudget,
+    AgentTaskError,
+    AgentTaskInput,
+    AgentTaskKind,
+    AgentTaskOutput,
+    AgentTaskUsage,
+    AgentTaskV2,
+    CanonicalUnderstanding,
+    ExecutionPlan,
+    ExecutionPlanPatch,
+    ExplanationTaskInput,
+    ExplanationTaskOutput,
+    HandoffRequest,
+    IntentTaskInput,
+    IntentTaskOutput,
+    MemoryTaskInput,
+    MemoryTaskOutput,
+    RecognitionTaskInput,
+    RecognitionTaskOutput,
+    RetrievalTaskInput,
+    RetrievalTaskOutput,
+    SupervisorBudgetUsage,
+    SupervisorPlanningInput,
+    SupervisorReplanningInput,
+    TaskRecord,
+)
+
+__all__ = [
+    "AgentResultV2",
+    "AgentTaskBudget",
+    "AgentTaskError",
+    "AgentTaskInput",
+    "AgentTaskKind",
+    "AgentTaskOutput",
+    "AgentTaskUsage",
+    "AgentTaskV2",
+    "CanonicalUnderstanding",
+    "ExecutionPlan",
+    "ExecutionPlanPatch",
+    "ExplanationTaskInput",
+    "ExplanationTaskOutput",
+    "HandoffRequest",
+    "IntentTaskInput",
+    "IntentTaskOutput",
+    "MemoryTaskInput",
+    "MemoryTaskOutput",
+    "RecognitionTaskInput",
+    "RecognitionTaskOutput",
+    "RetrievalTaskInput",
+    "RetrievalTaskOutput",
+    "SupervisorBudgetUsage",
+    "SupervisorPlanningInput",
+    "SupervisorReplanningInput",
+    "TaskRecord",
+]

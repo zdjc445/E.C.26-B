@@ -7,7 +7,7 @@
 
 处理：复制根目录 `.env.example` 为 `.env`（或 export 环境变量），逐项补齐缺失项。
 外部资源（Key/模型 ID/Milvus 地址/路径）没有代码默认值——缺失即失败是设计行为
-（§23），不是 bug。
+（方案 §13），不是 bug。
 
 常见组合：
 
@@ -45,9 +45,9 @@
 ## 5. 修正不生效
 
 - `RecognitionCorrection.recognition_id` 必须等于当前会话**最新**识别结果 ID；
-  用旧轮次的 ID 会被拒绝（§6.3）。
+用旧轮次的 ID 会被拒绝。
 - 修正轮不携带图片，`text` 可为空；修正只更新显式提供的字段。
-- 验证：正常时 trace 中修正轮 **没有** `recognize_image` 调用（§25：修正后不调 VLM）。
+- 验证：正常时 trace 中修正轮 **没有** `recognize_image` 调用（修正后不调 VLM）。
 
 ## 6. 输出乱码（Windows 控制台）
 
@@ -72,6 +72,19 @@ set PYTHONIOENCODING=utf-8
 ## 8. 观察手段
 
 - trace：`SHIJIAJING_TRACE_BACKEND=structlog`，事件含 request_id、节点、耗时、
-  降级标记；日志不含密钥与隐藏思维链（§25）。
+  降级标记；日志不含密钥与隐藏思维链（方案 §11.3）。
+- OpenTelemetry：将 `SHIJIAJING_TRACE_BACKEND` 设为 `opentelemetry`，并填写
+  `SHIJIAJING_TRACE_DSN`；导出失败不阻断业务，但会增加 `trace_sink_failure_total`。
 - 指标：`PrometheusMetrics` 暴露模型调用/检索降级/修复/延迟计数。
 - 测试：`uv run pytest -q`（离线单测）；`-m integration` 需要真实外部资源。
+
+## 9. 二期存储与回滚
+
+- 迁移检查：`uv run shijiajing-migrate-state inspect` 与
+  `uv run shijiajing-migrate-state validate`。
+- 事件修复：先运行 `uv run shijiajing-repair-events --dry-run`，确认缺失集合后才允许
+  `--apply`；事件追加失败不回滚 Request Ledger 或 Memory 已成功的事务。
+- native Checkpoint 切回 legacy 前，必须确认没有 `active_interrupt`；存在中断时先 resume
+  或人工确认清理，避免 native-only 恢复状态丢失。
+- SQLite 备份、PostgreSQL dump/restore 和完整回滚顺序见
+  [operations_phase2.md](operations_phase2.md)。

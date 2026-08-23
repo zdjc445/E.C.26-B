@@ -1,0 +1,209 @@
+{
+  "run_id": "run-20260822-120647-895",
+  "started_at": "2026-08-22T04:06:47.9057173Z",
+  "ended_at": "2026-08-22T04:07:23.5337145Z",
+  "status": "passed",
+  "error": null,
+  "exit_code": 0,
+  "transcript": "transcript.log",
+  "commands": [
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml up -d",
+    "uv run pytest -q -m integration tests/contract/test_native_checkpointers.py",
+    "uv run pytest -q -m integration tests/contract/test_request_ledger.py",
+    "uv run pytest -q -m integration tests/contract/test_memory_adapters.py",
+    "uv run pytest -q -m integration tests/contract/test_cache_adapters.py",
+    "uv run pytest -q -m integration tests/contract/test_event_store.py",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml restart postgres",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres psql --username=shijiajing --dbname=shijiajing --command=DROP TABLE IF EXISTS public.phase2_backup_verification; CREATE TABLE public.phase2_backup_verification (marker text NOT NULL); INSERT INTO public.phase2_backup_verification (marker) VALUES ('phase2-backup-sentinel');",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres psql --username=shijiajing --dbname=shijiajing --tuples-only --no-align --command=SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname = 'public';",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres pg_dump --format=custom --file=/tmp/phase2-postgres-backup.dump --username=shijiajing --dbname=shijiajing",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres pg_restore --list /tmp/phase2-postgres-backup.dump",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml cp postgres:/tmp/phase2-postgres-backup.dump D:\\E.C.26-B\\reports\\phase2-verification\\run-20260822-120647-895\\postgres-container.dump",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres dropdb --if-exists --username=shijiajing phase2_restore",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres createdb --username=shijiajing phase2_restore",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres pg_restore --exit-on-error --username=shijiajing --dbname=phase2_restore /tmp/phase2-postgres-backup.dump",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres psql --username=shijiajing --dbname=phase2_restore --tuples-only --no-align --command=SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname = 'public';",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres psql --username=shijiajing --dbname=phase2_restore --tuples-only --no-align --command=SELECT count(*) FROM public.phase2_backup_verification WHERE marker = 'phase2-backup-sentinel';",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres psql --username=shijiajing --dbname=shijiajing --command=DROP TABLE IF EXISTS public.phase2_backup_verification;",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres dropdb --if-exists --username=shijiajing phase2_restore",
+    "uv run shijiajing-preflight --storage-only --verify-trace --json",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml logs --no-color",
+    "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml down"
+  ],
+  "command_results": [
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml up -d",
+      "started_at": "2026-08-22T04:06:47.9379349Z",
+      "ended_at": "2026-08-22T04:06:49.1251840Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_native_checkpointers.py",
+      "started_at": "2026-08-22T04:06:54.8770249Z",
+      "ended_at": "2026-08-22T04:06:57.6912092Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_request_ledger.py",
+      "started_at": "2026-08-22T04:06:57.6916621Z",
+      "ended_at": "2026-08-22T04:07:00.3017785Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_memory_adapters.py",
+      "started_at": "2026-08-22T04:07:00.3021788Z",
+      "ended_at": "2026-08-22T04:07:02.9106862Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_cache_adapters.py",
+      "started_at": "2026-08-22T04:07:02.9110433Z",
+      "ended_at": "2026-08-22T04:07:05.3865690Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_event_store.py",
+      "started_at": "2026-08-22T04:07:05.3869652Z",
+      "ended_at": "2026-08-22T04:07:07.8948246Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml restart postgres",
+      "started_at": "2026-08-22T04:07:07.8951826Z",
+      "ended_at": "2026-08-22T04:07:09.3510523Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres psql --username=shijiajing --dbname=shijiajing --command=DROP TABLE IF EXISTS public.phase2_backup_verification; CREATE TABLE public.phase2_backup_verification (marker text NOT NULL); INSERT INTO public.phase2_backup_verification (marker) VALUES ('phase2-backup-sentinel');",
+      "started_at": "2026-08-22T04:07:15.0768175Z",
+      "ended_at": "2026-08-22T04:07:15.3388408Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres psql --username=shijiajing --dbname=shijiajing --tuples-only --no-align --command=SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname = 'public';",
+      "started_at": "2026-08-22T04:07:15.3411654Z",
+      "ended_at": "2026-08-22T04:07:15.6038468Z",
+      "exit_code": 0,
+      "status": "passed",
+      "output": "10"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres pg_dump --format=custom --file=/tmp/phase2-postgres-backup.dump --username=shijiajing --dbname=shijiajing",
+      "started_at": "2026-08-22T04:07:15.6099622Z",
+      "ended_at": "2026-08-22T04:07:15.9692831Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres pg_restore --list /tmp/phase2-postgres-backup.dump",
+      "started_at": "2026-08-22T04:07:15.9696029Z",
+      "ended_at": "2026-08-22T04:07:16.2106131Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml cp postgres:/tmp/phase2-postgres-backup.dump D:\\E.C.26-B\\reports\\phase2-verification\\run-20260822-120647-895\\postgres-container.dump",
+      "started_at": "2026-08-22T04:07:16.2112155Z",
+      "ended_at": "2026-08-22T04:07:16.4366782Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres dropdb --if-exists --username=shijiajing phase2_restore",
+      "started_at": "2026-08-22T04:07:16.4409868Z",
+      "ended_at": "2026-08-22T04:07:16.7456096Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres createdb --username=shijiajing phase2_restore",
+      "started_at": "2026-08-22T04:07:16.7459231Z",
+      "ended_at": "2026-08-22T04:07:17.1300145Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres pg_restore --exit-on-error --username=shijiajing --dbname=phase2_restore /tmp/phase2-postgres-backup.dump",
+      "started_at": "2026-08-22T04:07:17.1304715Z",
+      "ended_at": "2026-08-22T04:07:17.6735507Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres psql --username=shijiajing --dbname=phase2_restore --tuples-only --no-align --command=SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname = 'public';",
+      "started_at": "2026-08-22T04:07:17.6739070Z",
+      "ended_at": "2026-08-22T04:07:17.9439413Z",
+      "exit_code": 0,
+      "status": "passed",
+      "output": "10"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres psql --username=shijiajing --dbname=phase2_restore --tuples-only --no-align --command=SELECT count(*) FROM public.phase2_backup_verification WHERE marker = 'phase2-backup-sentinel';",
+      "started_at": "2026-08-22T04:07:17.9455725Z",
+      "ended_at": "2026-08-22T04:07:18.2405868Z",
+      "exit_code": 0,
+      "status": "passed",
+      "output": "1"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres psql --username=shijiajing --dbname=shijiajing --command=DROP TABLE IF EXISTS public.phase2_backup_verification;",
+      "started_at": "2026-08-22T04:07:18.2435607Z",
+      "ended_at": "2026-08-22T04:07:18.5363199Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml exec -T postgres dropdb --if-exists --username=shijiajing phase2_restore",
+      "started_at": "2026-08-22T04:07:18.5366273Z",
+      "ended_at": "2026-08-22T04:07:18.9412357Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run shijiajing-preflight --storage-only --verify-trace --json",
+      "started_at": "2026-08-22T04:07:18.9414974Z",
+      "ended_at": "2026-08-22T04:07:21.4737995Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml logs --no-color",
+      "started_at": "2026-08-22T04:07:21.4763423Z",
+      "ended_at": "2026-08-22T04:07:21.7040794Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-36956 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml down",
+      "started_at": "2026-08-22T04:07:21.7050745Z",
+      "ended_at": "2026-08-22T04:07:23.4091433Z",
+      "exit_code": 0,
+      "status": "passed"
+    }
+  ],
+  "health": {
+    "postgres": "healthy",
+    "otel-collector": "healthy"
+  },
+  "services_kept": false,
+  "postgres_port": 55432,
+  "otlp_http_port": 44318,
+  "otlp_grpc_port": 44317,
+  "backup_restore": {
+    "requested": true,
+    "status": "passed",
+    "dump": "D:\\E.C.26-B\\reports\\phase2-verification\\run-20260822-120647-895\\postgres-container.dump",
+    "source_public_table_count": 10,
+    "restored_public_table_count": 10,
+    "sentinel_rows": 1,
+    "error": null
+  }
+}

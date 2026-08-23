@@ -32,7 +32,7 @@ _BASE_WEIGHTS: dict[str, float] = {
     "freshness": 0.05,
 }
 
-# 偏好权重表（§15.4，配置化、版本化并进入 trace）
+# 偏好权重表，配置化、版本化并进入 trace。
 _DEFAULT_PREFERENCE_WEIGHTS: dict[str, dict[str, float]] = {
     Preference.LOWEST_PRICE.value: {"price_utility": 0.35, "intent_relevance": 0.25},
     Preference.OFFICIAL_STORE.value: {"seller_trust": 0.25, "intent_relevance": 0.25},
@@ -108,7 +108,7 @@ class GroupRanker:
 
     # ------------------------------------------------------------------
     def _effective_weights(self, prefs: list[Preference]) -> dict[str, float]:
-        """偏好作用权重表：从 base 权重叠加偏好增量后重新归一化（§15.4）。"""
+        """偏好作用权重表：从 base 权重叠加偏好增量后重新归一化。"""
         w = dict(_BASE_WEIGHTS)
         for p in prefs:
             delta = self._pref_weights.get(p.value)
@@ -160,7 +160,7 @@ class GroupRanker:
         else:
             missing.add("freshness")
 
-        # fast_delivery：只有真实配送字段存在时才评分（§15.4）
+        # fast_delivery：只有真实配送字段存在时才评分。
         if Preference.FAST_DELIVERY in prefs and (
             not g.offers or g.offers[0].delivery_days is None
         ):
@@ -221,7 +221,7 @@ class GroupRanker:
         }
         base = max(trust.get(s, 0.3) for s in sellers)
         if Preference.OFFICIAL_STORE in prefs:
-            # 官方/自营加分，第三方相对降权（§15.4）
+            # 官方/自营加分，第三方相对降权。
             if any(s in (SellerType.OFFICIAL, SellerType.SELF_OPERATED) for s in sellers):
                 base = min(1.0, base + 0.15)
             else:

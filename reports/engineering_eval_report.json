@@ -1,0 +1,80 @@
+{
+  "checks": [
+    {
+      "kind": "memory",
+      "sample_count": 2,
+      "passed_count": 2,
+      "failed_ids": [],
+      "details": {
+        "failures": {}
+      }
+    },
+    {
+      "kind": "multi_agent",
+      "sample_count": 2,
+      "passed_count": 2,
+      "failed_ids": [],
+      "details": {
+        "failures": {}
+      }
+    },
+    {
+      "kind": "interrupt",
+      "sample_count": 4,
+      "passed_count": 4,
+      "failed_ids": [],
+      "details": {
+        "failures": {}
+      }
+    },
+    {
+      "kind": "cache",
+      "sample_count": 2,
+      "passed_count": 2,
+      "failed_ids": [],
+      "details": {
+        "failures": {}
+      }
+    }
+  ],
+  "invariants": [
+    {
+      "name": "user_hard_filter_violation_count",
+      "sample_count": 6,
+      "violation_count": 0,
+      "evidence": "Weighted/RRF/weighted_rerank 真实策略输出"
+    },
+    {
+      "name": "cross_user_memory_leakage_count",
+      "sample_count": 2,
+      "violation_count": 0,
+      "evidence": "SQLiteMemoryAdapter owner recall probe"
+    },
+    {
+      "name": "replay_duplicate_side_effect_count",
+      "sample_count": 2,
+      "violation_count": 0,
+      "evidence": "SQLiteMemoryAdapter mutation replay"
+    },
+    {
+      "name": "wrong_sku_group_count",
+      "sample_count": 2,
+      "violation_count": 0,
+      "evidence": "candidate sku_key → same_item_key consistency"
+    },
+    {
+      "name": "price_fact_error_count",
+      "sample_count": 6,
+      "violation_count": 0,
+      "evidence": "真实召回策略 model_copy 后 Offer.price 保持一致"
+    },
+    {
+      "name": "sensitive_field_leakage_count",
+      "sample_count": 1,
+      "violation_count": 0,
+      "evidence": "OpenTelemetry structured span projection"
+    }
+  ],
+  "invariant_gate_passed": true,
+  "all_passed": true
+}

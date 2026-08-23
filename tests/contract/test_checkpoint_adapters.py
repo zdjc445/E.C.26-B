@@ -6,6 +6,7 @@ Postgres 真实读写需要可用实例，标 ``integration`` 且默认被 ``-m 
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sqlite3
@@ -24,6 +25,9 @@ from shijiajing_agent.contracts import (
     AgentResponse,
     AgentStatus,
     CompletionReason,
+    ImageContentType,
+    ImageRef,
+    MatchPair,
     RecognitionResult,
 )
 from shijiajing_agent.domain.evidence import EvidenceBundle, GroupEvidence
@@ -91,6 +95,15 @@ def make_state(**overrides: Any) -> AgentState:
         ],
         notices=["价格含运费"],
     )
+    state["same_item_review_pairs"] = [
+        MatchPair(
+            offer_a_id="offer-a",
+            offer_b_id="offer-b",
+            same_item_score=0.7,
+            hard_conflicts=["identity:color"],
+            verdict="review",
+        )
+    ]
     state.update(overrides)
     return state
 
@@ -129,6 +142,10 @@ class TestSQLiteCheckpoint:
         assert isinstance(bundle.groups[0], GroupEvidence)
         assert bundle.groups[0].min_price == pytest.approx(1999.0)
         assert bundle.query_summary == "Sony WH-1000XM5 耳机比价"
+        review_pairs = loaded["same_item_review_pairs"]
+        assert isinstance(review_pairs[0], MatchPair)
+        assert review_pairs[0].verdict == "review"
+        assert review_pairs[0].hard_conflicts == ["identity:color"]
 
     async def test_version_increments_and_stays_consistent(self, adapter) -> None:
         state = make_state()
@@ -138,6 +155,38 @@ class TestSQLiteCheckpoint:
         loaded, version = await adapter.load("s1")
         assert loaded is not None and version == 2
         assert loaded["state_version"] == 2
+
+    async def test_persisted_request_does_not_contain_raw_input(
+        self, adapter, db_path: str
+    ) -> None:
+        state = make_state(
+            current_request=AgentRequest(
+                session_id="s1",
+                request_id="r1",
+                text="完整用户文本",
+                image=ImageRef(
+                    image_id="img-1",
+                    uri="data:image/png;base64,AAAA",
+                    content_type=ImageContentType.PNG,
+                    sha256="b" * 64,
+                ),
+            )
+        )
+        await adapter.save("s1", state, None)
+        with sqlite3.connect(db_path) as conn:
+            raw = conn.execute(
+                "SELECT state_json FROM agent_checkpoint WHERE session_id = ?", ("s1",)
+            ).fetchone()[0]
+        assert "完整用户文本" not in raw
+        assert "data:image/png;base64,AAAA" not in raw
+
+        loaded, _ = await adapter.load("s1")
+        assert loaded is not None
+        persisted_request = loaded["current_request"]
+        assert isinstance(persisted_request, AgentRequest)
+        assert persisted_request.text is None
+        assert persisted_request.image is not None
+        assert persisted_request.image.uri.startswith("https://redacted.invalid/image/")
 
     async def test_optimistic_version_conflict(self, adapter) -> None:
         state = make_state()
@@ -213,6 +262,20 @@ class TestSQLiteCheckpoint:
         with pytest.raises(CheckpointUnavailableError, match="已关闭"):
             await adapter.save("s1", make_state(), None)
 
+    async def test_resume_claim_is_idempotent(self, adapter) -> None:
+        first, second, other = await asyncio.gather(
+            adapter.claim_resume("resume-session", "interrupt-1"),
+            adapter.claim_resume("resume-session", "interrupt-1"),
+            adapter.claim_resume("resume-session", "interrupt-2"),
+        )
+        assert sorted((first, second)) == [False, True]
+        assert other is True
+
+    async def test_resume_claim_can_be_released_for_retry(self, adapter) -> None:
+        assert await adapter.claim_resume("resume-release", "interrupt-1") is True
+        await adapter.release_resume("resume-release", "interrupt-1")
+        assert await adapter.claim_resume("resume-release", "interrupt-1") is True
+
     async def test_empty_dsn_rejected(self) -> None:
         with pytest.raises(ValueError, match="CHECKPOINT_DSN"):
             SQLiteCheckpointAdapter("")
@@ -254,13 +317,16 @@ class TestSQLiteCheckpoint:
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not os.environ.get("SHIJIAJING_TEST_POSTGRES_DSN"),
+    not os.environ.get("SHIJIAJING_TEST_POSTGRES_DSN")
+    and os.environ.get("SHIJIAJING_REQUIRE_POSTGRES") != "1",
     reason="需要 SHIJIAJING_TEST_POSTGRES_DSN 指向可用 Postgres",
 )
 class TestPostgresCheckpointAdapter:
     @pytest.fixture
     async def pg_adapter(self):
-        dsn = os.environ["SHIJIAJING_TEST_POSTGRES_DSN"]
+        dsn = os.environ.get("SHIJIAJING_TEST_POSTGRES_DSN")
+        if not dsn:
+            pytest.fail("SHIJIAJING_TEST_POSTGRES_DSN 必须指向可用 Postgres")
         adapter = PostgresCheckpointAdapter(dsn)
         yield adapter
         await adapter.close()
@@ -288,6 +354,20 @@ class TestPostgresCheckpointAdapter:
         _, version = await pg_adapter.load("pg-lock")
         assert version == 2
 
+    async def test_resume_claim_is_idempotent(self, pg_adapter) -> None:
+        import asyncio
+
+        results = await asyncio.gather(
+            pg_adapter.claim_resume("pg-resume", "interrupt-1"),
+            pg_adapter.claim_resume("pg-resume", "interrupt-1"),
+        )
+        assert sorted(results) == [False, True]
+
+    async def test_resume_claim_can_be_released_for_retry(self, pg_adapter) -> None:
+        assert await pg_adapter.claim_resume("pg-resume-release", "interrupt-1") is True
+        await pg_adapter.release_resume("pg-resume-release", "interrupt-1")
+        assert await pg_adapter.claim_resume("pg-resume-release", "interrupt-1") is True
+
     async def test_empty_dsn_rejected(self) -> None:
         with pytest.raises(ValueError, match="CHECKPOINT_DSN"):
             PostgresCheckpointAdapter("")
@@ -295,12 +375,13 @@ class TestPostgresCheckpointAdapter:
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    os.environ.get("SHIJIAJING_TEST_DOCKER") != "1",
+    os.environ.get("SHIJIAJING_TEST_DOCKER") != "1"
+    and os.environ.get("SHIJIAJING_REQUIRE_POSTGRES") != "1",
     reason="需要 SHIJIAJING_TEST_DOCKER=1 且本机可用 Docker",
 )
 class TestPostgresViaTestcontainers:
     async def test_restart_recovery(self) -> None:
-        from testcontainers.postgres import PostgresContainer
+        from testcontainers.community.postgres import PostgresContainer
 
         with PostgresContainer("postgres:16-alpine") as pg:
             dsn = pg.get_connection_url()

@@ -1,0 +1,115 @@
+{
+  "run_id": "run-20260822-122827-512",
+  "started_at": "2026-08-22T04:28:27.5222246Z",
+  "ended_at": "2026-08-22T04:28:59.1318724Z",
+  "status": "passed",
+  "error": null,
+  "exit_code": 0,
+  "transcript": "transcript.log",
+  "commands": [
+    "docker compose --project-name shijiajing-phase2-13808 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml up -d",
+    "uv run pytest -q -m integration tests/contract/test_native_checkpointers.py",
+    "uv run pytest -q -m integration tests/contract/test_request_ledger.py",
+    "uv run pytest -q -m integration tests/contract/test_memory_adapters.py",
+    "uv run pytest -q -m integration tests/contract/test_cache_adapters.py",
+    "uv run pytest -q -m integration tests/contract/test_event_store.py",
+    "docker compose --project-name shijiajing-phase2-13808 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml restart postgres",
+    "uv run shijiajing-preflight --storage-only --verify-trace --json",
+    "docker compose --project-name shijiajing-phase2-13808 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml logs --no-color",
+    "docker compose --project-name shijiajing-phase2-13808 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml down"
+  ],
+  "command_results": [
+    {
+      "command": "docker compose --project-name shijiajing-phase2-13808 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml up -d",
+      "started_at": "2026-08-22T04:28:27.5573610Z",
+      "ended_at": "2026-08-22T04:28:28.6892095Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_native_checkpointers.py",
+      "started_at": "2026-08-22T04:28:34.3053007Z",
+      "ended_at": "2026-08-22T04:28:37.1648063Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_request_ledger.py",
+      "started_at": "2026-08-22T04:28:37.1655087Z",
+      "ended_at": "2026-08-22T04:28:39.7703677Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_memory_adapters.py",
+      "started_at": "2026-08-22T04:28:39.7710052Z",
+      "ended_at": "2026-08-22T04:28:42.4054559Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_cache_adapters.py",
+      "started_at": "2026-08-22T04:28:42.4058849Z",
+      "ended_at": "2026-08-22T04:28:44.9543297Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run pytest -q -m integration tests/contract/test_event_store.py",
+      "started_at": "2026-08-22T04:28:44.9547119Z",
+      "ended_at": "2026-08-22T04:28:47.5574706Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-13808 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml restart postgres",
+      "started_at": "2026-08-22T04:28:47.5578386Z",
+      "ended_at": "2026-08-22T04:28:49.0035105Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "uv run shijiajing-preflight --storage-only --verify-trace --json",
+      "started_at": "2026-08-22T04:28:54.5087785Z",
+      "ended_at": "2026-08-22T04:28:57.1016228Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-13808 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml logs --no-color",
+      "started_at": "2026-08-22T04:28:57.1077409Z",
+      "ended_at": "2026-08-22T04:28:57.3260982Z",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    {
+      "command": "docker compose --project-name shijiajing-phase2-13808 --env-file D:\\E.C.26-B\\deploy\\phase2\\.env.example --file D:\\E.C.26-B\\deploy\\phase2\\docker-compose.yml down",
+      "started_at": "2026-08-22T04:28:57.3273559Z",
+      "ended_at": "2026-08-22T04:28:59.0063159Z",
+      "exit_code": 0,
+      "status": "passed"
+    }
+  ],
+  "health": {
+    "postgres": "healthy",
+    "otel-collector": "healthy"
+  },
+  "services_kept": false,
+  "postgres_port": 55432,
+  "otlp_http_port": 44318,
+  "otlp_grpc_port": 44317,
+  "postgres_pool": {
+    "min_size": "2",
+    "max_size": "8",
+    "timeout_seconds": "12.5"
+  },
+  "backup_restore": {
+    "requested": false,
+    "status": "not_requested",
+    "dump": null,
+    "source_public_table_count": null,
+    "restored_public_table_count": null,
+    "sentinel_rows": null,
+    "error": null
+  }
+}

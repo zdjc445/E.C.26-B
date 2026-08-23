@@ -23,6 +23,7 @@ from shijiajing_agent.evals import (
     _recall_at,
     compute_report,
     dataset_digest,
+    default_datasets_dir,
     evaluate_same_item,
     gate_check,
     load_all_datasets,
@@ -110,6 +111,11 @@ def test_load_all_datasets_seed_dir() -> None:
         "same_item",
         "ranking",
         "workflow",
+        "memory",
+        "multi_agent",
+        "interrupt",
+        "cache",
+        "retrieval_strategy",
     }
     for rows in datasets.values():
         assert rows, "每个数据集至少一行"
@@ -154,3 +160,41 @@ def test_gate_check_seed_report(taxonomy) -> None:
     assert len(all_blocking) == 4
     for m in all_blocking:
         assert m.passed is True
+
+
+def test_release_gate_eligibility_requires_manifest_gate_flag(taxonomy) -> None:
+    datasets = load_all_datasets(default_datasets_dir())
+    report = compute_report(
+        datasets,
+        taxonomy,
+        source="offline",
+        generated_at="2026-08-13T00:00:00+00:00",
+        datasets_dir=default_datasets_dir(),
+        trust_level="frozen",
+        label_method="adjudicated",
+        gate_eligible=False,
+    )
+
+    assert report.release_gate_eligible is False
+    assert report.release_gate_passed is False
+
+
+def test_release_gate_never_passes_with_pending_blocking_metric(taxonomy) -> None:
+    datasets = load_all_datasets(default_datasets_dir())
+    datasets["retrieval"] = [
+        sample.model_copy(update={"recorded": None}) for sample in datasets["retrieval"]
+    ]
+    report = compute_report(
+        datasets,
+        taxonomy,
+        source="offline",
+        generated_at="2026-08-13T00:00:00+00:00",
+        datasets_dir=default_datasets_dir(),
+        trust_level="frozen",
+        label_method="adjudicated",
+        gate_eligible=True,
+    )
+
+    assert report.metric_gate_passed is True
+    assert report.blocking_pending
+    assert report.release_gate_passed is False

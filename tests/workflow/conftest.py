@@ -40,6 +40,12 @@ class FakeVisionModel:
         self.errors: list[Exception] = []
         self.results: list[RecognitionResult] = []
 
+    async def setup(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
     async def recognize(self, image: ImageRef, taxonomy: Taxonomy) -> RecognitionResult:
         self.calls += 1
         if self.errors:
@@ -120,6 +126,12 @@ class FakeRetrieval:
         self.sequence: list[RetrievalResult | Exception] = []
         self.last_query: RetrievalQuery | None = None
 
+    async def setup(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
     async def search(
         self,
         query: RetrievalQuery,
@@ -146,6 +158,13 @@ class FakeCheckpoint:
         self.store: dict[str, tuple[AgentState, int]] = {}
         self.version = 0
         self.conflict_on_save = False
+        self.resume_claims: set[tuple[str, str]] = set()
+
+    async def setup(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
 
     def seed(self, session_id: str, state: AgentState, version: int) -> None:
         self.version = max(self.version, version)
@@ -169,10 +188,26 @@ class FakeCheckpoint:
         self.store[session_id] = (dict(state), self.version)
         return self.version
 
+    async def claim_resume(self, session_id: str, interrupt_id: str) -> bool:
+        key = (session_id, interrupt_id)
+        if key in self.resume_claims:
+            return False
+        self.resume_claims.add(key)
+        return True
+
+    async def release_resume(self, session_id: str, interrupt_id: str) -> None:
+        self.resume_claims.discard((session_id, interrupt_id))
+
 
 class FakeTraceSink:
     def __init__(self) -> None:
         self.events: list[AgentEvent] = []
+
+    async def setup(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
 
     async def emit(self, event: AgentEvent) -> None:
         self.events.append(event)

@@ -338,6 +338,17 @@ async def test_build_factory_returns_all_models(ark_settings: Settings) -> None:
     assert isinstance(explanation, ArkExplanationModel)
 
 
+async def test_model_adapters_close_shared_client_idempotently(ark_settings: Settings) -> None:
+    vision, intent, rewrite, explanation = build_ark_models(ark_settings)
+
+    await vision.close()
+    await intent.close()
+    await rewrite.close()
+    await explanation.close()
+
+    await vision.close()
+
+
 async def test_prompt_versions_loaded() -> None:
     for name in ("vision.md", "intent.md", "query_rewrite.md", "explanation.md"):
         version, text = load_prompt(name)

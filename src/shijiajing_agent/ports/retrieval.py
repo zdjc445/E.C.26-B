@@ -10,6 +10,7 @@ from dataclasses import field as dc_field
 from typing import Protocol
 
 from shijiajing_agent.contracts import ImageRef, RetrievalCandidate, RetrievalQuery
+from shijiajing_agent.ports.lifecycle import ResourceLifecyclePort
 
 
 @dataclass
@@ -20,9 +21,11 @@ class RetrievalResult:
     fallback_reason: str | None = None
     channel_counts: dict[str, int] = dc_field(default_factory=dict[str, int])
     index_version: str | None = None
+    fusion_version: str | None = None
+    rerank_version: str | None = None
 
 
-class ProductRetrievalPort(Protocol):
+class ProductRetrievalPort(ResourceLifecyclePort, Protocol):
     """混合召回。dense + sparse/BM25 + metadata filter（+image similarity）。"""
 
     async def search(

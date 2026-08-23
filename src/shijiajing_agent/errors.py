@@ -24,6 +24,16 @@ class ErrorCode(StrEnum):
     WORKFLOW_STEP_LIMIT = "WORKFLOW_STEP_LIMIT"
     TURN_TIMEOUT = "TURN_TIMEOUT"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+    REQUEST_LEDGER_UNAVAILABLE = "REQUEST_LEDGER_UNAVAILABLE"
+    MEMORY_UNAVAILABLE = "MEMORY_UNAVAILABLE"
+    MEMORY_CONFLICT = "MEMORY_CONFLICT"
+    CACHE_UNAVAILABLE = "CACHE_UNAVAILABLE"
+    EVENT_STORE_UNAVAILABLE = "EVENT_STORE_UNAVAILABLE"
+    EVENT_CONFLICT = "EVENT_CONFLICT"
+    TASK_RESULT_CONFLICT = "TASK_RESULT_CONFLICT"
+    PLAN_INVALID = "PLAN_INVALID"
+    CAPABILITY_DENIED = "CAPABILITY_DENIED"
+    HANDOFF_REJECTED = "HANDOFF_REJECTED"
 
 
 class ShijiajingError(Exception):
@@ -95,6 +105,56 @@ class WorkflowStepLimitError(ShijiajingError):
 class TurnTimeoutError(ShijiajingError):
     code = ErrorCode.TURN_TIMEOUT
     user_message = "请求处理超时"
+
+
+class RequestLedgerUnavailableError(ShijiajingError):
+    code = ErrorCode.REQUEST_LEDGER_UNAVAILABLE
+    user_message = "请求结果账本不可用"
+
+
+class MemoryUnavailableError(ShijiajingError):
+    code = ErrorCode.MEMORY_UNAVAILABLE
+    user_message = "长期记忆不可用"
+
+
+class MemoryConflictError(ShijiajingError):
+    code = ErrorCode.MEMORY_CONFLICT
+    user_message = "长期记忆版本冲突"
+
+
+class CacheUnavailableError(ShijiajingError):
+    code = ErrorCode.CACHE_UNAVAILABLE
+    user_message = "缓存不可用"
+
+
+class EventStoreUnavailableError(ShijiajingError):
+    code = ErrorCode.EVENT_STORE_UNAVAILABLE
+    user_message = "事件存储不可用"
+
+
+class EventConflictError(ShijiajingError):
+    code = ErrorCode.EVENT_CONFLICT
+    user_message = "事件内容冲突"
+
+
+class TaskResultConflictError(ShijiajingError):
+    code = ErrorCode.TASK_RESULT_CONFLICT
+    user_message = "任务结果冲突，未覆盖已有结果"
+
+
+class PlanValidationError(ShijiajingError):
+    code = ErrorCode.PLAN_INVALID
+    user_message = "执行计划非法"
+
+
+class CapabilityDeniedError(ShijiajingError):
+    code = ErrorCode.CAPABILITY_DENIED
+    user_message = "Agent 没有执行该能力的权限"
+
+
+class HandoffRejectedError(ShijiajingError):
+    code = ErrorCode.HANDOFF_REJECTED
+    user_message = "Agent handoff 未获 Supervisor 批准"
 
 
 def validation_to_code(exc: ValidationError) -> ErrorCode:

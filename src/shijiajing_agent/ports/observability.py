@@ -9,9 +9,10 @@ from __future__ import annotations
 from typing import Protocol
 
 from shijiajing_agent.contracts import AgentEvent
+from shijiajing_agent.ports.lifecycle import ResourceLifecyclePort
 
 
-class TraceSinkPort(Protocol):
+class TraceSinkPort(ResourceLifecyclePort, Protocol):
     """事件与节点记录 sink。失败不阻断业务。"""
 
     async def emit(self, event: AgentEvent) -> None: ...
