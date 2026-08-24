@@ -18,6 +18,7 @@ import pytest
 
 import shijiajing_agent
 import shijiajing_agent.deps as deps_module
+from shijiajing_agent.adapters.ark_supervisor_planner import ArkSupervisorPlanner
 from shijiajing_agent.adapters.local_retrieval import LocalLexicalRetrievalAdapter
 from shijiajing_agent.adapters.milvus_retrieval import MilvusHybridRetrievalAdapter
 from shijiajing_agent.config import Settings
@@ -122,6 +123,23 @@ def test_make_deps_assembles_with_full_config(tmp_path: Path) -> None:
     assert deps.retrieval._metrics is deps.metrics
     assert deps.vision._client._metrics is deps.metrics
     assert deps.checkpoint is not None
+
+
+def test_make_deps_assembles_configured_supervisor_planner(tmp_path: Path) -> None:
+    snapshot = tmp_path / "offers.jsonl"
+    snapshot.write_text(make_offer("o-planner", price=1999.0).model_dump_json(), encoding="utf-8")
+    settings = Settings(
+        ark_api_key="mock-key",
+        ark_base_url="https://mock-ark.example/v1",
+        ark_vision_model="mock-vision",
+        ark_text_model="mock-text",
+        supervisor_model="mock-supervisor",
+        supervisor_planner_mode="active_replan",
+        local_product_snapshot_path=str(snapshot),
+        checkpoint_dsn=str(tmp_path / "checkpoint.db"),
+    )
+    deps = make_deps(settings)
+    assert isinstance(deps.supervisor_planner, ArkSupervisorPlanner)
 
 
 def test_make_deps_assembles_with_local_snapshot_only(tmp_path: Path) -> None:

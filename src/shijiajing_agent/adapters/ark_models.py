@@ -177,6 +177,7 @@ class ArkModelClient:
         self._settings = settings
         self._metrics = metrics
         self._on_call = on_call or record_model_call
+        self._last_call: ModelCallRecord | None = None
         http_client = httpx.AsyncClient(transport=transport) if transport else None
         # max_retries=0：重试由本适配器按 max_network_attempts 控制，避免 SDK 内部重试叠加
         self._client = AsyncOpenAI(
@@ -191,6 +192,11 @@ class ArkModelClient:
     def settings(self) -> Settings:
         return self._settings
 
+    @property
+    def last_call(self) -> ModelCallRecord | None:
+        """最近一次调用摘要；不保存模型原始响应。"""
+        return self._last_call
+
     async def close(self) -> None:
         if self._closed:
             return
@@ -203,6 +209,7 @@ class ArkModelClient:
         model: str,
         messages: list[dict[str, Any]],
         timeout_seconds: float,
+        max_tokens: int | None = None,
     ) -> tuple[str, dict[str, int] | None, int]:
         """一次完整对话调用（网络失败最多重试 max_network_attempts 次）。
 
@@ -212,14 +219,17 @@ class ArkModelClient:
         max_attempts = max(1, self._settings.max_network_attempts)
         for attempt in range(1, max_attempts + 1):
             try:
-                resp = await self._client.chat.completions.create(
-                    model=model,
+                request_kwargs: dict[str, Any] = {
+                    "model": model,
                     # 动态消息（含修复轮追加）与 SDK 的 ChatCompletionMessageParam 字面类型
                     # 不直接兼容，边界处转 Any（结构由本适配器自校验）
-                    messages=cast(Any, messages),
-                    temperature=0,
-                    timeout=timeout_seconds,
-                )
+                    "messages": cast(Any, messages),
+                    "temperature": 0,
+                    "timeout": timeout_seconds,
+                }
+                if max_tokens is not None:
+                    request_kwargs["max_tokens"] = max_tokens
+                resp = await self._client.chat.completions.create(**request_kwargs)
                 content = (resp.choices[0].message.content or "") if resp.choices else ""
                 usage = resp.usage
                 tokens = (
@@ -249,6 +259,8 @@ class ArkModelClient:
         timeout_seconds: float,
         repair_instruction: str,
         error_kind: type[ModelOutputInvalidError] | type[VisionUnavailableError],
+        max_repairs: int | None = None,
+        max_tokens: int | None = None,
     ) -> BaseModel:
         """结构化输出调用（§11.1）：解析 + 类型校验 + 最多 max_model_repairs 次修复。
 
@@ -265,11 +277,17 @@ class ArkModelClient:
         repair_count = 0
         tokens: dict[str, int] | None = None
         errors: list[str] = []
-        max_repairs = max(0, self._settings.max_model_repairs)
-        for round_no in range(1 + max_repairs):
+        repair_limit = max(
+            0,
+            self._settings.max_model_repairs if max_repairs is None else max_repairs,
+        )
+        for round_no in range(1 + repair_limit):
             try:
                 content, tokens, attempt_count = await self.chat(
-                    model=model, messages=messages, timeout_seconds=timeout_seconds
+                    model=model,
+                    messages=messages,
+                    timeout_seconds=timeout_seconds,
+                    max_tokens=max_tokens,
                 )
             except Exception as exc:  # 网络失败重试耗尽：转为节点可降级的错误类型（§21.2）
                 attempts += max(1, self._settings.max_network_attempts)
@@ -295,7 +313,7 @@ class ArkModelClient:
                 obj = schema.model_validate(data)
             except (ValueError, ValidationError) as exc:
                 summary = _summarize_validation_error(exc)
-                if round_no >= max_repairs:
+                if round_no >= repair_limit:
                     self.finish(
                         node=node,
                         prompt_version=prompt_version,
@@ -310,7 +328,7 @@ class ArkModelClient:
                         messages=messages,
                     )
                     raise error_kind(
-                        f"{node} 模型结构化输出校验失败（{max_repairs} 次修复后）：{summary}"
+                        f"{node} 模型结构化输出校验失败（{repair_limit} 次修复后）：{summary}"
                     ) from exc
                 errors.append(summary)
                 repair_count += 1
@@ -376,6 +394,7 @@ class ArkModelClient:
                 self._metrics.inc("model_repair_count", {"node": node}, value=float(repair_count))
         if self._on_call is not None:
             self._on_call(record)
+        self._last_call = record
         return record
 
 
@@ -400,6 +419,11 @@ class ArkVisionModel:
     def __init__(self, client: ArkModelClient) -> None:
         self._client = client
         self._version, self._prompt = load_prompt("vision.md")
+
+    @property
+    def client(self) -> ArkModelClient:
+        """共享 Ark 客户端；runtime 用 Vision 作为唯一 owner 注册关闭。"""
+        return self._client
 
     async def setup(self) -> None:
         """Ark 客户端按首次请求惰性建立连接；保留统一 runtime 生命周期入口。"""
@@ -632,8 +656,23 @@ def build_ark_models(
     on_call: Callable[[ModelCallRecord], None] | None = None,
 ) -> tuple[ArkVisionModel, ArkIntentModel, ArkQueryRewrite, ArkExplanationModel]:
     """构建四个 Ark 模型适配器（共享一个客户端）。测试可注入 transport。"""
+    _, vision, intent, query_rewrite, explanation = build_ark_model_bundle(
+        settings, transport=transport, metrics=metrics, on_call=on_call
+    )
+    return vision, intent, query_rewrite, explanation
+
+
+def build_ark_model_bundle(
+    settings: Settings,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+    metrics: MetricsPort | None = None,
+    on_call: Callable[[ModelCallRecord], None] | None = None,
+) -> tuple[ArkModelClient, ArkVisionModel, ArkIntentModel, ArkQueryRewrite, ArkExplanationModel]:
+    """返回共享客户端和四个业务模型 Port，供 Planner 复用同一客户端生命周期。"""
     client = ArkModelClient(settings, transport=transport, metrics=metrics, on_call=on_call)
     return (
+        client,
         ArkVisionModel(client),
         ArkIntentModel(client),
         ArkQueryRewrite(client),

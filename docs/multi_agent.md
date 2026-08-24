@@ -3,10 +3,11 @@
 > 当前状态：受控 Multi-Agent 为默认路径；legacy `workflow` 保持原有 Supervisor + 专业子图兼容路径。Multi-Agent
 > 已增加 2.0 协议、确定性计划、registry、五类私有 Agent invocation、双层 native
 > checkpoint namespace、Send/Command 派发、受控 replan、四类 HITL resume 和三种灰度模式。
-> shadow 对照报告与发布门禁已提供；正式外部证据仍需部署环境生成。
+> shadow 对照报告与发布门禁已提供；正式外部证据仍需部署环境生成。模型 Supervisor Planner 已提供
+> allowlist proposal、确定性 Materializer、Ark 适配器和可回退模式；默认仍为 `off`。
 > 目标 Multi-Agent 架构和分阶段迁移方案见
 > [`docs/plans/multi_agent_upgrade_plan.md`](plans/multi_agent_upgrade_plan.md)。模型 Supervisor
-> Planner 当前只有可插拔接口和确定性回退骨架，尚未接入真实模型；实施设计见
+> Planner 通过 `SHIJIAJING_SUPERVISOR_PLANNER_MODE` 可选接入真实模型，默认使用确定性回退；实施设计见
 > [`docs/plans/model_supervisor_planner_implementation_plan.md`](plans/model_supervisor_planner_implementation_plan.md)。
 
 根图名称固定为 `shijiajing-supervisor`。专业子图提供可独立装配的 LangGraph 入口；根图负责依赖、汇合、HITL、持久化和最终响应，确定性业务算法仍留在 `domain/`。

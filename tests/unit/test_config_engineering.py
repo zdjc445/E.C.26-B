@@ -12,6 +12,30 @@ def test_multi_agent_is_the_default_orchestration_mode() -> None:
     assert load_settings({}).orchestration_mode == "multi_agent"
 
 
+def test_supervisor_planner_modes_and_limits_are_loaded() -> None:
+    settings = load_settings(
+        {
+            "SHIJIAJING_SUPERVISOR_PLANNER_MODE": "active_replan",
+            "SHIJIAJING_SUPERVISOR_MODEL": "supervisor-v1",
+            "SHIJIAJING_SUPERVISOR_PLANNER_TIMEOUT_SECONDS": "4.5",
+            "SHIJIAJING_SUPERVISOR_PLANNER_MAX_REPAIRS": "0",
+            "SHIJIAJING_SUPERVISOR_PLANNER_MAX_TOKENS": "900",
+        }
+    )
+    assert settings.supervisor_planner_mode == "active_replan"
+    assert settings.supervisor_model == "supervisor-v1"
+    assert settings.supervisor_planner_timeout_seconds == 4.5
+    assert settings.supervisor_planner_max_repairs == 0
+    assert settings.supervisor_planner_max_tokens == 900
+
+    missing = Settings(
+        checkpoint_dsn="checkpoint.db",
+        supervisor_planner_mode="active",
+    )
+    assert "SUPERVISOR_MODEL" in missing.validate_engineering()
+    assert "SUPERVISOR_MODEL" in missing.validate(require_real_adapters=True)
+
+
 def test_environment_names_are_exact() -> None:
     assert load_settings({"SHIJIAJING_ENV": "prod"}).env == "prod"
     assert Settings(env="dev", checkpoint_dsn="checkpoint.db").validate_engineering() == []

@@ -7,7 +7,7 @@ Checkpoint 中保存摘要和内容哈希。
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Required, TypedDict
+from typing import TYPE_CHECKING, Annotated, Any, Required, TypedDict
 
 from shijiajing_agent.contracts import (
     AgentEventRecord,
@@ -39,6 +39,9 @@ from shijiajing_agent.contracts import (
 )
 from shijiajing_agent.domain.evidence import EvidenceBundle
 from shijiajing_agent.errors import TaskResultConflictError
+
+if TYPE_CHECKING:
+    from shijiajing_agent.multi_agent.planner_contracts import PlanningOutcome
 
 # 当前 Checkpoint schema 版本（§17.1）；不兼容版本拒绝直接加载，须显式迁移
 SCHEMA_VERSION = "1.1"
@@ -371,6 +374,7 @@ class SupervisorState(TypedDict, total=False):
     current_request: AgentRequest
     execution_context: AgentExecutionContext
     plan: ExecutionPlan
+    planning_outcome: PlanningOutcome | None
     task_records: dict[str, TaskRecord]
     task_results: Annotated[dict[str, AgentResultV2], merge_task_results]
     canonical_understanding: CanonicalUnderstanding

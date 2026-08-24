@@ -112,7 +112,7 @@ class PlanMaterializer:
             replace_task_ids=replacements,
         )
         plan = apply_plan_patch(base_plan, patch)
-        return MaterializationResult(kind="plan", plan=plan, patch=patch)
+        return MaterializationResult(kind="patch", plan=plan, patch=patch)
 
     @staticmethod
     def _validate_action_matches_entry(action: PlannerAction, entry: AllowedAction) -> None:

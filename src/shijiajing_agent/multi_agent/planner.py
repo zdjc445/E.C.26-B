@@ -302,9 +302,11 @@ class GuardedSupervisorPlanner:
         self,
         deterministic: DeterministicPlanner,
         candidate: Any | None = None,
+        mode: str = "active",
     ) -> None:
         self._deterministic = deterministic
         self._candidate = candidate
+        self._mode = mode
         self._last_outcome: PlanningOutcome | None = None
 
     @property
@@ -319,10 +321,22 @@ class GuardedSupervisorPlanner:
             context=request.execution_context,
             taxonomy_version=request.taxonomy_version,
         )
-        if self._candidate is not None:
+        model_enabled = self._candidate is not None and self._mode in {"shadow", "active"}
+        if model_enabled:
             try:
                 proposed = await self._candidate.create_plan(request)
                 accepted = PlanValidator().validate(proposed)
+                if self._mode == "shadow":
+                    self._last_outcome = self._outcome(
+                        operation="create",
+                        plan=base,
+                        source="deterministic",
+                        model_attempted=True,
+                        accepted=False,
+                        fallback_reason="MODEL_PLAN_SHADOWED",
+                        duration_ms=(datetime.now(UTC) - started).total_seconds() * 1000,
+                    )
+                    return base
                 self._last_outcome = self._outcome(
                     operation="create",
                     plan=accepted,
@@ -353,10 +367,30 @@ class GuardedSupervisorPlanner:
 
     async def revise_plan(self, request: SupervisorReplanningInput) -> ExecutionPlanPatch:
         started = datetime.now(UTC)
-        if self._candidate is not None:
+        model_enabled = self._candidate is not None and self._mode in {
+            "shadow",
+            "active_replan",
+            "active",
+        }
+        if model_enabled:
             try:
                 proposed = await self._candidate.revise_plan(request)
                 updated = apply_plan_patch(request.plan, proposed)
+                if self._mode == "shadow":
+                    fallback = await DeterministicSupervisorPlanner(
+                        self._deterministic
+                    ).revise_plan(request)
+                    shadow_updated = apply_plan_patch(request.plan, fallback)
+                    self._last_outcome = self._outcome(
+                        operation="replan",
+                        plan=shadow_updated,
+                        source="deterministic",
+                        model_attempted=True,
+                        accepted=False,
+                        fallback_reason="MODEL_PLAN_SHADOWED",
+                        duration_ms=(datetime.now(UTC) - started).total_seconds() * 1000,
+                    )
+                    return fallback
                 self._last_outcome = self._outcome(
                     operation="replan",
                     plan=updated,

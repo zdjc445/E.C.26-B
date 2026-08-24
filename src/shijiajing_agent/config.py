@@ -46,6 +46,10 @@ _DEFAULTS: dict[str, str] = {
     "MAX_AGENT_TASKS": "32",
     "MAX_SUPERVISOR_REPLANS": "2",
     "AGENT_TASK_TIMEOUT_SECONDS": "30",
+    "SUPERVISOR_PLANNER_MODE": "off",
+    "SUPERVISOR_PLANNER_TIMEOUT_SECONDS": "8",
+    "SUPERVISOR_PLANNER_MAX_REPAIRS": "1",
+    "SUPERVISOR_PLANNER_MAX_TOKENS": "1500",
 }
 
 # 外部资源：缺失时必须启动失败（无默认值）
@@ -85,6 +89,10 @@ class Settings:
     graph_persistence_mode: str = "legacy"
     orchestration_mode: str = "multi_agent"
     supervisor_model: str | None = None
+    supervisor_planner_mode: str = "off"
+    supervisor_planner_timeout_seconds: float = 8.0
+    supervisor_planner_max_repairs: int = 1
+    supervisor_planner_max_tokens: int = 1500
     max_agent_tasks: int = 32
     max_supervisor_replans: int = 2
     agent_task_timeout_seconds: float = 30.0
@@ -157,6 +165,8 @@ class Settings:
                 missing.extend((*_MILVUS_REQUIRED, "LOCAL_PRODUCT_SNAPSHOT_PATH"))
             if milvus_configured and self.embedding_model in (None, ""):
                 missing.append("EMBEDDING_MODEL")
+            if self.supervisor_planner_mode != "off" and not self.supervisor_model:
+                missing.append("SUPERVISOR_MODEL")
         return missing
 
     def missing_models(self) -> list[str]:
@@ -193,6 +203,10 @@ class Settings:
             errors.append(f"GRAPH_PERSISTENCE_MODE={self.graph_persistence_mode}")
         if self.orchestration_mode not in {"workflow", "multi_agent_shadow", "multi_agent"}:
             errors.append(f"ORCHESTRATION_MODE={self.orchestration_mode}")
+        if self.supervisor_planner_mode not in {"off", "shadow", "active_replan", "active"}:
+            errors.append(f"SUPERVISOR_PLANNER_MODE={self.supervisor_planner_mode}")
+        if self.supervisor_planner_mode != "off" and not self.supervisor_model:
+            errors.append("SUPERVISOR_MODEL")
         if self.checkpoint_backend not in {"sqlite", "postgres"}:
             errors.append(f"CHECKPOINT_BACKEND={self.checkpoint_backend}")
         if self.checkpoint_backend in {"sqlite", "postgres"} and not self.checkpoint_dsn:
@@ -242,6 +256,7 @@ class Settings:
             ("TURN_TIMEOUT_SECONDS", self.turn_timeout_seconds),
             ("POSTGRES_POOL_TIMEOUT_SECONDS", self.postgres_pool_timeout_seconds),
             ("AGENT_TASK_TIMEOUT_SECONDS", self.agent_task_timeout_seconds),
+            ("SUPERVISOR_PLANNER_TIMEOUT_SECONDS", self.supervisor_planner_timeout_seconds),
         ):
             require_finite_positive(name, value)
         for name, value in (
@@ -276,6 +291,8 @@ class Settings:
             ("RETRIEVAL_RERANK_LIMIT", self.retrieval_rerank_limit),
             ("MAX_AGENT_TASKS", self.max_agent_tasks),
             ("MAX_SUPERVISOR_REPLANS", self.max_supervisor_replans),
+            ("SUPERVISOR_PLANNER_MAX_REPAIRS", self.supervisor_planner_max_repairs),
+            ("SUPERVISOR_PLANNER_MAX_TOKENS", self.supervisor_planner_max_tokens),
         ):
             require_positive(name, value)
         if self.same_item_review_threshold > self.same_item_accept_threshold:
@@ -356,6 +373,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         graph_persistence_mode=get("GRAPH_PERSISTENCE_MODE") or "legacy",
         orchestration_mode=get("ORCHESTRATION_MODE") or "multi_agent",
         supervisor_model=get("SUPERVISOR_MODEL"),
+        supervisor_planner_mode=get("SUPERVISOR_PLANNER_MODE") or "off",
+        supervisor_planner_timeout_seconds=getf("SUPERVISOR_PLANNER_TIMEOUT_SECONDS"),
+        supervisor_planner_max_repairs=geti("SUPERVISOR_PLANNER_MAX_REPAIRS"),
+        supervisor_planner_max_tokens=geti("SUPERVISOR_PLANNER_MAX_TOKENS"),
         max_agent_tasks=geti("MAX_AGENT_TASKS"),
         max_supervisor_replans=geti("MAX_SUPERVISOR_REPLANS"),
         agent_task_timeout_seconds=getf("AGENT_TASK_TIMEOUT_SECONDS"),

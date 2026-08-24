@@ -5,10 +5,11 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from shijiajing_agent.contracts import AgentRequest, ExecutionPlanPatch
+from shijiajing_agent.contracts import AgentRequest, ExecutionPlanPatch, SupervisorPlanningInput
 from shijiajing_agent.errors import PlanValidationError
 from shijiajing_agent.multi_agent.planner import (
     DeterministicPlanner,
+    GuardedSupervisorPlanner,
     PlanValidator,
     apply_plan_patch,
 )
@@ -20,6 +21,16 @@ from shijiajing_agent.multi_agent.planner_materializer import PlanMaterializer
 def _base_plan():
     request = AgentRequest(session_id="planner-test", request_id="create-1", text="索尼耳机")
     return DeterministicPlanner().create_plan(request)
+
+
+class _Candidate:
+    def __init__(self, plan):
+        self.plan = plan
+        self.create_calls = 0
+
+    async def create_plan(self, _request):
+        self.create_calls += 1
+        return self.plan
 
 
 def test_planner_proposal_forbids_extra_fields_and_invalid_shape() -> None:
@@ -156,3 +167,20 @@ def test_plan_validator_normalizes_internal_key_error_to_plan_validation_error()
     )
     with pytest.raises(PlanValidationError):
         PlanValidator().validate(invalid)
+
+
+@pytest.mark.asyncio
+async def test_shadow_mode_validates_model_but_executes_deterministic_plan() -> None:
+    plan = _base_plan()
+    candidate = _Candidate(plan.model_copy(update={"tasks": plan.tasks[:-1]}))
+    guarded = GuardedSupervisorPlanner(DeterministicPlanner(), candidate, mode="shadow")
+    request = SupervisorPlanningInput(
+        request=AgentRequest(session_id="planner-test", request_id="create-1", text="索尼耳机"),
+        taxonomy_version="unknown",
+    )
+    result = await guarded.create_plan(request)
+    assert len(result.tasks) == len(plan.tasks)
+    assert candidate.create_calls == 1
+    assert guarded.last_outcome is not None
+    assert guarded.last_outcome.fallback_reason == "MODEL_PLAN_SHADOWED"
+    assert guarded.last_outcome.source == "deterministic"

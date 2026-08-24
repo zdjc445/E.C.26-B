@@ -95,7 +95,11 @@ class MultiAgentSupervisor:
             max_tasks=getattr(deps.settings, "max_agent_tasks", 32),
             max_replans=getattr(deps.settings, "max_supervisor_replans", 2),
         )
-        self._planner_port = GuardedSupervisorPlanner(self._planner, planner_port)
+        self._planner_port = GuardedSupervisorPlanner(
+            self._planner,
+            planner_port,
+            mode=getattr(deps.settings, "supervisor_planner_mode", "off"),
+        )
         self._checkpoint = checkpoint
 
     @property
@@ -129,14 +133,13 @@ class MultiAgentSupervisor:
             if pause_for_hitl is None
             else pause_for_hitl
         )
-        plan = await self._planner_port.create_plan(
-            SupervisorPlanningInput(
-                request=request,
-                execution_context=context,
-                taxonomy_version=self._deps.taxonomy.taxonomy_version,
-            )
+        baseline_plan = self._planner.create_plan(
+            request,
+            context=context,
+            taxonomy_version=self._deps.taxonomy.taxonomy_version,
         )
-        plan = PlanValidator().validate(plan)
+        plan = baseline_plan
+        planning_outcome = None
         started = perf_counter()
         task_records = {task.task_id: TaskRecord(task=task) for task in plan.tasks}
         state: dict[str, Any] = {
@@ -148,6 +151,7 @@ class MultiAgentSupervisor:
             "current_request": request,
             "execution_context": context,
             "plan": plan,
+            "planning_outcome": planning_outcome,
             "task_records": task_records,
             "task_results": {},
             "canonical_understanding": CanonicalUnderstanding(),
@@ -173,6 +177,25 @@ class MultiAgentSupervisor:
                 if isinstance(restored_plan, ExecutionPlan):
                     plan = restored_plan
                 task_records = dict(state.get("task_records") or task_records)
+        if self._checkpoint is None or checkpoint_version is None:
+            plan = await self._planner_port.create_plan(
+                SupervisorPlanningInput(
+                    request=request,
+                    execution_context=context,
+                    taxonomy_version=self._deps.taxonomy.taxonomy_version,
+                )
+            )
+            planning_outcome = self._planner_port.last_outcome
+            state["plan"] = plan
+            state["planning_outcome"] = planning_outcome
+        else:
+            restored_outcome = state.get("planning_outcome")
+            planning_outcome = (
+                restored_outcome
+                if restored_outcome is None or hasattr(restored_outcome, "plan_hash")
+                else None
+            )
+        plan = PlanValidator().validate(plan)
         results: dict[str, AgentResultV2] = dict(state.get("task_results") or {})
         if self._checkpoint is not None:
             for task in plan.tasks:

@@ -101,7 +101,11 @@ export SHIJIAJING_ARK_API_KEY=...
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
 | `SHIJIAJING_ORCHESTRATION_MODE` | `multi_agent` | `multi_agent` 为 Supervisor 主路径；`workflow` 为旧图兼容路径；`multi_agent_shadow` 为只读对照 |
-| `SHIJIAJING_SUPERVISOR_MODEL` | 空 | 可选结构化 Planner 模型标识；当前确定性 Planner 为唯一执行门禁 |
+| `SHIJIAJING_SUPERVISOR_MODEL` | 空 | Planner 专用 Ark 模型标识；不自动复用 `ARK_TEXT_MODEL` |
+| `SHIJIAJING_SUPERVISOR_PLANNER_MODE` | `off` | `off` / `shadow` / `active_replan` / `active`；非 `off` 必须显式配置 Supervisor 模型 |
+| `SHIJIAJING_SUPERVISOR_PLANNER_TIMEOUT_SECONDS` | 8 | Supervisor Planner 单次调用超时 |
+| `SHIJIAJING_SUPERVISOR_PLANNER_MAX_REPAIRS` | 1 | 结构化输出修复最多次数 |
+| `SHIJIAJING_SUPERVISOR_PLANNER_MAX_TOKENS` | 1500 | Planner 单次输出 token 上限 |
 | `SHIJIAJING_MAX_AGENT_TASKS` | 32 | 单计划任务上限 |
 | `SHIJIAJING_MAX_SUPERVISOR_REPLANS` | 2 | 单轮受控 replan 上限 |
 | `SHIJIAJING_AGENT_TASK_TIMEOUT_SECONDS` | 30 | 单 Agent task deadline 默认值 |
