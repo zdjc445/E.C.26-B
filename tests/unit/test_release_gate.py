@@ -230,6 +230,49 @@ def test_release_gate_passes_only_when_all_machine_checks_and_hashes_pass(
     assert report.blockers == ()
 
 
+def test_release_gate_validates_model_planner_shadow_evidence(tmp_path: Path) -> None:
+    shadow = tmp_path / "planner-shadow.json"
+    _write(
+        shadow,
+        {
+            "schema_version": "1.0",
+            "mode": "multi_agent_shadow",
+            "case_count": 1,
+            "equivalent_count": 1,
+            "equivalent_rate": 1.0,
+            "side_effects_blocked": True,
+            "gate_passed": True,
+            "cases": [
+                {
+                    "case_id": "planner-1",
+                    "equivalent": True,
+                    "legacy_signature": {},
+                    "multi_agent_signature": {},
+                    "differences": [],
+                    "side_effects_blocked": True,
+                }
+            ],
+            "planner": {
+                "data_version": "frozen-2026-08",
+                "model_version": "planner-v1",
+                "sample_count": 1,
+                "plan_difference_count": 0,
+                "latency_ms_p50": 12.0,
+                "latency_ms_p95": 12.0,
+                "token_total": 42,
+                "fallback_count": 0,
+                "invariant_violation_count": 0,
+            },
+        },
+    )
+    report = evaluate_release_gate(
+        planner_shadow_report=shadow,
+        check_client_tools=False,
+    )
+    check = next(item for item in report.checks if item.check_id == "model_planner_shadow")
+    assert check.status.value == "passed"
+
+
 def test_release_gate_rejects_tampered_production_evidence(tmp_path: Path) -> None:
     manifest = tmp_path / "production.json"
     _write_production_manifest(manifest)

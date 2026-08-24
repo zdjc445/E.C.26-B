@@ -5,7 +5,10 @@ from __future__ import annotations
 import pytest
 
 from shijiajing_agent.contracts import AgentRequest, AgentResponse, AgentStatus
+from shijiajing_agent.multi_agent.planner import DeterministicPlanner, plan_hash
+from shijiajing_agent.multi_agent.planner_contracts import PlanningOutcome
 from shijiajing_agent.multi_agent.shadow import (
+    build_planner_shadow_evidence,
     run_shadow_suite,
     validate_shadow_report_payload,
 )
@@ -61,3 +64,31 @@ async def test_shadow_suite_fails_when_business_status_differs() -> None:
     assert report.gate_passed is False
     assert report.cases[0].differences == ("status",)
     assert validate_shadow_report_payload(report.as_dict()) == ("shadow 报告 gate_passed 不为 true")
+
+
+def test_planner_shadow_evidence_contains_plan_latency_token_and_fallback_metrics() -> None:
+    request = AgentRequest(session_id="shadow", request_id="planner-1", text="耳机")
+    plan = DeterministicPlanner().create_plan(request)
+    outcome = PlanningOutcome(
+        operation="create",
+        plan=plan,
+        source="deterministic",
+        model_attempted=True,
+        accepted=False,
+        fallback_reason="MODEL_OUTPUT_INVALID",
+        model="planner-v1",
+        prompt_version="prompt-v1",
+        duration_ms=12.5,
+        plan_hash=plan_hash(plan),
+        token_usage={"total_tokens": 42},
+        task_count=len(plan.tasks),
+    )
+    evidence = build_planner_shadow_evidence(
+        [outcome],
+        [True],
+        data_version="frozen-2026-08",
+        model_version="planner-v1",
+    )
+    assert evidence.as_dict()["plan_difference_count"] == 1
+    assert evidence.as_dict()["token_total"] == 42
+    assert evidence.as_dict()["fallback_count"] == 1

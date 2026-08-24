@@ -88,7 +88,10 @@ def make_deps(
         resource_registrar(vision)
 
     supervisor_planner = None
-    if settings.supervisor_planner_mode != "off":
+    if (
+        settings.orchestration_mode != "workflow"
+        and settings.supervisor_planner_mode != "off"
+    ):
         client = getattr(vision, "client", None)
         if client is None:
             raise ValueError("Supervisor Planner 无法取得共享 ArkModelClient")

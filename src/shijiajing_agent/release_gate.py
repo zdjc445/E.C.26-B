@@ -104,6 +104,7 @@ def evaluate_release_gate(
     eval_report: Path | None = None,
     benchmark_report: Path | None = None,
     shadow_report: Path | None = None,
+    planner_shadow_report: Path | None = None,
     production_evidence_manifest: Path | None = None,
     check_client_tools: bool = True,
 ) -> ReleaseGateReport:
@@ -115,6 +116,8 @@ def evaluate_release_gate(
     ]
     if shadow_report is not None:
         checks.append(_check_shadow_report(shadow_report))
+    if planner_shadow_report is not None:
+        checks.append(_check_planner_shadow_report(planner_shadow_report))
     if check_client_tools:
         checks.append(_check_client_tools())
     checks.extend(_check_production_evidence(production_evidence_manifest))
@@ -134,6 +137,23 @@ def _check_shadow_report(path: Path | None) -> ReleaseCheck:
     if validation_error is not None:
         return _failed(check_id, validation_error, path)
     return _passed(check_id, "旧 Workflow 与 Multi-Agent 冻结用例对照通过", path)
+
+
+def _check_planner_shadow_report(path: Path | None) -> ReleaseCheck:
+    check_id = "model_planner_shadow"
+    payload = _load_json(path)
+    if payload is None:
+        return _pending(check_id, "缺少模型 Planner shadow JSON 报告", path)
+    validation_error = validate_shadow_report_payload(payload)
+    if validation_error is not None:
+        return _failed(check_id, validation_error, path)
+    if "planner" not in payload:
+        return _failed(check_id, "模型 Planner shadow 报告缺少 planner 证据", path)
+    return _passed(
+        check_id,
+        "模型 Planner shadow 样本、计划差异、延迟、token 与回退证据已校验",
+        path,
+    )
 
 
 def build_production_evidence_manifest(

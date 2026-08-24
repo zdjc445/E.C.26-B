@@ -142,6 +142,24 @@ def test_make_deps_assembles_configured_supervisor_planner(tmp_path: Path) -> No
     assert isinstance(deps.supervisor_planner, ArkSupervisorPlanner)
 
 
+def test_make_deps_does_not_create_planner_for_legacy_workflow(tmp_path: Path) -> None:
+    snapshot = tmp_path / "offers.jsonl"
+    snapshot.write_text(make_offer("o-workflow", price=1999.0).model_dump_json(), encoding="utf-8")
+    settings = Settings(
+        orchestration_mode="workflow",
+        supervisor_model="mock-supervisor",
+        supervisor_planner_mode="active",
+        ark_api_key="mock-key",
+        ark_base_url="https://mock-ark.example/v1",
+        ark_vision_model="mock-vision",
+        ark_text_model="mock-text",
+        local_product_snapshot_path=str(snapshot),
+        checkpoint_dsn=str(tmp_path / "checkpoint.db"),
+    )
+    deps = make_deps(settings)
+    assert deps.supervisor_planner is None
+
+
 def test_make_deps_assembles_with_local_snapshot_only(tmp_path: Path) -> None:
     """本地快照是 Milvus 三件套的正式替代配置，不要求同时提供 Milvus。"""
     snapshot = tmp_path / "offers.jsonl"

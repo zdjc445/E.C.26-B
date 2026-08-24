@@ -7,14 +7,78 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
 from shijiajing_agent.contracts import AgentRequest, AgentResponse
+from shijiajing_agent.multi_agent.planner_contracts import PlanningOutcome
 
 SHADOW_REPORT_SCHEMA_VERSION = "1.0"
 ShadowRunner = Callable[[AgentRequest], Awaitable[AgentResponse]]
+
+
+@dataclass(frozen=True)
+class PlannerShadowEvidence:
+    """模型 Planner shadow 的逐案例聚合证据。"""
+
+    data_version: str
+    model_version: str
+    sample_count: int
+    plan_difference_count: int
+    latency_ms_p50: float
+    latency_ms_p95: float
+    token_total: int
+    fallback_count: int
+    invariant_violation_count: int
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "data_version": self.data_version,
+            "model_version": self.model_version,
+            "sample_count": self.sample_count,
+            "plan_difference_count": self.plan_difference_count,
+            "latency_ms_p50": self.latency_ms_p50,
+            "latency_ms_p95": self.latency_ms_p95,
+            "token_total": self.token_total,
+            "fallback_count": self.fallback_count,
+            "invariant_violation_count": self.invariant_violation_count,
+        }
+
+
+def build_planner_shadow_evidence(
+    outcomes: Sequence[PlanningOutcome],
+    plan_differences: Sequence[bool],
+    *,
+    data_version: str,
+    model_version: str,
+    invariant_violation_count: int = 0,
+) -> PlannerShadowEvidence:
+    """从已脱敏 Planner outcome 和逐案例计划差异生成发布摘要。"""
+    if not outcomes or len(outcomes) != len(plan_differences):
+        raise ValueError("Planner shadow outcomes 与 plan_differences 数量必须一致且非空")
+    durations = sorted(float(item.duration_ms) for item in outcomes)
+    tokens = sum(int(item.token_usage.get("total_tokens", 0)) for item in outcomes)
+    fallback_count = sum(1 for item in outcomes if item.fallback_reason is not None)
+    return PlannerShadowEvidence(
+        data_version=data_version,
+        model_version=model_version,
+        sample_count=len(outcomes),
+        plan_difference_count=sum(1 for different in plan_differences if different),
+        latency_ms_p50=_percentile(durations, 0.50),
+        latency_ms_p95=_percentile(durations, 0.95),
+        token_total=tokens,
+        fallback_count=fallback_count,
+        invariant_violation_count=invariant_violation_count,
+    )
+
+
+def _percentile(values: Sequence[float], fraction: float) -> float:
+    if not values or not 0 <= fraction <= 1:
+        raise ValueError("percentile 输入无效")
+    index = min(len(values) - 1, max(0, math.ceil(len(values) * fraction) - 1))
+    return round(float(values[index]), 3)
 
 
 def _business_signature(response: AgentResponse) -> dict[str, Any]:
@@ -72,6 +136,7 @@ class ShadowComparisonReport:
 
     cases: tuple[ShadowComparison, ...]
     side_effects_blocked: bool = True
+    planner_evidence: PlannerShadowEvidence | None = None
     schema_version: str = SHADOW_REPORT_SCHEMA_VERSION
 
     @property
@@ -87,11 +152,15 @@ class ShadowComparisonReport:
         return (
             bool(self.cases)
             and self.side_effects_blocked
+            and (
+                self.planner_evidence is None
+                or self.planner_evidence.invariant_violation_count == 0
+            )
             and all(case.equivalent and case.side_effects_blocked for case in self.cases)
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "schema_version": self.schema_version,
             "mode": "multi_agent_shadow",
             "case_count": len(self.cases),
@@ -101,6 +170,9 @@ class ShadowComparisonReport:
             "gate_passed": self.gate_passed,
             "cases": [case.as_dict() for case in self.cases],
         }
+        if self.planner_evidence is not None:
+            payload["planner"] = self.planner_evidence.as_dict()
+        return payload
 
 
 def compare_responses(
@@ -150,6 +222,7 @@ async def run_shadow_suite(
     legacy_runner: ShadowRunner,
     multi_agent_runner: ShadowRunner,
     side_effects_blocked: bool = True,
+    planner_evidence: PlannerShadowEvidence | None = None,
 ) -> ShadowComparisonReport:
     comparisons = [
         await run_shadow_case(
@@ -164,6 +237,7 @@ async def run_shadow_suite(
     return ShadowComparisonReport(
         cases=tuple(comparisons),
         side_effects_blocked=side_effects_blocked,
+        planner_evidence=planner_evidence,
     )
 
 
@@ -179,7 +253,7 @@ def validate_shadow_report_payload(payload: Mapping[str, Any]) -> str | None:
         "gate_passed",
         "cases",
     }
-    if set(payload) != required:
+    if set(payload) - required - {"planner"} or not required.issubset(payload):
         return "shadow 报告字段集合无效"
     if payload["schema_version"] != SHADOW_REPORT_SCHEMA_VERSION:
         return "shadow 报告 schema_version 无效"
@@ -217,4 +291,50 @@ def validate_shadow_report_payload(payload: Mapping[str, Any]) -> str | None:
             return "shadow 报告存在未对齐或未隔离副作用的 case"
     if payload["equivalent_count"] != len(cases):
         return "shadow 报告 equivalent_count 与 cases 不一致"
+    if "planner" in payload:
+        planner = payload["planner"]
+        if not isinstance(planner, Mapping):
+            return "shadow 报告 planner 证据结构无效"
+        planner_map = cast(Mapping[str, Any], planner)
+        planner_required = {
+            "data_version",
+            "model_version",
+            "sample_count",
+            "plan_difference_count",
+            "latency_ms_p50",
+            "latency_ms_p95",
+            "token_total",
+            "fallback_count",
+            "invariant_violation_count",
+        }
+        if set(planner_map) != planner_required:
+            return "shadow 报告 planner 证据字段集合无效"
+        if (
+            not isinstance(planner_map["data_version"], str)
+            or not planner_map["data_version"]
+            or not isinstance(planner_map["model_version"], str)
+            or not planner_map["model_version"]
+            or not isinstance(planner_map["sample_count"], int)
+            or planner_map["sample_count"] != len(cases)
+            or not isinstance(planner_map["plan_difference_count"], int)
+            or not 0 <= planner_map["plan_difference_count"] <= len(cases)
+            or not isinstance(planner_map["token_total"], int)
+            or planner_map["token_total"] < 0
+            or not isinstance(planner_map["fallback_count"], int)
+            or not 0 <= planner_map["fallback_count"] <= len(cases)
+            or not isinstance(planner_map["invariant_violation_count"], int)
+            or planner_map["invariant_violation_count"] < 0
+        ):
+            return "shadow 报告 planner 证据计数无效"
+        for name in ("latency_ms_p50", "latency_ms_p95"):
+            value = planner_map[name]
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(float(value))
+                or float(value) < 0
+            ):
+                return "shadow 报告 planner 延迟无效"
+        if planner_map["invariant_violation_count"] != 0:
+            return "shadow 报告 planner 存在业务不变量违规"
     return None

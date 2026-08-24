@@ -106,6 +106,11 @@ export SHIJIAJING_ARK_API_KEY=...
 | `SHIJIAJING_SUPERVISOR_PLANNER_TIMEOUT_SECONDS` | 8 | Supervisor Planner 单次调用超时 |
 | `SHIJIAJING_SUPERVISOR_PLANNER_MAX_REPAIRS` | 1 | 结构化输出修复最多次数 |
 | `SHIJIAJING_SUPERVISOR_PLANNER_MAX_TOKENS` | 1500 | Planner 单次输出 token 上限 |
+
+`SHIJIAJING_ORCHESTRATION_MODE=workflow` 不创建或调用模型 Planner；`shadow` 只校验模型提议并执行
+确定性计划，`active_replan` 只允许模型参与可恢复失败的 replan，`active` 才允许模型参与 create 与
+replan。启用模型 Planner 前必须另外提交包含样本数、计划差异、p50/p95 延迟、token、回退和业务不变量
+的 Planner shadow 报告。
 | `SHIJIAJING_MAX_AGENT_TASKS` | 32 | 单计划任务上限 |
 | `SHIJIAJING_MAX_SUPERVISOR_REPLANS` | 2 | 单轮受控 replan 上限 |
 | `SHIJIAJING_AGENT_TASK_TIMEOUT_SECONDS` | 30 | 单 Agent task deadline 默认值 |
