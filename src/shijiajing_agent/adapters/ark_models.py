@@ -229,14 +229,17 @@ class ArkModelClient:
                 }
                 if max_tokens is not None:
                     request_kwargs["max_tokens"] = max_tokens
-                resp = await self._client.chat.completions.create(**request_kwargs)
+                resp = cast(
+                    Any,
+                    await self._client.chat.completions.create(**request_kwargs),
+                )
                 content = (resp.choices[0].message.content or "") if resp.choices else ""
                 usage = resp.usage
-                tokens = (
+                tokens: dict[str, int] | None = (
                     {
-                        "prompt_tokens": usage.prompt_tokens,
-                        "completion_tokens": usage.completion_tokens,
-                        "total_tokens": usage.total_tokens,
+                        "prompt_tokens": int(usage.prompt_tokens),
+                        "completion_tokens": int(usage.completion_tokens),
+                        "total_tokens": int(usage.total_tokens),
                     }
                     if usage is not None
                     else None

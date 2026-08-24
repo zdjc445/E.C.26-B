@@ -41,14 +41,14 @@ cp .env.example .env      # 然后按注释填写
 
 ```bash
 # 文本比价（可追加一轮追问）
-uv run python examples/text_example.py "索尼耳机 预算2000以内"
-uv run python examples/text_example.py "索尼耳机 预算2000以内" "只要黑色款"
+uv run python -m examples.text_example "索尼耳机 预算2000以内"
+uv run python -m examples.text_example "索尼耳机 预算2000以内" "只要黑色款"
 
 # 图片识别 + 比价（可选补充文本）
-uv run python examples/image_example.py --image photo.jpg --text "预算2000以内"
+uv run python -m examples.image_example --image photo.jpg --text "预算2000以内"
 
 # 用户修正：第一轮图片识别，第二轮修正品牌/型号，修正后不再调用 VLM
-uv run python examples/correction_example.py --image photo.jpg --brand Sony --model WH-1000XM5
+uv run python -m examples.correction_example --image photo.jpg --brand Sony --model WH-1000XM5
 ```
 
 示例脚本与生产 CLI 共用 `shijiajing_agent.asyncio_compat`；Windows 下会使用
@@ -64,6 +64,11 @@ uv run shijiajing-benchmark --source formal --datasets-dir <frozen_dir> \
   --gate-strategy weighted --max-p95-ms <threshold> --report-dir reports/frozen
 uv run shijiajing-eval --frozen            # 门禁通过后写冻结报告
 uv run shijiajing-eval --live --output-datasets-dir <dir>  # 真实数据实时输出副本（目录须不存在）
+# 真实 Ark Planner shadow：只评估候选计划，执行计划保持确定性；报告拒绝覆盖
+uv run --env-file .env shijiajing-planner-shadow \
+  --dataset src/shijiajing_agent/data/eval/multi_agent_dataset.jsonl \
+  --data-version provisional-v1 \
+  --output reports/planner-shadow/planner-shadow.json
 # 人工仲裁完成后，再用 shijiajing-build-eval freeze 晋级为 frozen 数据集
 ```
 

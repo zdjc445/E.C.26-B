@@ -40,6 +40,7 @@ class ArkSupervisorPlanner:
         self.repair_count = 0
         self.token_usage: dict[str, int] = {}
         self.proposal_hash: str | None = None
+        self.action_count = 0
 
     async def setup(self) -> None:
         return None
@@ -49,7 +50,7 @@ class ArkSupervisorPlanner:
         return None
 
     async def create_plan(self, request: SupervisorPlanningInput) -> ExecutionPlan:
-        base = DeterministicPlanner(
+        base = request.base_plan or DeterministicPlanner(
             max_tasks=self._settings.max_agent_tasks,
             max_replans=self._settings.max_supervisor_replans,
         ).create_plan(
@@ -78,7 +79,6 @@ class ArkSupervisorPlanner:
                 or (
                     action.action == "add_template"
                     and action.target_task_id in failed
-                    and action.target_task_id is not None
                 )
             ],
         )
@@ -100,6 +100,7 @@ class ArkSupervisorPlanner:
         self.repair_count = 0
         self.token_usage = {}
         self.proposal_hash = None
+        self.action_count = 0
         obj = await self._client.structured_call(
             node="supervisor_planner",
             model=self.model_name or "",
@@ -117,6 +118,7 @@ class ArkSupervisorPlanner:
             max_tokens=self._settings.supervisor_planner_max_tokens,
         )
         proposal = PlannerProposal.model_validate(obj)
+        self.action_count = len(proposal.actions)
         record = self._client.last_call
         if record is not None:
             self.repair_count = record.repair_count
@@ -167,7 +169,7 @@ class ArkSupervisorPlanner:
     def _revise_payload(
         self, request: SupervisorReplanningInput, catalog: Any
     ) -> dict[str, Any]:
-        failed = []
+        failed: list[dict[str, Any]] = []
         for task_id in request.failed_task_ids:
             result = request.task_results.get(task_id)
             failed.append(

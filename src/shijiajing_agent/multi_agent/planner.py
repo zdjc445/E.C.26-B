@@ -316,15 +316,16 @@ class GuardedSupervisorPlanner:
 
     async def create_plan(self, request: SupervisorPlanningInput) -> ExecutionPlan:
         started = datetime.now(UTC)
-        base = self._deterministic.create_plan(
+        base = request.base_plan or self._deterministic.create_plan(
             request.request,
             context=request.execution_context,
             taxonomy_version=request.taxonomy_version,
         )
-        model_enabled = self._candidate is not None and self._mode in {"shadow", "active"}
-        if model_enabled:
+        candidate = self._candidate
+        if candidate is not None and self._mode in {"shadow", "active"}:
             try:
-                proposed = await self._candidate.create_plan(request)
+                candidate_request = request.model_copy(update={"base_plan": base})
+                proposed = await candidate.create_plan(candidate_request)
                 accepted = PlanValidator().validate(proposed)
                 if self._mode == "shadow":
                     self._last_outcome = self._outcome(
@@ -332,8 +333,10 @@ class GuardedSupervisorPlanner:
                         plan=base,
                         source="deterministic",
                         model_attempted=True,
+                        validated=True,
                         accepted=False,
                         fallback_reason="MODEL_PLAN_SHADOWED",
+                        candidate_plan_hash=plan_hash(accepted),
                         duration_ms=(datetime.now(UTC) - started).total_seconds() * 1000,
                     )
                     return base
@@ -342,7 +345,9 @@ class GuardedSupervisorPlanner:
                     plan=accepted,
                     source="model",
                     model_attempted=True,
+                    validated=True,
                     accepted=True,
+                    candidate_plan_hash=plan_hash(accepted),
                     duration_ms=(datetime.now(UTC) - started).total_seconds() * 1000,
                 )
                 return accepted
@@ -367,14 +372,16 @@ class GuardedSupervisorPlanner:
 
     async def revise_plan(self, request: SupervisorReplanningInput) -> ExecutionPlanPatch:
         started = datetime.now(UTC)
-        model_enabled = self._candidate is not None and self._mode in {
+        candidate = self._candidate
+        model_enabled = candidate is not None and self._mode in {
             "shadow",
             "active_replan",
             "active",
         }
         if model_enabled:
             try:
-                proposed = await self._candidate.revise_plan(request)
+                assert candidate is not None
+                proposed = await candidate.revise_plan(request)
                 updated = apply_plan_patch(request.plan, proposed)
                 if self._mode == "shadow":
                     fallback = await DeterministicSupervisorPlanner(
@@ -386,8 +393,10 @@ class GuardedSupervisorPlanner:
                         plan=shadow_updated,
                         source="deterministic",
                         model_attempted=True,
+                        validated=True,
                         accepted=False,
                         fallback_reason="MODEL_PLAN_SHADOWED",
+                        candidate_plan_hash=plan_hash(updated),
                         duration_ms=(datetime.now(UTC) - started).total_seconds() * 1000,
                     )
                     return fallback
@@ -396,7 +405,9 @@ class GuardedSupervisorPlanner:
                     plan=updated,
                     source="model",
                     model_attempted=True,
+                    validated=True,
                     accepted=True,
+                    candidate_plan_hash=plan_hash(updated),
                     duration_ms=(datetime.now(UTC) - started).total_seconds() * 1000,
                 )
                 return proposed
@@ -457,9 +468,11 @@ class GuardedSupervisorPlanner:
         plan: ExecutionPlan,
         source: str,
         model_attempted: bool,
+        validated: bool = False,
         accepted: bool,
         duration_ms: float,
         fallback_reason: str | None = None,
+        candidate_plan_hash: str | None = None,
     ) -> PlanningOutcome:
         model = getattr(self._candidate, "model_name", None) if self._candidate else None
         prompt_version = (
@@ -468,11 +481,13 @@ class GuardedSupervisorPlanner:
         repair_count = int(getattr(self._candidate, "repair_count", 0) or 0)
         token_usage = dict(getattr(self._candidate, "token_usage", {}) or {})
         proposal_hash = getattr(self._candidate, "proposal_hash", None) if self._candidate else None
+        action_count = int(getattr(self._candidate, "action_count", 0) or 0)
         return PlanningOutcome(
             operation=operation,  # type: ignore[arg-type]
             plan=plan,
             source=source,  # type: ignore[arg-type]
             model_attempted=model_attempted,
+            validated=validated,
             accepted=accepted,
             fallback_reason=fallback_reason,  # type: ignore[arg-type]
             model=model,
@@ -480,9 +495,10 @@ class GuardedSupervisorPlanner:
             repair_count=repair_count,
             duration_ms=max(0.0, duration_ms),
             proposal_hash=proposal_hash,
+            candidate_plan_hash=candidate_plan_hash,
             plan_hash=plan_hash(plan),
             token_usage=token_usage,
-            action_count=0,
+            action_count=action_count,
             task_count=len(plan.tasks),
         )
 

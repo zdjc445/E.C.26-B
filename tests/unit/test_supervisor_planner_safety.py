@@ -182,5 +182,7 @@ async def test_shadow_mode_validates_model_but_executes_deterministic_plan() -> 
     assert len(result.tasks) == len(plan.tasks)
     assert candidate.create_calls == 1
     assert guarded.last_outcome is not None
+    assert guarded.last_outcome.validated is True
     assert guarded.last_outcome.fallback_reason == "MODEL_PLAN_SHADOWED"
     assert guarded.last_outcome.source == "deterministic"
+    assert guarded.last_outcome.candidate_plan_hash is not None

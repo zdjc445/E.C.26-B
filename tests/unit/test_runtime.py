@@ -8,6 +8,8 @@ from types import SimpleNamespace
 import pytest
 
 from shijiajing_agent.config import Settings
+from shijiajing_agent.domain.taxonomy import load_taxonomy
+from shijiajing_agent.facade import AgentDependencies
 from shijiajing_agent.runtime import (
     _open_resource,
     _register_resource_close,
@@ -185,3 +187,25 @@ async def test_resource_registration_is_identity_deduplicated() -> None:
         _register_resource_close(stack, resource)
 
     assert resource.close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_runtime_preserves_configured_supervisor_planner() -> None:
+    settings = Settings(supervisor_planner_mode="shadow", supervisor_model="planner-test")
+    planner = object()
+    deps = AgentDependencies(
+        taxonomy=load_taxonomy(settings.taxonomy_path_resolved),
+        settings=settings,
+        vision=_AsyncResource(),
+        intent=SimpleNamespace(),
+        query_rewrite=SimpleNamespace(),
+        explanation=SimpleNamespace(),
+        retrieval=_AsyncResource(),
+        checkpoint=_AsyncResource(),
+        trace=_AsyncResource(),
+        metrics=SimpleNamespace(),
+        supervisor_planner=planner,  # type: ignore[arg-type]
+    )
+
+    async with open_agent_runtime(settings, deps_factory=lambda _: deps) as facade:
+        assert facade.dependencies.supervisor_planner is planner

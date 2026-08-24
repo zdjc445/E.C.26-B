@@ -195,6 +195,7 @@ class MultiAgentSupervisor:
                     request=request,
                     execution_context=context,
                     taxonomy_version=self._deps.taxonomy.taxonomy_version,
+                    base_plan=baseline_plan,
                 )
             )
             planning_outcome = self._planner_port.last_outcome
@@ -839,7 +840,7 @@ class MultiAgentSupervisor:
                     operation=operation,
                     outcome=outcome,
                 )
-            if outcome.accepted and outcome.source == "model":
+            if outcome.validated:
                 await self._emit_planner_event(
                     request,
                     state,
@@ -872,7 +873,7 @@ class MultiAgentSupervisor:
         )
         if outcome.model_attempted:
             self._metric_inc("planner_call_total")
-        if outcome.accepted and outcome.source == "model":
+        if outcome.validated:
             self._metric_inc("planner_model_plan_accepted_total")
         if outcome.fallback_reason is not None:
             self._metric_inc(
@@ -954,6 +955,7 @@ class MultiAgentSupervisor:
                 "operation": operation,
                 "source": outcome.source,
                 "model_attempted": outcome.model_attempted,
+                "validated": outcome.validated,
                 "accepted": outcome.accepted,
                 "fallback_reason": outcome.fallback_reason,
                 "model": outcome.model,
@@ -961,6 +963,7 @@ class MultiAgentSupervisor:
                 "repair_count": outcome.repair_count,
                 "duration_ms": outcome.duration_ms,
                 "proposal_hash": outcome.proposal_hash,
+                "candidate_plan_hash": outcome.candidate_plan_hash,
                 "plan_hash": outcome.plan_hash,
                 "action_count": outcome.action_count,
                 "task_count": outcome.task_count,

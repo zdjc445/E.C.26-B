@@ -111,6 +111,20 @@ export SHIJIAJING_ARK_API_KEY=...
 确定性计划，`active_replan` 只允许模型参与可恢复失败的 replan，`active` 才允许模型参与 create 与
 replan。启用模型 Planner 前必须另外提交包含样本数、计划差异、p50/p95 延迟、token、回退和业务不变量
 的 Planner shadow 报告。
+
+真实 Planner shadow 报告使用独立 CLI 生成；报告仅保存模型、Prompt 版本、token、延迟、回退原因与
+哈希，不保存请求文本、Prompt、任务输入或模型原始响应。输出路径必须不存在，避免覆盖历史证据：
+
+```bash
+uv run --env-file .env shijiajing-planner-shadow \
+  --dataset src/shijiajing_agent/data/eval/multi_agent_dataset.jsonl \
+  --data-version provisional-v1 \
+  --output reports/planner-shadow/planner-shadow.json
+```
+
+逐案例 `planner_outcome.validated=true` 表示候选计划已通过确定性校验；shadow 模式下
+`accepted=false` 与 `fallback_reason=MODEL_PLAN_SHADOWED` 表示候选没有进入业务执行。随后可用
+`shijiajing-release-check --planner-shadow-report <report>` 校验报告结构与业务不变量门禁。
 | `SHIJIAJING_MAX_AGENT_TASKS` | 32 | 单计划任务上限 |
 | `SHIJIAJING_MAX_SUPERVISOR_REPLANS` | 2 | 单轮受控 replan 上限 |
 | `SHIJIAJING_AGENT_TASK_TIMEOUT_SECONDS` | 30 | 单 Agent task deadline 默认值 |

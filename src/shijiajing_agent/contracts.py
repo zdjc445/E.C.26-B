@@ -815,6 +815,7 @@ class SupervisorPlanningInput(BaseModel):
     execution_context: AgentExecutionContext = Field(default_factory=AgentExecutionContext)
     taxonomy_version: str = Field(min_length=1)
     previous_plan_id: str | None = None
+    base_plan: ExecutionPlan | None = None
 
 
 class SupervisorReplanningInput(BaseModel):

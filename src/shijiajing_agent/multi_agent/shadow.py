@@ -160,7 +160,7 @@ class ShadowComparisonReport:
         )
 
     def as_dict(self) -> dict[str, Any]:
-        payload = {
+        payload: dict[str, Any] = {
             "schema_version": self.schema_version,
             "mode": "multi_agent_shadow",
             "case_count": len(self.cases),
@@ -337,4 +337,96 @@ def validate_shadow_report_payload(payload: Mapping[str, Any]) -> str | None:
                 return "shadow 报告 planner 延迟无效"
         if planner_map["invariant_violation_count"] != 0:
             return "shadow 报告 planner 存在业务不变量违规"
+        planner_outcomes: list[Mapping[str, Any]] = []
+        plan_difference_count = 0
+        for case_value in cases:
+            case = cast(Mapping[str, Any], case_value)
+            outcome_value = case.get("planner_outcome")
+            if not isinstance(outcome_value, Mapping):
+                return "shadow 报告缺少逐案例 planner_outcome"
+            outcome = cast(Mapping[str, Any], outcome_value)
+            if (
+                outcome.get("model_attempted") is not True
+                or outcome.get("source") != "deterministic"
+                or not isinstance(outcome.get("validated"), bool)
+                or outcome.get("accepted") is not False
+                or not isinstance(outcome.get("model"), str)
+                or outcome.get("model") != planner_map["model_version"]
+                or not isinstance(outcome.get("prompt_version"), str)
+                or not outcome.get("prompt_version")
+            ):
+                return "shadow 报告 planner_outcome 调用或 shadow 语义无效"
+            duration = outcome.get("duration_ms")
+            repair_count = outcome.get("repair_count")
+            token_usage = outcome.get("token_usage")
+            if (
+                not isinstance(duration, (int, float))
+                or isinstance(duration, bool)
+                or not math.isfinite(float(duration))
+                or float(duration) < 0
+                or not isinstance(repair_count, int)
+                or isinstance(repair_count, bool)
+                or repair_count < 0
+                or not isinstance(token_usage, Mapping)
+            ):
+                return "shadow 报告 planner_outcome 延迟、修复或 token 无效"
+            token_usage_map = cast(Mapping[str, Any], token_usage)
+            token_total = token_usage_map.get("total_tokens")
+            if not isinstance(token_total, int) or isinstance(token_total, bool) or token_total < 0:
+                return "shadow 报告 planner_outcome token 无效"
+            plan_hash_value = outcome.get("plan_hash")
+            proposal_hash = outcome.get("proposal_hash")
+            candidate_hash = outcome.get("candidate_plan_hash")
+            if not _is_sha256(plan_hash_value) or (
+                proposal_hash is not None and not _is_sha256(proposal_hash)
+            ) or (candidate_hash is not None and not _is_sha256(candidate_hash)):
+                return "shadow 报告 planner_outcome 哈希无效"
+            legacy_signature = case.get("legacy_signature")
+            multi_agent_signature = case.get("multi_agent_signature")
+            legacy_map = (
+                cast(Mapping[str, Any], legacy_signature)
+                if isinstance(legacy_signature, Mapping)
+                else None
+            )
+            multi_agent_map = (
+                cast(Mapping[str, Any], multi_agent_signature)
+                if isinstance(multi_agent_signature, Mapping)
+                else None
+            )
+            if (
+                legacy_map is None
+                or multi_agent_map is None
+                or legacy_map.get("plan_hash") != plan_hash_value
+                or multi_agent_map.get("plan_hash") != plan_hash_value
+            ):
+                return "shadow 报告执行计划哈希与确定性基线不一致"
+            if candidate_hash is not None and candidate_hash != plan_hash_value:
+                plan_difference_count += 1
+            planner_outcomes.append(outcome)
+        if not any(outcome["validated"] is True for outcome in planner_outcomes):
+            return "shadow 报告没有通过校验的模型计划"
+        if planner_map["plan_difference_count"] != plan_difference_count:
+            return "shadow 报告 planner 计划差异计数不一致"
+        if planner_map["fallback_count"] != sum(
+            1 for outcome in planner_outcomes if outcome.get("fallback_reason") is not None
+        ):
+            return "shadow 报告 planner 回退计数不一致"
+        if planner_map["token_total"] != sum(
+            cast(Mapping[str, int], outcome["token_usage"])["total_tokens"]
+            for outcome in planner_outcomes
+        ):
+            return "shadow 报告 planner token 总量不一致"
+        durations = sorted(float(outcome["duration_ms"]) for outcome in planner_outcomes)
+        if float(planner_map["latency_ms_p50"]) != _percentile(durations, 0.50) or float(
+            planner_map["latency_ms_p95"]
+        ) != _percentile(durations, 0.95):
+            return "shadow 报告 planner 延迟分位数不一致"
     return None
+
+
+def _is_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )

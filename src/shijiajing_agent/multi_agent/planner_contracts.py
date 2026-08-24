@@ -69,6 +69,7 @@ class PlanningOutcome(BaseModel):
     plan: ExecutionPlan
     source: Literal["model", "deterministic"]
     model_attempted: bool = False
+    validated: bool = False
     accepted: bool = False
     fallback_reason: PlannerFallbackReason | None = None
     model: str | None = None
@@ -76,6 +77,7 @@ class PlanningOutcome(BaseModel):
     repair_count: int = Field(default=0, ge=0)
     duration_ms: float = Field(default=0.0, ge=0)
     proposal_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    candidate_plan_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     plan_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     token_usage: dict[str, int] = Field(default_factory=dict[str, int])
     action_count: int = Field(default=0, ge=0)

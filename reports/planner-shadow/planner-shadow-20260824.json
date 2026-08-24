@@ -1,0 +1,112 @@
+{
+  "case_count": 2,
+  "cases": [
+    {
+      "case_id": "multi-agent-join-001",
+      "differences": [],
+      "equivalent": true,
+      "legacy_signature": {
+        "plan_hash": "de6597b6755c7679aec6c9d4db1f417107b16a0de62a518b01c6885c08adb741",
+        "task_count": 3,
+        "task_kinds": [
+          "intent.parse",
+          "retrieval.retrieve_and_rank",
+          "explanation.explain"
+        ]
+      },
+      "multi_agent_signature": {
+        "plan_hash": "de6597b6755c7679aec6c9d4db1f417107b16a0de62a518b01c6885c08adb741",
+        "task_count": 3,
+        "task_kinds": [
+          "intent.parse",
+          "retrieval.retrieve_and_rank",
+          "explanation.explain"
+        ]
+      },
+      "planner_outcome": {
+        "accepted": false,
+        "action_count": 1,
+        "candidate_plan_hash": "de6597b6755c7679aec6c9d4db1f417107b16a0de62a518b01c6885c08adb741",
+        "duration_ms": 4258.291,
+        "fallback_reason": "MODEL_PLAN_SHADOWED",
+        "model": "doubao-seed-character-260628",
+        "model_attempted": true,
+        "plan_hash": "de6597b6755c7679aec6c9d4db1f417107b16a0de62a518b01c6885c08adb741",
+        "prompt_version": "supervisor-create-v1",
+        "proposal_hash": "15185649850e2fd9736cb880fcdbaeccfbfad20494fae61cb36a52cfa515b02b",
+        "repair_count": 1,
+        "source": "deterministic",
+        "task_count": 3,
+        "token_usage": {
+          "completion_tokens": 75,
+          "prompt_tokens": 2000,
+          "total_tokens": 2075
+        },
+        "validated": true
+      },
+      "side_effects_blocked": true
+    },
+    {
+      "case_id": "multi-agent-failure-isolation-002",
+      "differences": [],
+      "equivalent": true,
+      "legacy_signature": {
+        "plan_hash": "ff1f3822aefd2b05b25cc151c838081ae0316c3ca58ffad1f38b3e0ee2715e2b",
+        "task_count": 3,
+        "task_kinds": [
+          "intent.parse",
+          "retrieval.retrieve_and_rank",
+          "explanation.explain"
+        ]
+      },
+      "multi_agent_signature": {
+        "plan_hash": "ff1f3822aefd2b05b25cc151c838081ae0316c3ca58ffad1f38b3e0ee2715e2b",
+        "task_count": 3,
+        "task_kinds": [
+          "intent.parse",
+          "retrieval.retrieve_and_rank",
+          "explanation.explain"
+        ]
+      },
+      "planner_outcome": {
+        "accepted": false,
+        "action_count": 3,
+        "candidate_plan_hash": "ff1f3822aefd2b05b25cc151c838081ae0316c3ca58ffad1f38b3e0ee2715e2b",
+        "duration_ms": 10583.377,
+        "fallback_reason": "MODEL_PLAN_SHADOWED",
+        "model": "doubao-seed-character-260628",
+        "model_attempted": true,
+        "plan_hash": "ff1f3822aefd2b05b25cc151c838081ae0316c3ca58ffad1f38b3e0ee2715e2b",
+        "prompt_version": "supervisor-create-v1",
+        "proposal_hash": "29c48e9851dcb7ba02be5f399783659d3fcfbbc6e6929563bb47562a054444c2",
+        "repair_count": 1,
+        "source": "deterministic",
+        "task_count": 3,
+        "token_usage": {
+          "completion_tokens": 207,
+          "prompt_tokens": 2543,
+          "total_tokens": 2750
+        },
+        "validated": true
+      },
+      "side_effects_blocked": true
+    }
+  ],
+  "equivalent_count": 2,
+  "equivalent_rate": 1.0,
+  "gate_passed": true,
+  "mode": "multi_agent_shadow",
+  "planner": {
+    "data_version": "provisional-v1",
+    "fallback_count": 2,
+    "invariant_violation_count": 0,
+    "latency_ms_p50": 4258.291,
+    "latency_ms_p95": 10583.377,
+    "model_version": "doubao-seed-character-260628",
+    "plan_difference_count": 0,
+    "sample_count": 2,
+    "token_total": 4825
+  },
+  "schema_version": "1.0",
+  "side_effects_blocked": true
+}

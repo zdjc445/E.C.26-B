@@ -181,6 +181,7 @@ async def _build_agent_facade(
         memory=memory,
         cache=cache,
         event_store=event_store,
+        supervisor_planner=getattr(base, "supervisor_planner", None),
     )
     return AgentFacade(deps)
 

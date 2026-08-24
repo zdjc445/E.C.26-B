@@ -48,6 +48,7 @@ async def test_ark_supervisor_planner_accepts_allowlisted_proposal(
         "你是受控 Multi-Agent Supervisor Planner"
     )
     assert planner.proposal_hash is not None
+    assert planner.action_count == 1
     assert planner.prompt_version == "supervisor-create-v1"
     await client.close()
 

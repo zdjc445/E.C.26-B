@@ -45,7 +45,7 @@ class _EchoPlanner:
 
     async def create_plan(self, request: SupervisorPlanningInput):
         self.create_calls += 1
-        return DeterministicPlanner().create_plan(
+        return request.base_plan or DeterministicPlanner().create_plan(
             request.request,
             context=request.execution_context,
             taxonomy_version=request.taxonomy_version,
@@ -58,6 +58,27 @@ class _BrokenPlanner:
 
     async def create_plan(self, _request: SupervisorPlanningInput):
         raise RuntimeError("planner network unavailable")
+
+
+class _InvalidPlanPlanner:
+    model_name = "planner-test"
+    prompt_version = "test-v1"
+
+    async def create_plan(self, request: SupervisorPlanningInput):
+        plan = DeterministicPlanner().create_plan(
+            request.request,
+            context=request.execution_context,
+            taxonomy_version=request.taxonomy_version,
+        )
+        return plan.model_copy(
+            update={
+                "tasks": [
+                    task
+                    for task in plan.tasks
+                    if task.task_kind is not AgentTaskKind.PARSE_INTENT
+                ]
+            }
+        )
 
 
 @pytest.mark.asyncio
@@ -102,6 +123,7 @@ async def test_planner_outcome_is_traced_metered_and_not_recalled_on_checkpoint_
     first = await supervisor.run(request)
     assert first.response.status is AgentStatus.SUCCESS
     assert first.state["planning_outcome"].source == "model"
+    assert first.state["planning_outcome"].validated is True
     assert candidate.create_calls == 1
     event_types = [event.event_type.value for event in fakes["trace"].events]
     assert "planner_call_started" in event_types
@@ -117,6 +139,36 @@ async def test_planner_outcome_is_traced_metered_and_not_recalled_on_checkpoint_
     replay = await supervisor.run(request)
     assert replay.response.status is AgentStatus.SUCCESS
     assert candidate.create_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_valid_shadow_plan_is_traced_as_validated_then_falls_back(
+    deps_factory: Any,
+) -> None:
+    settings = replace(
+        Settings(), supervisor_planner_mode="shadow", supervisor_model="planner-test"
+    )
+    deps, fakes = deps_factory(settings)
+    fakes["retrieval"].sequence = [two_candidate_result()]
+    candidate = _EchoPlanner()
+    deps.supervisor_planner = candidate
+
+    result = await MultiAgentSupervisor(deps).run(
+        AgentRequest(session_id="planner-shadow", request_id="create-1", text="索尼耳机")
+    )
+
+    outcome = result.state["planning_outcome"]
+    assert result.response.status is AgentStatus.SUCCESS
+    assert outcome.validated is True
+    assert outcome.accepted is False
+    assert outcome.source == "deterministic"
+    assert outcome.fallback_reason == "MODEL_PLAN_SHADOWED"
+    event_types = [event.event_type.value for event in fakes["trace"].events]
+    assert "planner_plan_accepted" in event_types
+    assert "planner_plan_rejected" not in event_types
+    assert "planner_fallback" in event_types
+    assert fakes["metrics"].counts["planner_model_plan_accepted_total"] == 1
+    assert fakes["metrics"].counts["planner_fallback_total"] == 1
 
 
 @pytest.mark.asyncio
@@ -138,6 +190,40 @@ async def test_planner_fallback_is_observable_and_business_path_survives(
         event.event_type.value == "planner_fallback" and event.error_code == "MODEL_NETWORK_ERROR"
         for event in fakes["trace"].events
     )
+
+
+@pytest.mark.asyncio
+async def test_invalid_model_plan_is_rejected_traced_and_falls_back(
+    deps_factory: Any,
+) -> None:
+    settings = replace(
+        Settings(), supervisor_planner_mode="active", supervisor_model="planner-test"
+    )
+    deps, fakes = deps_factory(settings)
+    fakes["retrieval"].sequence = [two_candidate_result()]
+    deps.supervisor_planner = _InvalidPlanPlanner()
+
+    result = await MultiAgentSupervisor(deps).run(
+        AgentRequest(session_id="planner-invalid", request_id="create-1", text="索尼耳机")
+    )
+
+    assert result.response.status is AgentStatus.SUCCESS
+    assert result.state["planning_outcome"].source == "deterministic"
+    assert result.state["planning_outcome"].validated is False
+    assert result.state["planning_outcome"].accepted is False
+    assert result.state["planning_outcome"].fallback_reason == "PLAN_VALIDATION_FAILED"
+    assert any(task.task_kind is AgentTaskKind.PARSE_INTENT for task in result.plan.tasks)
+    event_types = [event.event_type.value for event in fakes["trace"].events]
+    assert "planner_proposal_received" in event_types
+    assert "planner_plan_rejected" in event_types
+    assert "planner_fallback" in event_types
+    assert any(
+        event.event_type.value == "planner_fallback"
+        and event.error_code == "PLAN_VALIDATION_FAILED"
+        for event in fakes["trace"].events
+    )
+    assert fakes["metrics"].counts["planner_fallback_total"] == 1
+    assert fakes["metrics"].counts["planner_validation_rejected_total"] == 1
 
 
 @pytest.mark.asyncio

@@ -50,6 +50,7 @@ shijiajing-preflight = "shijiajing_agent.tools.preflight:main"
 shijiajing-reconstruct-turn = "shijiajing_agent.tools.reconstruct_turn:main"
 shijiajing-benchmark = "shijiajing_agent.tools.benchmark:main"
 shijiajing-release-check = "shijiajing_agent.tools.release_check:main"
+shijiajing-planner-shadow = "shijiajing_agent.tools.run_planner_shadow:main"
 
 [build-system]
 requires = ["hatchling"]

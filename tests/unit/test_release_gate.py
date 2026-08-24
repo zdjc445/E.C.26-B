@@ -246,10 +246,27 @@ def test_release_gate_validates_model_planner_shadow_evidence(tmp_path: Path) ->
                 {
                     "case_id": "planner-1",
                     "equivalent": True,
-                    "legacy_signature": {},
-                    "multi_agent_signature": {},
+                    "legacy_signature": {"plan_hash": "b" * 64},
+                    "multi_agent_signature": {"plan_hash": "b" * 64},
                     "differences": [],
                     "side_effects_blocked": True,
+                    "planner_outcome": {
+                        "source": "deterministic",
+                        "model_attempted": True,
+                        "validated": True,
+                        "accepted": False,
+                        "fallback_reason": "MODEL_PLAN_SHADOWED",
+                        "model": "planner-v1",
+                        "prompt_version": "prompt-v1",
+                        "repair_count": 0,
+                        "duration_ms": 12.0,
+                        "proposal_hash": "a" * 64,
+                        "candidate_plan_hash": "b" * 64,
+                        "plan_hash": "b" * 64,
+                        "token_usage": {"total_tokens": 42},
+                        "action_count": 0,
+                        "task_count": 3,
+                    },
                 }
             ],
             "planner": {
@@ -260,7 +277,7 @@ def test_release_gate_validates_model_planner_shadow_evidence(tmp_path: Path) ->
                 "latency_ms_p50": 12.0,
                 "latency_ms_p95": 12.0,
                 "token_total": 42,
-                "fallback_count": 0,
+                "fallback_count": 1,
                 "invariant_violation_count": 0,
             },
         },
@@ -271,6 +288,19 @@ def test_release_gate_validates_model_planner_shadow_evidence(tmp_path: Path) ->
     )
     check = next(item for item in report.checks if item.check_id == "model_planner_shadow")
     assert check.status.value == "passed"
+
+    tampered = json.loads(shadow.read_text(encoding="utf-8"))
+    tampered["cases"][0].pop("planner_outcome")
+    _write(shadow, tampered)
+    rejected = evaluate_release_gate(
+        planner_shadow_report=shadow,
+        check_client_tools=False,
+    )
+    rejected_check = next(
+        item for item in rejected.checks if item.check_id == "model_planner_shadow"
+    )
+    assert rejected_check.status.value == "failed"
+    assert "planner_outcome" in rejected_check.reason
 
 
 def test_release_gate_rejects_tampered_production_evidence(tmp_path: Path) -> None:
