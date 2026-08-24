@@ -375,6 +375,7 @@ class SupervisorState(TypedDict, total=False):
     execution_context: AgentExecutionContext
     plan: ExecutionPlan
     planning_outcome: PlanningOutcome | None
+    planning_outcomes: list[PlanningOutcome]
     task_records: dict[str, TaskRecord]
     task_results: Annotated[dict[str, AgentResultV2], merge_task_results]
     canonical_understanding: CanonicalUnderstanding

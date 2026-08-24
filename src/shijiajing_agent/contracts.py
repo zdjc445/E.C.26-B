@@ -35,6 +35,13 @@ class EventType(StrEnum):
     CLARIFICATION_READY = "clarification_ready"
     RESULTS_READY = "results_ready"
     TURN_FAILED = "turn_failed"
+    PLANNER_CALL_STARTED = "planner_call_started"
+    PLANNER_PROPOSAL_RECEIVED = "planner_proposal_received"
+    PLANNER_PLAN_ACCEPTED = "planner_plan_accepted"
+    PLANNER_PLAN_REJECTED = "planner_plan_rejected"
+    PLANNER_FALLBACK = "planner_fallback"
+    PLAN_CREATED = "plan_created"
+    PLAN_REVISED = "plan_revised"
 
 
 class ConstraintSource(StrEnum):

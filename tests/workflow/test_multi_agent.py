@@ -24,14 +24,40 @@ from shijiajing_agent.contracts import (
     NodeStatus,
     RetrievalTaskOutput,
     SpecialistAgentName,
+    SupervisorPlanningInput,
 )
 from shijiajing_agent.facade import AgentFacade
 from shijiajing_agent.multi_agent.agents.base import fixed_error, result_for
 from shijiajing_agent.multi_agent.checkpoint import InMemoryMultiAgentCheckpoint
+from shijiajing_agent.multi_agent.planner import DeterministicPlanner
 from shijiajing_agent.multi_agent.registry import build_registry
 from shijiajing_agent.multi_agent.supervisor import MultiAgentSupervisor
 
 from .conftest import default_recognition, make_image, two_candidate_result
+
+
+class _EchoPlanner:
+    model_name = "planner-test"
+    prompt_version = "test-v1"
+
+    def __init__(self) -> None:
+        self.create_calls = 0
+
+    async def create_plan(self, request: SupervisorPlanningInput):
+        self.create_calls += 1
+        return DeterministicPlanner().create_plan(
+            request.request,
+            context=request.execution_context,
+            taxonomy_version=request.taxonomy_version,
+        )
+
+
+class _BrokenPlanner:
+    model_name = "planner-test"
+    prompt_version = "test-v1"
+
+    async def create_plan(self, _request: SupervisorPlanningInput):
+        raise RuntimeError("planner network unavailable")
 
 
 @pytest.mark.asyncio
@@ -53,6 +79,64 @@ async def test_multi_agent_text_path_uses_task_results_and_deterministic_retriev
     assert any(
         item.task_kind is AgentTaskKind.RETRIEVE_AND_RANK
         for item in result.state["task_results"].values()
+    )
+
+
+@pytest.mark.asyncio
+async def test_planner_outcome_is_traced_metered_and_not_recalled_on_checkpoint_replay(
+    deps_factory: Any,
+) -> None:
+    settings = replace(
+        Settings(), supervisor_planner_mode="active", supervisor_model="planner-test"
+    )
+    deps, fakes = deps_factory(settings)
+    fakes["retrieval"].sequence = [two_candidate_result()]
+    candidate = _EchoPlanner()
+    deps.supervisor_planner = candidate
+    assert deps.settings.supervisor_planner_mode == "active"
+    assert deps.supervisor_planner is candidate
+    checkpoint = InMemoryMultiAgentCheckpoint()
+    supervisor = MultiAgentSupervisor(deps, checkpoint=checkpoint)
+    request = AgentRequest(session_id="planner-audit", request_id="create-1", text="索尼耳机")
+
+    first = await supervisor.run(request)
+    assert first.response.status is AgentStatus.SUCCESS
+    assert first.state["planning_outcome"].source == "model"
+    assert candidate.create_calls == 1
+    event_types = [event.event_type.value for event in fakes["trace"].events]
+    assert "planner_call_started" in event_types
+    assert "planner_proposal_received" in event_types
+    assert "planner_plan_accepted" in event_types
+    assert "plan_created" in event_types
+    assert fakes["metrics"].counts["planner_call_total"] == 1
+    assert fakes["metrics"].counts["planner_model_plan_accepted_total"] == 1
+    assert first.state["planning_outcome"].plan_hash
+    assert first.state["events"]
+    assert all("raw_response" not in event.payload for event in first.state["events"])
+
+    replay = await supervisor.run(request)
+    assert replay.response.status is AgentStatus.SUCCESS
+    assert candidate.create_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_planner_fallback_is_observable_and_business_path_survives(
+    deps_factory: Any,
+) -> None:
+    settings = replace(
+        Settings(), supervisor_planner_mode="active", supervisor_model="planner-test"
+    )
+    deps, fakes = deps_factory(settings)
+    fakes["retrieval"].sequence = [two_candidate_result()]
+    deps.supervisor_planner = _BrokenPlanner()
+    result = await MultiAgentSupervisor(deps).run(
+        AgentRequest(session_id="planner-fallback", request_id="create-1", text="索尼耳机")
+    )
+    assert result.response.status is AgentStatus.SUCCESS
+    assert fakes["metrics"].counts["planner_fallback_total"] == 1
+    assert any(
+        event.event_type.value == "planner_fallback" and event.error_code == "MODEL_NETWORK_ERROR"
+        for event in fakes["trace"].events
     )
 
 

@@ -14,6 +14,8 @@ from typing import Any, cast
 from langgraph.types import Command
 
 from shijiajing_agent.contracts import (
+    AgentEvent,
+    AgentEventRecord,
     AgentExecutionContext,
     AgentInterrupt,
     AgentRequest,
@@ -26,6 +28,7 @@ from shijiajing_agent.contracts import (
     AgentTurnResult,
     CanonicalUnderstanding,
     ClarificationResume,
+    EventType,
     ExecutionPlan,
     ExecutionPlanPatch,
     ExplanationTaskInput,
@@ -48,6 +51,7 @@ from shijiajing_agent.contracts import (
     SupervisorPlanningInput,
     SupervisorReplanningInput,
     TaskRecord,
+    now_iso,
 )
 from shijiajing_agent.domain.constraints import ClarificationBuilder, ConstraintMerger
 from shijiajing_agent.domain.memory_policy import apply_memory_defaults
@@ -64,7 +68,9 @@ from shijiajing_agent.multi_agent.planner import (
     GuardedSupervisorPlanner,
     PlanValidator,
     apply_plan_patch,
+    plan_hash,
 )
+from shijiajing_agent.multi_agent.planner_contracts import PlanningOutcome
 from shijiajing_agent.multi_agent.registry import SpecialistAgentRegistry, build_registry
 from shijiajing_agent.state import SupervisorState, merge_task_results
 
@@ -95,6 +101,8 @@ class MultiAgentSupervisor:
             max_tasks=getattr(deps.settings, "max_agent_tasks", 32),
             max_replans=getattr(deps.settings, "max_supervisor_replans", 2),
         )
+        if planner_port is None:
+            planner_port = getattr(deps, "supervisor_planner", None)
         self._planner_port = GuardedSupervisorPlanner(
             self._planner,
             planner_port,
@@ -152,6 +160,7 @@ class MultiAgentSupervisor:
             "execution_context": context,
             "plan": plan,
             "planning_outcome": planning_outcome,
+            "planning_outcomes": [],
             "task_records": task_records,
             "task_results": {},
             "canonical_understanding": CanonicalUnderstanding(),
@@ -178,6 +187,9 @@ class MultiAgentSupervisor:
                     plan = restored_plan
                 task_records = dict(state.get("task_records") or task_records)
         if self._checkpoint is None or checkpoint_version is None:
+            await self._emit_planner_call_started(
+                request, state, operation="create", plan=baseline_plan
+            )
             plan = await self._planner_port.create_plan(
                 SupervisorPlanningInput(
                     request=request,
@@ -188,13 +200,23 @@ class MultiAgentSupervisor:
             planning_outcome = self._planner_port.last_outcome
             state["plan"] = plan
             state["planning_outcome"] = planning_outcome
+            if planning_outcome is not None:
+                state["planning_outcomes"] = [planning_outcome]
+                await self._record_planner_outcome(
+                    request, state, planning_outcome, operation="create"
+                )
         else:
             restored_outcome = state.get("planning_outcome")
-            planning_outcome = (
-                restored_outcome
-                if restored_outcome is None or hasattr(restored_outcome, "plan_hash")
-                else None
-            )
+            if restored_outcome is None:
+                planning_outcome = None
+            else:
+                planning_outcome = (
+                    restored_outcome
+                    if isinstance(restored_outcome, PlanningOutcome)
+                    else PlanningOutcome.model_validate(restored_outcome)
+                )
+                if planning_outcome.plan_hash != plan_hash(plan):
+                    raise PlanValidationError("checkpoint Planner outcome 与 plan hash 不一致")
         plan = PlanValidator().validate(plan)
         results: dict[str, AgentResultV2] = dict(state.get("task_results") or {})
         if self._checkpoint is not None:
@@ -234,6 +256,15 @@ class MultiAgentSupervisor:
             )
             self._apply_resume(resume, plan, results, task_records, state, active_interrupt)
             plan = cast(ExecutionPlan, state["plan"])
+            if planning_outcome is not None:
+                planning_outcome = planning_outcome.model_copy(
+                    update={"plan": plan, "plan_hash": plan_hash(plan)}
+                )
+                state["planning_outcome"] = planning_outcome
+                outcomes = list(state.get("planning_outcomes") or [])
+                if outcomes:
+                    outcomes[-1] = planning_outcome
+                    state["planning_outcomes"] = outcomes
         elif resume is not None and resume.interrupt_id in set(state.get("resume_history") or []):
             response = state.get("final_response") or self._build_response(request, state, results)
             if response is None:
@@ -249,7 +280,7 @@ class MultiAgentSupervisor:
                 state=cast(SupervisorState, state), response=response, plan=plan
             )
 
-        while len(results) < len(plan.tasks):
+        while not all(task.task_id in results for task in plan.tasks):
             ready = [
                 record.task
                 for task_id, record in task_records.items()
@@ -739,6 +770,9 @@ class MultiAgentSupervisor:
                 failed_task_ids.append(task.task_id)
         if not failed_task_ids:
             return plan
+        await self._emit_planner_call_started(
+            state["current_request"], state, operation="replan", plan=plan
+        )
         patch = await self._planner_port.revise_plan(
             SupervisorReplanningInput(
                 plan=plan,
@@ -748,6 +782,15 @@ class MultiAgentSupervisor:
             )
         )
         updated = apply_plan_patch(plan, patch)
+        outcome = self._planner_port.last_outcome
+        if outcome is not None:
+            state["planning_outcome"] = outcome
+            state["planning_outcomes"] = [
+                *list(state.get("planning_outcomes") or []),
+                outcome,
+            ]
+            request = state["current_request"]
+            await self._record_planner_outcome(request, state, outcome, operation="replan")
         for task in updated.tasks:
             current = task_records.get(task.task_id)
             if current is None:
@@ -756,6 +799,215 @@ class MultiAgentSupervisor:
                 task_records[task.task_id] = current.model_copy(update={"task": task})
         state["replan_count"] = int(state.get("replan_count", 0)) + 1
         return updated
+
+    async def _emit_planner_call_started(
+        self,
+        request: AgentRequest,
+        state: dict[str, Any],
+        *,
+        operation: str,
+        plan: ExecutionPlan,
+    ) -> None:
+        mode = getattr(self._deps.settings, "supervisor_planner_mode", "off")
+        if self._deps.supervisor_planner is None or (
+            operation == "create" and mode not in {"shadow", "active"}
+        ) or (operation == "replan" and mode not in {"shadow", "active_replan", "active"}):
+            return
+        await self._emit_planner_event(
+            request,
+            state,
+            EventType.PLANNER_CALL_STARTED,
+            operation=operation,
+            plan=plan,
+        )
+
+    async def _record_planner_outcome(
+        self,
+        request: AgentRequest,
+        state: dict[str, Any],
+        outcome: PlanningOutcome,
+        *,
+        operation: str,
+    ) -> None:
+        if outcome.model_attempted:
+            fallback_reason = outcome.fallback_reason
+            if fallback_reason not in {"MODEL_TIMEOUT", "MODEL_NETWORK_ERROR"}:
+                await self._emit_planner_event(
+                    request,
+                    state,
+                    EventType.PLANNER_PROPOSAL_RECEIVED,
+                    operation=operation,
+                    outcome=outcome,
+                )
+            if outcome.accepted and outcome.source == "model":
+                await self._emit_planner_event(
+                    request,
+                    state,
+                    EventType.PLANNER_PLAN_ACCEPTED,
+                    operation=operation,
+                    outcome=outcome,
+                )
+            else:
+                await self._emit_planner_event(
+                    request,
+                    state,
+                    EventType.PLANNER_PLAN_REJECTED,
+                    operation=operation,
+                    outcome=outcome,
+                )
+        if outcome.fallback_reason is not None:
+            await self._emit_planner_event(
+                request,
+                state,
+                EventType.PLANNER_FALLBACK,
+                operation=operation,
+                outcome=outcome,
+            )
+        await self._emit_planner_event(
+            request,
+            state,
+            EventType.PLAN_CREATED if operation == "create" else EventType.PLAN_REVISED,
+            operation=operation,
+            outcome=outcome,
+        )
+        if outcome.model_attempted:
+            self._metric_inc("planner_call_total")
+        if outcome.accepted and outcome.source == "model":
+            self._metric_inc("planner_model_plan_accepted_total")
+        if outcome.fallback_reason is not None:
+            self._metric_inc(
+                "planner_fallback_total", {"reason": outcome.fallback_reason}
+            )
+            if outcome.fallback_reason in {
+                "MODEL_OUTPUT_INVALID",
+                "ACTION_NOT_ALLOWED",
+                "PLAN_MATERIALIZATION_FAILED",
+                "PLAN_VALIDATION_FAILED",
+                "BUDGET_EXCEEDED",
+            }:
+                self._metric_inc(
+                    "planner_validation_rejected_total", {"reason": outcome.fallback_reason}
+                )
+        self._metric_observe("planner_latency_ms", outcome.duration_ms)
+        if outcome.repair_count:
+            self._metric_inc("planner_repair_total", value=float(outcome.repair_count))
+        self._metric_observe("planner_plan_task_count", float(outcome.task_count))
+        if operation == "replan":
+            self._metric_inc("planner_replan_total")
+
+    async def _emit_planner_event(
+        self,
+        request: AgentRequest,
+        state: dict[str, Any],
+        event_type: EventType,
+        *,
+        operation: str,
+        plan: ExecutionPlan | None = None,
+        outcome: PlanningOutcome | None = None,
+    ) -> None:
+        if outcome is not None:
+            plan = outcome.plan
+        assert plan is not None
+        model = outcome.model if outcome is not None else getattr(
+            self._deps.supervisor_planner, "model_name", None
+        )
+        prompt_version = outcome.prompt_version if outcome is not None else None
+        accepted = outcome.accepted if outcome is not None else None
+        status = (
+            NodeStatus.SUCCESS
+            if accepted is True
+            else NodeStatus.FALLBACK
+            if outcome is not None and outcome.fallback_reason is not None
+            else None
+        )
+        output_hash = outcome.plan_hash if outcome is not None else plan_hash(plan)
+        proposal_hash = outcome.proposal_hash if outcome is not None else None
+        event = AgentEvent(
+            session_id=request.session_id,
+            request_id=request.request_id,
+            turn_id=str(state["turn_id"]),
+            trace_id=str(state["trace_id"]),
+            event_type=event_type,
+            timestamp=now_iso(),
+            agent_name="supervisor",
+            node_name="supervisor_planner",
+            status=status,
+            duration_ms=outcome.duration_ms if outcome is not None else None,
+            provider="ark" if model else "deterministic",
+            model=model,
+            prompt_version=prompt_version,
+            output_hash=output_hash,
+            input_hash=proposal_hash,
+            retry_count=outcome.repair_count if outcome is not None else None,
+            fallback_used=(outcome.fallback_reason is not None if outcome is not None else None),
+            token_usage=outcome.token_usage if outcome is not None else None,
+            candidate_count_in=len(plan.tasks),
+            candidate_count_out=len(plan.tasks),
+            error_code=outcome.fallback_reason if outcome is not None else None,
+        )
+        await self._emit_trace_safely(event)
+        if outcome is not None:
+            event_id = hashlib.sha256(
+                f"{request.session_id}|{request.request_id}|{operation}|{event_type.value}|{output_hash}".encode()
+            ).hexdigest()
+            payload = {
+                "operation": operation,
+                "source": outcome.source,
+                "model_attempted": outcome.model_attempted,
+                "accepted": outcome.accepted,
+                "fallback_reason": outcome.fallback_reason,
+                "model": outcome.model,
+                "prompt_version": outcome.prompt_version,
+                "repair_count": outcome.repair_count,
+                "duration_ms": outcome.duration_ms,
+                "proposal_hash": outcome.proposal_hash,
+                "plan_hash": outcome.plan_hash,
+                "action_count": outcome.action_count,
+                "task_count": outcome.task_count,
+            }
+            payload = {key: value for key, value in payload.items() if value is not None}
+            records = list(state.get("events") or [])
+            if not any(
+                isinstance(item, AgentEventRecord) and item.event_id == event_id for item in records
+            ):
+                records.append(
+                    AgentEventRecord(
+                        event_id=event_id,
+                        session_id=request.session_id,
+                        request_id=request.request_id,
+                        turn_id=str(state["turn_id"]),
+                        trace_id=str(state["trace_id"]),
+                        agent_name="supervisor",
+                        node_name="supervisor_planner",
+                        event_type=event_type.value,
+                        status=status.value if status is not None else None,
+                        input_hash=proposal_hash,
+                        output_hash=output_hash,
+                        payload=payload,
+                        occurred_at=event.timestamp,
+                    )
+                )
+                state["events"] = records
+
+    async def _emit_trace_safely(self, event: AgentEvent) -> None:
+        try:
+            await self._deps.trace.emit(event)
+        except Exception:
+            self._metric_inc("trace_sink_failure_total")
+
+    def _metric_inc(
+        self, name: str, labels: dict[str, str] | None = None, *, value: float = 1.0
+    ) -> None:
+        try:
+            self._deps.metrics.inc(name, labels, value)
+        except Exception:
+            return
+
+    def _metric_observe(self, name: str, value: float) -> None:
+        try:
+            self._deps.metrics.observe(name, value)
+        except Exception:
+            return
 
     async def _save_task_checkpoint(
         self,
