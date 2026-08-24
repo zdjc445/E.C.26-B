@@ -712,7 +712,7 @@ token、fallback 和错误码，不携带思维链或原始内容。
 | 阶段 3：私有状态 | 已完成 | 五类私有 invocation state；Retrieval wrapper 持有同款/SKU/排序算法；Supervisor/Agent task native namespace 实际读写与恢复 | — |
 | 阶段 4：动态 Planner 与 handoff | 已完成 | 确定性 Planner、PlanValidator、ready-task barrier、受控 skip、handoff 输入授权门禁、Send/Command、结构化 Planner fallback、受控 retry/replan | — |
 | 阶段 5：恢复、HITL 与副作用 | 已完成 | Supervisor/task native checkpoint、clarification/recognition/same-item/memory confirmation、授权 commit、重复 resume 幂等 | 生产 Memory mutation ledger 仍由真实适配器验收 |
-| 阶段 6：灰度发布 | 执行中 | 三种配置模式，默认 workflow；shadow 隔离旧图/新图对照、禁止 Memory/账本/事件/缓存写入；release gate 支持 shadow report | 冻结数据集正式报告、性能报告和生产外部证据 |
+| 阶段 6：灰度发布 | 执行中 | 三种配置模式，默认 multi_agent；workflow 保留回滚路径；shadow 隔离旧图/新图对照、禁止 Memory/账本/事件/缓存写入；release gate 支持 shadow report | 冻结数据集正式报告、性能报告和生产外部证据 |
 
 ### 阶段 1：协议与兼容层
 

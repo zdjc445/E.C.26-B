@@ -32,6 +32,11 @@ from shijiajing_agent.contracts import (
     SupervisorReplanningInput,
     TaskRecord,
 )
+from shijiajing_agent.multi_agent.planner_contracts import (
+    PlannerAction,
+    PlannerProposal,
+    PlanningOutcome,
+)
 
 __all__ = [
     "AgentResultV2",
@@ -52,6 +57,9 @@ __all__ = [
     "IntentTaskOutput",
     "MemoryTaskInput",
     "MemoryTaskOutput",
+    "PlannerAction",
+    "PlannerProposal",
+    "PlanningOutcome",
     "RecognitionTaskInput",
     "RecognitionTaskOutput",
     "RetrievalTaskInput",

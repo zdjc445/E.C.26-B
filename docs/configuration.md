@@ -100,15 +100,15 @@ export SHIJIAJING_ARK_API_KEY=...
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
-| `SHIJIAJING_ORCHESTRATION_MODE` | `workflow` | `workflow`、`multi_agent_shadow` 或 `multi_agent`；默认保持旧路径 |
+| `SHIJIAJING_ORCHESTRATION_MODE` | `multi_agent` | `multi_agent` 为 Supervisor 主路径；`workflow` 为旧图兼容路径；`multi_agent_shadow` 为只读对照 |
 | `SHIJIAJING_SUPERVISOR_MODEL` | 空 | 可选结构化 Planner 模型标识；当前确定性 Planner 为唯一执行门禁 |
 | `SHIJIAJING_MAX_AGENT_TASKS` | 32 | 单计划任务上限 |
 | `SHIJIAJING_MAX_SUPERVISOR_REPLANS` | 2 | 单轮受控 replan 上限 |
 | `SHIJIAJING_AGENT_TASK_TIMEOUT_SECONDS` | 30 | 单 Agent task deadline 默认值 |
 
 `multi_agent_shadow` 的 Memory commit、账本、事件和缓存写入均被隔离；seed/provisional 运行不能作为正式
-发布证据。`shijiajing-release-check --shadow-report` 可校验冻结用例的对照报告；正式评测、性能和
-生产外部证据仍必须通过后，才允许切换默认模式。
+发布证据。`shijiajing-release-check --shadow-report` 可校验冻结用例的对照报告；默认模式虽已
+切换为 `multi_agent`，正式评测、性能和生产外部证据仍必须通过发布门禁。
 
 `native` 启动要求 `SHIJIAJING_CHECKPOINT_DSN` 和非 `disabled` 的 Request Ledger；
 `SHIJIAJING_CHECKPOINT_DSN` 对 `legacy` 和 `native` 两种 Checkpoint 模式都必填，避免

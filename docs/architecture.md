@@ -1,6 +1,6 @@
 # 架构说明
 
-识价镜 Agent 是一个**可恢复的多轮比价 Workflow Agent**：图片/文本输入 → 商品识别 →
+识价镜 Agent 是一个**可恢复的层级式多轮比价 Multi-Agent**：图片/文本输入 → 商品识别 →
 意图理解 → 混合召回 → 同款匹配 → SKU 拆分 → 比价排序 → 多轮筛选修正。
 工程只实现 Agent 逻辑，不包含 Web API 与客户端（方案 §3.2 非目标）。
 
@@ -37,10 +37,10 @@ multi_agent/supervisor.py → 结果归并、规范约束、HITL、checkpoint �
 multi_agent/shadow.py     → 旧 Workflow/新 Supervisor 只读业务不变量对照
 ```
 
-`SHIJIAJING_ORCHESTRATION_MODE` 默认 `workflow`。`multi_agent_shadow` 运行受控任务但跳过
-Memory commit、账本、事件与缓存写入，且执行旧图/新图对照；`multi_agent` 作为受控主路径时
-使用 Supervisor/task 双层 native checkpoint 和四类 HITL resume。默认仍不切换，正式评测、性能
-阈值和生产外部证据必须通过升级方案第 16 节发布门禁。
+`SHIJIAJING_ORCHESTRATION_MODE` 默认 `multi_agent`，使用 Supervisor/task 双层 native
+checkpoint 和四类 HITL resume。`multi_agent_shadow` 运行受控任务但跳过 Memory commit、
+账本、事件与缓存写入，且执行旧图/新图对照；`workflow` 保留为显式兼容与回滚路径。
+正式评测、性能阈值和生产外部证据仍必须通过升级方案第 16 节发布门禁。
 
 依赖方向严格单向：`nodes/ → domain/ + ports/`，`adapters/ → ports/ + domain/`，
 `domain/` 不依赖任何适配器。

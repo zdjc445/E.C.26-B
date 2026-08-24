@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -26,6 +27,14 @@ from shijiajing_agent.errors import SessionConflictError
 from shijiajing_agent.facade import AgentDependencies, AgentFacade
 from shijiajing_agent.ports.retrieval import RetrievalResult
 from shijiajing_agent.state import AgentState
+
+
+@dataclass(frozen=True)
+class WorkflowSettings(Settings):
+    """旧图专项测试使用的显式配置，避免依赖应用默认编排模式。"""
+
+    orchestration_mode: str = "workflow"
+
 
 # ---------------------------------------------------------------------------
 # Fake Ports
@@ -359,7 +368,7 @@ def taxonomy() -> Taxonomy:
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings()
+    return WorkflowSettings()
 
 
 def make_deps(
@@ -421,7 +430,11 @@ def deps_factory(taxonomy: Taxonomy) -> Any:
     def factory(
         settings: Settings | None = None, **overrides: Any
     ) -> tuple[AgentDependencies, dict[str, Any]]:
-        return make_deps(taxonomy, settings or Settings(), **overrides)
+        return make_deps(
+            taxonomy,
+            settings or WorkflowSettings(),
+            **overrides,
+        )
 
     return factory
 

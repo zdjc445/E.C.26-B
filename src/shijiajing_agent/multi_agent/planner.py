@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from asyncio import TimeoutError as AsyncTimeoutError
 from datetime import UTC, datetime, timedelta
 from typing import Any
+
+from pydantic import ValidationError
 
 from shijiajing_agent.contracts import (
     AgentExecutionContext,
@@ -25,12 +30,22 @@ from shijiajing_agent.contracts import (
     SupervisorPlanningInput,
     SupervisorReplanningInput,
 )
-from shijiajing_agent.errors import HandoffRejectedError, PlanValidationError
+from shijiajing_agent.errors import (
+    HandoffRejectedError,
+    ModelOutputInvalidError,
+    PlanValidationError,
+)
 from shijiajing_agent.multi_agent.capabilities import TASK_CAPABILITIES
+from shijiajing_agent.multi_agent.planner_contracts import PlanningOutcome
 
 
 def _deadline(seconds: float) -> str:
     return (datetime.now(UTC) + timedelta(seconds=seconds)).isoformat()
+
+
+def plan_hash(plan: ExecutionPlan) -> str:
+    payload = json.dumps(plan.model_dump(mode="json"), sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 class DeterministicPlanner:
@@ -193,15 +208,25 @@ class PlanValidator:
             plan = ExecutionPlan.model_validate(plan)
             task_map = {task.task_id: task for task in plan.tasks}
             for task in plan.tasks:
+                if task.plan_id != plan.plan_id:
+                    raise PlanValidationError("任务 plan_id 与 ExecutionPlan 不一致")
                 if task.task_kind not in TASK_CAPABILITIES:
                     raise PlanValidationError("任务类型不在 allowlist")
+                if (
+                    task.budget.max_seconds > plan.budget.max_seconds
+                    or task.budget.max_model_calls > plan.budget.max_model_calls
+                    or task.budget.max_tokens > plan.budget.max_tokens
+                ):
+                    raise PlanValidationError("任务预算超过 Supervisor 计划预算")
                 if task.task_kind is AgentTaskKind.RETRIEVE_AND_RANK and not any(
-                    task_map[parent].task_kind is AgentTaskKind.PARSE_INTENT
+                    parent in task_map
+                    and task_map[parent].task_kind is AgentTaskKind.PARSE_INTENT
                     for parent in task.depends_on
                 ):
                     raise PlanValidationError("Retrieval 必须依赖 Intent")
                 if task.task_kind is AgentTaskKind.EXPLAIN and not any(
-                    task_map[parent].task_kind is AgentTaskKind.RETRIEVE_AND_RANK
+                    parent in task_map
+                    and task_map[parent].task_kind is AgentTaskKind.RETRIEVE_AND_RANK
                     for parent in task.depends_on
                 ):
                     raise PlanValidationError("Explanation 必须依赖 Retrieval")
@@ -216,7 +241,7 @@ class PlanValidator:
             return plan
         except PlanValidationError:
             raise
-        except (TypeError, ValueError) as exc:
+        except (TypeError, ValueError, ValidationError, KeyError) as exc:
             raise PlanValidationError(str(exc)) from exc
 
 
@@ -235,6 +260,9 @@ class DeterministicSupervisorPlanner:
 
     async def revise_plan(self, request: SupervisorReplanningInput) -> ExecutionPlanPatch:
         retry_ids = set(request.failed_task_ids)
+        known_ids = {task.task_id for task in request.plan.tasks}
+        if retry_ids - known_ids:
+            raise PlanValidationError("replan 包含未知 failed_task_id")
         retry_tasks: list[AgentTaskV2] = []
         replacements: dict[str, str] = {}
         for task in request.plan.tasks:
@@ -268,7 +296,7 @@ class DeterministicSupervisorPlanner:
 
 
 class GuardedSupervisorPlanner:
-    """可选结构化 Planner 的安全门面；异常或非法计划回退确定性 Planner。"""
+    """可选结构化 Planner 的安全门面；每次回退都保留类型化 outcome。"""
 
     def __init__(
         self,
@@ -277,40 +305,201 @@ class GuardedSupervisorPlanner:
     ) -> None:
         self._deterministic = deterministic
         self._candidate = candidate
+        self._last_outcome: PlanningOutcome | None = None
+
+    @property
+    def last_outcome(self) -> PlanningOutcome | None:
+        """最近一次 create/replan 结果；不包含模型原始输出。"""
+        return self._last_outcome
 
     async def create_plan(self, request: SupervisorPlanningInput) -> ExecutionPlan:
-        if self._candidate is not None:
-            try:
-                proposed = await self._candidate.create_plan(request)
-                return PlanValidator().validate(proposed)
-            except Exception:
-                pass
-        return self._deterministic.create_plan(
+        started = datetime.now(UTC)
+        base = self._deterministic.create_plan(
             request.request,
             context=request.execution_context,
             taxonomy_version=request.taxonomy_version,
         )
+        if self._candidate is not None:
+            try:
+                proposed = await self._candidate.create_plan(request)
+                accepted = PlanValidator().validate(proposed)
+                self._last_outcome = self._outcome(
+                    operation="create",
+                    plan=accepted,
+                    source="model",
+                    model_attempted=True,
+                    accepted=True,
+                    duration_ms=(datetime.now(UTC) - started).total_seconds() * 1000,
+                )
+                return accepted
+            except Exception as exc:
+                self._record_fallback(
+                    operation="create",
+                    plan=base,
+                    started=started,
+                    exc=exc,
+                )
+                return base
+        self._last_outcome = self._outcome(
+            operation="create",
+            plan=base,
+            source="deterministic",
+            model_attempted=False,
+            accepted=False,
+            fallback_reason="MODEL_DISABLED",
+            duration_ms=(datetime.now(UTC) - started).total_seconds() * 1000,
+        )
+        return base
 
     async def revise_plan(self, request: SupervisorReplanningInput) -> ExecutionPlanPatch:
+        started = datetime.now(UTC)
         if self._candidate is not None:
             try:
                 proposed = await self._candidate.revise_plan(request)
-                PlanValidator().validate(apply_plan_patch(request.plan, proposed))
+                updated = apply_plan_patch(request.plan, proposed)
+                self._last_outcome = self._outcome(
+                    operation="replan",
+                    plan=updated,
+                    source="model",
+                    model_attempted=True,
+                    accepted=True,
+                    duration_ms=(datetime.now(UTC) - started).total_seconds() * 1000,
+                )
                 return proposed
-            except Exception:
-                pass
-        return await DeterministicSupervisorPlanner(self._deterministic).revise_plan(request)
+            except Exception as exc:
+                fallback = await DeterministicSupervisorPlanner(self._deterministic).revise_plan(
+                    request
+                )
+                updated = apply_plan_patch(request.plan, fallback)
+                self._record_fallback(
+                    operation="replan",
+                    plan=updated,
+                    started=started,
+                    exc=exc,
+                )
+                return fallback
+        fallback = await DeterministicSupervisorPlanner(self._deterministic).revise_plan(request)
+        updated = apply_plan_patch(request.plan, fallback)
+        self._last_outcome = self._outcome(
+            operation="replan",
+            plan=updated,
+            source="deterministic",
+            model_attempted=False,
+            accepted=False,
+            fallback_reason="MODEL_DISABLED",
+            duration_ms=(datetime.now(UTC) - started).total_seconds() * 1000,
+        )
+        return fallback
+
+    def _record_fallback(
+        self,
+        *,
+        operation: str,
+        plan: ExecutionPlan,
+        started: datetime,
+        exc: Exception,
+    ) -> None:
+        reason = "MODEL_NETWORK_ERROR"
+        if isinstance(exc, (TimeoutError, AsyncTimeoutError)):
+            reason = "MODEL_TIMEOUT"
+        elif isinstance(exc, ModelOutputInvalidError):
+            reason = "MODEL_OUTPUT_INVALID"
+        elif isinstance(exc, PlanValidationError):
+            reason = "PLAN_VALIDATION_FAILED"
+        self._last_outcome = self._outcome(
+            operation=operation,
+            plan=plan,
+            source="deterministic",
+            model_attempted=True,
+            accepted=False,
+            fallback_reason=reason,  # type: ignore[arg-type]
+            duration_ms=(datetime.now(UTC) - started).total_seconds() * 1000,
+        )
+
+    def _outcome(
+        self,
+        *,
+        operation: str,
+        plan: ExecutionPlan,
+        source: str,
+        model_attempted: bool,
+        accepted: bool,
+        duration_ms: float,
+        fallback_reason: str | None = None,
+    ) -> PlanningOutcome:
+        model = getattr(self._candidate, "model_name", None) if self._candidate else None
+        prompt_version = (
+            getattr(self._candidate, "prompt_version", None) if self._candidate else None
+        )
+        repair_count = int(getattr(self._candidate, "repair_count", 0) or 0)
+        token_usage = dict(getattr(self._candidate, "token_usage", {}) or {})
+        proposal_hash = getattr(self._candidate, "proposal_hash", None) if self._candidate else None
+        return PlanningOutcome(
+            operation=operation,  # type: ignore[arg-type]
+            plan=plan,
+            source=source,  # type: ignore[arg-type]
+            model_attempted=model_attempted,
+            accepted=accepted,
+            fallback_reason=fallback_reason,  # type: ignore[arg-type]
+            model=model,
+            prompt_version=prompt_version,
+            repair_count=repair_count,
+            duration_ms=max(0.0, duration_ms),
+            proposal_hash=proposal_hash,
+            plan_hash=plan_hash(plan),
+            token_usage=token_usage,
+            action_count=0,
+            task_count=len(plan.tasks),
+        )
 
 
 def apply_plan_patch(plan: ExecutionPlan, patch: ExecutionPlanPatch) -> ExecutionPlan:
     """将结构化 replan patch 应用到计划，并重新校验依赖。"""
+    PlanValidator().validate(plan)
     existing = {task.task_id: task for task in plan.tasks}
+    skip_ids = set(patch.skip_task_ids)
+    retry_ids = set(patch.retry_task_ids)
+    replacement_ids = dict(patch.replace_task_ids)
+    if len(skip_ids) != len(patch.skip_task_ids):
+        raise PlanValidationError("skip_task_ids 不得重复")
+    if len(retry_ids) != len(patch.retry_task_ids):
+        raise PlanValidationError("retry_task_ids 不得重复")
+    if skip_ids & set(replacement_ids):
+        raise PlanValidationError("同一任务不能同时 skip 和 replace")
+    if skip_ids - set(existing):
+        raise PlanValidationError("skip_task_ids 包含未知任务")
+    if retry_ids - set(existing):
+        raise PlanValidationError("retry_task_ids 包含未知任务")
+    add_ids = [task.task_id for task in patch.add_tasks]
+    if len(add_ids) != len(set(add_ids)):
+        raise PlanValidationError("add_tasks task_id 不得重复")
+    if set(add_ids) & set(existing):
+        raise PlanValidationError("add_tasks task_id 与已有任务重复")
+    if set(retry_ids) - set(replacement_ids):
+        raise PlanValidationError("retry_task_ids 必须通过 replace_task_ids 指向新任务")
+    if set(replacement_ids) - set(existing):
+        raise PlanValidationError("replace_task_ids 源任务不存在")
+    if set(replacement_ids.values()) - set(add_ids):
+        raise PlanValidationError("replace_task_ids 目标必须来自 add_tasks")
+    if set(replacement_ids) & set(add_ids):
+        raise PlanValidationError("replace_task_ids 目标不能同时作为源任务")
+    if any(source == target for source, target in replacement_ids.items()):
+        raise PlanValidationError("replace_task_ids 不能自替换")
+    if skip_ids & retry_ids:
+        raise PlanValidationError("同一任务不能同时 skip 和 retry")
+    for task in plan.tasks:
+        for dependency in task.depends_on:
+            resolved = replacement_ids.get(dependency, dependency)
+            if resolved in skip_ids:
+                raise PlanValidationError(f"不能跳过仍被依赖的任务: {dependency}")
     for task in patch.add_tasks:
-        if task.task_id in existing:
-            raise PlanValidationError(f"replan task_id 重复: {task.task_id}")
+        if task.plan_id != plan.plan_id:
+            raise PlanValidationError("patch 新任务 plan_id 与计划不一致")
         existing[task.task_id] = task
     tasks: list[AgentTaskV2] = []
     for task in existing.values():
+        if task.task_id in skip_ids or task.task_id in replacement_ids:
+            continue
         dependencies = [patch.replace_task_ids.get(parent, parent) for parent in task.depends_on]
         tasks.append(task.model_copy(update={"depends_on": dependencies}))
     return PlanValidator().validate(plan.model_copy(update={"tasks": tasks}))

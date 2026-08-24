@@ -75,10 +75,11 @@ async def test_multi_agent_missing_category_skips_retrieval(
 
 
 @pytest.mark.asyncio
-async def test_facade_mode_switch_keeps_workflow_default_and_routes_multi_agent(
+async def test_facade_defaults_to_multi_agent(
     deps_factory: Any,
 ) -> None:
-    settings = replace(Settings(), orchestration_mode="multi_agent")
+    settings = Settings()
+    assert settings.orchestration_mode == "multi_agent"
     deps, fakes = deps_factory(settings)
     fakes["retrieval"].sequence = [two_candidate_result()]
     response = await AgentFacade(deps).run(

@@ -1,8 +1,8 @@
 # 识价镜 Agent（shijiajing-agent）
 
 图片/文本输入 → 商品识别 → 意图理解 → 混合召回 → 同款匹配 → SKU 拆分 →
-比价排序 → 多轮筛选修正 的**可恢复 Workflow Agent**（LangGraph），并提供受控层级式
-Multi-Agent 灰度路径。默认仍为 `workflow`。
+比价排序 → 多轮筛选修正 的**可恢复层级式 Multi-Agent**（LangGraph）。默认由 Supervisor
+通过任务 DAG 调度五类 Specialist Agent；旧 `workflow` 保留为兼容与回滚路径。
 
 工程只实现 Agent 逻辑，不包含 Web API 与客户端（方案 §3.2 非目标）。
 
@@ -100,8 +100,9 @@ uv run shijiajing-eval --live --output-datasets-dir <dir>  # 真实数据实时�
 - 全部外部能力通过 Protocol 端口注入（VLM/意图/改写/解释/检索/Checkpoint/Trace/指标）
 - 幂等（request_id）、乐观版本冲突重放、同会话并发控制
 - 详细：[docs/architecture.md](docs/architecture.md)、[docs/workflow.md](docs/workflow.md)
-- 受控 Multi-Agent 入口：[docs/multi_agent.md](docs/multi_agent.md)。shadow 模式执行隔离的旧图/新图
-  对照且不提交 Memory、账本、事件或缓存副作用；正式评测、性能和生产外部证据门禁完成前，不切换默认模式。
+- 受控 Multi-Agent 入口：[docs/multi_agent.md](docs/multi_agent.md)。默认模式为 `multi_agent`；
+  `multi_agent_shadow` 执行隔离的旧图/新图对照且不提交 Memory、账本、事件或缓存副作用，
+  `workflow` 保留为显式回滚路径。
 
 ## 文档
 
@@ -113,6 +114,7 @@ uv run shijiajing-eval --live --output-datasets-dir <dir>  # 真实数据实时�
 | [docs/memory.md](docs/memory.md) | 长期记忆值域、owner 隔离、HITL 与失败策略 |
 | [docs/multi_agent.md](docs/multi_agent.md) | Supervisor、专业子图、并行汇合与确定性边界 |
 | [docs/plans/multi_agent_upgrade_plan.md](docs/plans/multi_agent_upgrade_plan.md) | 受控层级式 Multi-Agent 目标架构、协议、迁移阶段与 DoD |
+| [docs/plans/model_supervisor_planner_implementation_plan.md](docs/plans/model_supervisor_planner_implementation_plan.md) | 模型 Supervisor Planner 的受控提议、确定性物化、回退、审计与灰度实施方案 |
 | [docs/configuration.md](docs/configuration.md) | 全部配置项与缺失行为 |
 | [docs/milvus_schema.md](docs/milvus_schema.md) | Collection 结构、索引脚本、混合召回、降级 |
 | [docs/evaluation.md](docs/evaluation.md) | 数据集、指标阈值、冻结流程、诚实性说明 |

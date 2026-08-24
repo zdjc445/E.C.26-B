@@ -10,7 +10,6 @@ import pytest
 from shijiajing_agent.adapters.checkpoint import SQLiteCheckpointAdapter
 from shijiajing_agent.adapters.event_store import SQLiteEventStoreAdapter
 from shijiajing_agent.adapters.memory import SQLiteMemoryAdapter
-from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import (
     AgentExecutionContext,
     AgentRequest,
@@ -23,7 +22,13 @@ from shijiajing_agent.contracts import (
 from shijiajing_agent.runtime import open_agent_runtime
 from shijiajing_agent.tools.backup_sqlite import main as backup_sqlite_main
 
-from .conftest import FakeRetrieval, FakeVisionModel, make_deps, two_candidate_result
+from .conftest import (
+    FakeRetrieval,
+    FakeVisionModel,
+    make_deps,
+    two_candidate_result,
+)
+from .conftest import WorkflowSettings as Settings
 
 
 class _ClosableTrace:

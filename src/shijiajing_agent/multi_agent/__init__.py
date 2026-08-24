@@ -13,6 +13,20 @@ from shijiajing_agent.multi_agent.planner import (
     PlanValidator,
     apply_plan_patch,
 )
+from shijiajing_agent.multi_agent.planner_catalog import (
+    AllowedAction,
+    AllowedActionCatalog,
+    build_action_catalog,
+)
+from shijiajing_agent.multi_agent.planner_contracts import (
+    PlannerAction,
+    PlannerProposal,
+    PlanningOutcome,
+)
+from shijiajing_agent.multi_agent.planner_materializer import (
+    MaterializationResult,
+    PlanMaterializer,
+)
 from shijiajing_agent.multi_agent.registry import SpecialistAgentRegistry, build_registry
 from shijiajing_agent.multi_agent.shadow import (
     ShadowComparison,
@@ -25,18 +39,26 @@ from shijiajing_agent.multi_agent.shadow import (
 from shijiajing_agent.multi_agent.supervisor import MultiAgentSupervisor, SupervisorRunResult
 
 __all__ = [
+    "AllowedAction",
+    "AllowedActionCatalog",
     "DeterministicPlanner",
     "DeterministicSupervisorPlanner",
     "GuardedSupervisorPlanner",
     "InMemoryMultiAgentCheckpoint",
     "LangGraphMultiAgentCheckpoint",
+    "MaterializationResult",
     "MultiAgentSupervisor",
+    "PlanMaterializer",
     "PlanValidator",
+    "PlannerAction",
+    "PlannerProposal",
+    "PlanningOutcome",
     "ShadowComparison",
     "ShadowComparisonReport",
     "SpecialistAgentRegistry",
     "SupervisorRunResult",
     "apply_plan_patch",
+    "build_action_catalog",
     "build_registry",
     "compare_responses",
     "dispatch_ready_tasks",

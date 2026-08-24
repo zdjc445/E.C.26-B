@@ -83,7 +83,7 @@ class Settings:
     checkpoint_backend: str = "sqlite"
     checkpoint_dsn: str | None = None
     graph_persistence_mode: str = "legacy"
-    orchestration_mode: str = "workflow"
+    orchestration_mode: str = "multi_agent"
     supervisor_model: str | None = None
     max_agent_tasks: int = 32
     max_supervisor_replans: int = 2
@@ -354,7 +354,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         checkpoint_backend=get("CHECKPOINT_BACKEND") or "sqlite",
         checkpoint_dsn=get("CHECKPOINT_DSN"),
         graph_persistence_mode=get("GRAPH_PERSISTENCE_MODE") or "legacy",
-        orchestration_mode=get("ORCHESTRATION_MODE") or "workflow",
+        orchestration_mode=get("ORCHESTRATION_MODE") or "multi_agent",
         supervisor_model=get("SUPERVISOR_MODEL"),
         max_agent_tasks=geti("MAX_AGENT_TASKS"),
         max_supervisor_replans=geti("MAX_SUPERVISOR_REPLANS"),

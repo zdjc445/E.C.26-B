@@ -7,6 +7,11 @@ import pytest
 from shijiajing_agent.config import Settings, load_settings
 
 
+def test_multi_agent_is_the_default_orchestration_mode() -> None:
+    assert Settings().orchestration_mode == "multi_agent"
+    assert load_settings({}).orchestration_mode == "multi_agent"
+
+
 def test_environment_names_are_exact() -> None:
     assert load_settings({"SHIJIAJING_ENV": "prod"}).env == "prod"
     assert Settings(env="dev", checkpoint_dsn="checkpoint.db").validate_engineering() == []

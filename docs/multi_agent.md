@@ -1,11 +1,13 @@
 # Multi-Agent 与专业子图
 
-> 当前状态：legacy `workflow` 保持原有 Supervisor + 专业子图路径；受控 Multi-Agent
+> 当前状态：受控 Multi-Agent 为默认路径；legacy `workflow` 保持原有 Supervisor + 专业子图兼容路径。Multi-Agent
 > 已增加 2.0 协议、确定性计划、registry、五类私有 Agent invocation、双层 native
 > checkpoint namespace、Send/Command 派发、受控 replan、四类 HITL resume 和三种灰度模式。
 > shadow 对照报告与发布门禁已提供；正式外部证据仍需部署环境生成。
 > 目标 Multi-Agent 架构和分阶段迁移方案见
-> [`docs/plans/multi_agent_upgrade_plan.md`](plans/multi_agent_upgrade_plan.md)。
+> [`docs/plans/multi_agent_upgrade_plan.md`](plans/multi_agent_upgrade_plan.md)。模型 Supervisor
+> Planner 当前只有可插拔接口和确定性回退骨架，尚未接入真实模型；实施设计见
+> [`docs/plans/model_supervisor_planner_implementation_plan.md`](plans/model_supervisor_planner_implementation_plan.md)。
 
 根图名称固定为 `shijiajing-supervisor`。专业子图提供可独立装配的 LangGraph 入口；根图负责依赖、汇合、HITL、持久化和最终响应，确定性业务算法仍留在 `domain/`。
 
@@ -21,8 +23,8 @@
   Agent。它们只接收对应的 `AgentTaskV2.input` 和私有 state，不接收完整 `AgentState`。
 - Retrieval Agent 内部继续调用现有确定性同款、SKU、价格聚合和排序算法；Agent 返回 proposal，
   不直接写 Supervisor 规范状态。
-- `workflow`（默认）不改变；`multi_agent_shadow` 禁止 Memory commit；`multi_agent` 执行受控
-  任务路径。三种模式由 `SHIJIAJING_ORCHESTRATION_MODE` 选择。
+- `multi_agent`（默认）执行受控任务路径；`workflow` 保留旧图兼容路径；
+  `multi_agent_shadow` 禁止 Memory commit。三种模式由 `SHIJIAJING_ORCHESTRATION_MODE` 选择。
 - 配置了现有 LangGraph native saver 时，`multi_agent` 会把 Supervisor plan、活动 interrupt
   和每个 task result 分别保存到稳定 namespace，并在重放时先恢复已完成 task；未配置时使用纯内存执行。
 - `GuardedSupervisorPlanner` 对结构化 Planner 的异常、非法 DAG 和非法 replan patch 统一回退到

@@ -11,7 +11,6 @@ from typing import Any
 
 import pytest
 
-from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import (
     AgentRequest,
     AgentStatus,
@@ -30,6 +29,7 @@ from shijiajing_agent.graph import build_graph
 from shijiajing_agent.nodes.input_nodes import make_initial_state
 from shijiajing_agent.ports.retrieval import RetrievalResult
 
+from .conftest import WorkflowSettings as Settings
 from .conftest import make_image, two_candidate_result, two_sku_result
 
 

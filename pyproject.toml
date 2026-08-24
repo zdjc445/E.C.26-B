@@ -1,7 +1,7 @@
 [project]
 name = "shijiajing-agent"
 version = "0.1.0"
-description = "识价镜 Agent：图片/文本输入 → 商品识别 → 意图理解 → 混合召回 → 同款匹配 → SKU 拆分 → 比价排序 → 多轮筛选 的可恢复 Workflow Agent"
+description = "识价镜 Agent：由 Supervisor 编排识别、意图、检索、解释与记忆 Agent 的可恢复层级式 Multi-Agent"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Proprietary" }

@@ -11,7 +11,6 @@ from langgraph.checkpoint.memory import MemorySaver
 from shijiajing_agent.adapters.event_store import InMemoryEventStore
 from shijiajing_agent.adapters.memory import SQLiteMemoryAdapter
 from shijiajing_agent.adapters.request_ledger import InMemoryRequestLedger
-from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import (
     AgentExecutionContext,
     AgentRequest,
@@ -28,7 +27,14 @@ from shijiajing_agent.facade import AgentFacade
 from shijiajing_agent.nodes.input_nodes import make_initial_state
 from shijiajing_agent.ports.retrieval import RetrievalResult
 
-from .conftest import FakeRetrieval, candidate, make_deps, make_image, two_candidate_result
+from .conftest import (
+    FakeRetrieval,
+    candidate,
+    make_deps,
+    make_image,
+    two_candidate_result,
+)
+from .conftest import WorkflowSettings as Settings
 
 
 def _without_runtime_ids(value: Any) -> Any:
