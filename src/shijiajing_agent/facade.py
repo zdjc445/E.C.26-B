@@ -56,8 +56,11 @@ from shijiajing_agent.ports.dependencies import SupervisorPlannerPort
 from shijiajing_agent.ports.event_store import EventStorePort
 from shijiajing_agent.ports.memory import MemoryPort
 from shijiajing_agent.ports.models import (
+    DynamicProductCanonicalizationPort,
+    DynamicSchemaInductionPort,
     ExplanationModelPort,
     IntentModelPort,
+    ProductCanonicalizationPort,
     QueryRewritePort,
     VisionModelPort,
 )
@@ -72,6 +75,7 @@ _MODEL_PROMPTS = {
     "parse_intent": ("intent.md", "ark_text_model"),
     "parse_intent_resume": ("intent.md", "ark_text_model"),
     "rewrite_query": ("query_rewrite.md", "ark_text_model"),
+    "canonicalize_products": ("product_canonicalization.md", "ark_text_model"),
     "generate_explanation": ("explanation.md", "ark_text_model"),
 }
 _AGENT_NAMES = {
@@ -128,6 +132,9 @@ class AgentDependencies:
     cache: VersionedCachePort | None = None
     event_store: EventStorePort | None = None
     supervisor_planner: SupervisorPlannerPort | None = None
+    product_canonicalizer: ProductCanonicalizationPort | None = None
+    dynamic_schema_inducer: DynamicSchemaInductionPort | None = None
+    dynamic_product_canonicalizer: DynamicProductCanonicalizationPort | None = None
 
 
 class AgentFacade:
@@ -1196,7 +1203,9 @@ class AgentFacade:
             last_turn_id = cast(str | None, getattr(last_summary, "turn_id", None))
         if last_request_id != request.request_id or last_turn_id != current_turn_id:
             summary_delta = append_turn_summary_node(
-                state, recent_turns_limit=self._deps.settings.recent_turns_limit
+                state,
+                recent_turns_limit=self._deps.settings.recent_turns_limit,
+                recent_turns_max_bytes=self._deps.settings.recent_turns_max_bytes,
             )
             state["recent_turns"] = summary_delta["recent_turns"]
         return state
@@ -1238,6 +1247,7 @@ class AgentFacade:
             summary_delta = append_turn_summary_node(
                 cast(AgentState, failure_state),
                 recent_turns_limit=self._deps.settings.recent_turns_limit,
+                recent_turns_max_bytes=self._deps.settings.recent_turns_max_bytes,
             )
             recent_turns_after = summary_delta["recent_turns"]
         delta = {

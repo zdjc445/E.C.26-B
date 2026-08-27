@@ -41,6 +41,7 @@ from shijiajing_agent.contracts import (
     MemoryTaskInput,
     MemoryTaskOutput,
     NodeStatus,
+    RankingContext,
     RecognitionReviewResume,
     RecognitionTaskInput,
     RecognitionTaskOutput,
@@ -51,10 +52,16 @@ from shijiajing_agent.contracts import (
     SupervisorPlanningInput,
     SupervisorReplanningInput,
     TaskRecord,
+    content_hash,
     now_iso,
 )
 from shijiajing_agent.domain.constraints import ClarificationBuilder, ConstraintMerger
-from shijiajing_agent.domain.memory_policy import apply_memory_defaults
+from shijiajing_agent.domain.memory_policy import (
+    apply_memory_defaults,
+    build_memory_query,
+    memory_authorization_id,
+    resolve_memory_application,
+)
 from shijiajing_agent.errors import PlanValidationError
 from shijiajing_agent.multi_agent.agents.base import result_for
 from shijiajing_agent.multi_agent.checkpoint import (
@@ -164,6 +171,7 @@ class MultiAgentSupervisor:
             "task_records": task_records,
             "task_results": {},
             "canonical_understanding": CanonicalUnderstanding(),
+            "recent_turns": [],
             "replan_count": 0,
             "total_task_count": 0,
             "budget_usage": SupervisorBudgetUsage(),
@@ -171,7 +179,10 @@ class MultiAgentSupervisor:
             "events": [],
             "hitl_completed": [],
             "resume_history": [],
-            "memory_authorized": not bool(getattr(self._deps.settings, "hitl_enabled", False)),
+            "memory_authorized": (
+                not bool(getattr(self._deps.settings, "hitl_enabled", False))
+                or not bool(getattr(self._deps.settings, "memory_confirmation_required", True))
+            ),
         }
         checkpoint_namespace = supervisor_checkpoint_namespace(
             request.session_id, str(state["turn_id"]), plan.plan_id
@@ -494,7 +505,11 @@ class MultiAgentSupervisor:
                         ]
                     },
                 )
-        if task.task_kind is AgentTaskKind.MEMORY_COMMIT and "memory_confirmation" not in completed:
+        if (
+            task.task_kind is AgentTaskKind.MEMORY_COMMIT
+            and getattr(self._deps.settings, "memory_confirmation_required", True)
+            and "memory_confirmation" not in completed
+        ):
             prepare = next(
                 (
                     result.output
@@ -682,6 +697,29 @@ class MultiAgentSupervisor:
         elif stage == "memory_confirmation":
             answer = MemoryConfirmationResume.model_validate(resume.value)
             state["memory_authorized"] = answer.action == "approve"
+            if answer.action == "approve":
+                prepared = next(
+                    (
+                        result.output
+                        for result in results.values()
+                        if isinstance(result.output, MemoryTaskOutput)
+                        and result.output.operation == "prepare"
+                    ),
+                    None,
+                )
+                mutation_binding = "|".join(
+                    [
+                        active.interrupt_id,
+                        *(
+                            f"{item.mutation_id}:{content_hash(item.model_dump(mode='json'))}"
+                            for item in (prepared.mutations if prepared is not None else [])
+                        ),
+                    ]
+                )
+                state["memory_authorization_id"] = hashlib.sha256(
+                    mutation_binding.encode("utf-8")
+                ).hexdigest()
+                state["memory_authorization_interrupt_id"] = active.interrupt_id
         else:
             raise ValueError("未知 Multi-Agent interrupt stage")
         state["plan"] = plan
@@ -810,9 +848,11 @@ class MultiAgentSupervisor:
         plan: ExecutionPlan,
     ) -> None:
         mode = getattr(self._deps.settings, "supervisor_planner_mode", "off")
-        if self._deps.supervisor_planner is None or (
-            operation == "create" and mode not in {"shadow", "active"}
-        ) or (operation == "replan" and mode not in {"shadow", "active_replan", "active"}):
+        if (
+            self._deps.supervisor_planner is None
+            or (operation == "create" and mode not in {"shadow", "active"})
+            or (operation == "replan" and mode not in {"shadow", "active_replan", "active"})
+        ):
             return
         await self._emit_planner_event(
             request,
@@ -876,9 +916,7 @@ class MultiAgentSupervisor:
         if outcome.validated:
             self._metric_inc("planner_model_plan_accepted_total")
         if outcome.fallback_reason is not None:
-            self._metric_inc(
-                "planner_fallback_total", {"reason": outcome.fallback_reason}
-            )
+            self._metric_inc("planner_fallback_total", {"reason": outcome.fallback_reason})
             if outcome.fallback_reason in {
                 "MODEL_OUTPUT_INVALID",
                 "ACTION_NOT_ALLOWED",
@@ -909,8 +947,10 @@ class MultiAgentSupervisor:
         if outcome is not None:
             plan = outcome.plan
         assert plan is not None
-        model = outcome.model if outcome is not None else getattr(
-            self._deps.supervisor_planner, "model_name", None
+        model = (
+            outcome.model
+            if outcome is not None
+            else getattr(self._deps.supervisor_planner, "model_name", None)
         )
         prompt_version = outcome.prompt_version if outcome is not None else None
         accepted = outcome.accepted if outcome is not None else None
@@ -1074,7 +1114,18 @@ class MultiAgentSupervisor:
         state: dict[str, Any],
     ) -> AgentTaskV2:
         understanding = state["canonical_understanding"]
-        if task.task_kind is AgentTaskKind.RETRIEVE_AND_RANK and isinstance(
+        if task.task_kind is AgentTaskKind.PARSE_INTENT and isinstance(task.input, IntentTaskInput):
+            task = task.model_copy(
+                update={
+                    "input": task.input.model_copy(
+                        update={
+                            "previous_constraints": understanding.constraints,
+                            "recent_turns": list(state.get("recent_turns") or []),
+                        }
+                    )
+                }
+            )
+        elif task.task_kind is AgentTaskKind.RETRIEVE_AND_RANK and isinstance(
             task.input, RetrievalTaskInput
         ):
             task = task.model_copy(
@@ -1083,6 +1134,30 @@ class MultiAgentSupervisor:
                         update={
                             "constraints": understanding.constraints or task.input.constraints,
                             "recognition": understanding.recognition,
+                            "ranking_context": (
+                                RankingContext(
+                                    memory_priors=understanding.memory_application.ranking_priors,
+                                    memory_negative_terms=understanding.memory_application.negative_preferences,
+                                    applied_memory_ids=understanding.memory_application.applied_memory_ids,
+                                )
+                                if hasattr(understanding, "memory_application")
+                                else task.input.ranking_context
+                            ),
+                        }
+                    )
+                }
+            )
+        elif task.task_kind is AgentTaskKind.MEMORY_RECALL and isinstance(
+            task.input, MemoryTaskInput
+        ):
+            task = task.model_copy(
+                update={
+                    "input": task.input.model_copy(
+                        update={
+                            "query": build_memory_query(
+                                {"effective_constraints": understanding.constraints},
+                                getattr(self._deps.settings, "memory_recall_limit", 20),
+                            )
                         }
                     )
                 }
@@ -1133,8 +1208,35 @@ class MultiAgentSupervisor:
                 None,
             )
             mutations = list(prepare.proposed_memory_mutations) if prepare is not None else []
+            authorization_id = state.get("memory_authorization_id")
+            authorization_interrupt_id = state.get("memory_authorization_interrupt_id")
+            if state.get("memory_authorized", False) and not authorization_interrupt_id:
+                authorization_interrupt_id = f"auto:{state['plan'].plan_id}"
+                state["memory_authorization_interrupt_id"] = authorization_interrupt_id
+            if state.get("memory_authorized", False) and authorization_interrupt_id:
+                expected_authorization_id = memory_authorization_id(
+                    str(authorization_interrupt_id), mutations
+                )
+                if not authorization_id:
+                    authorization_id = expected_authorization_id
+                    state["memory_authorization_id"] = authorization_id
+                elif authorization_id != expected_authorization_id:
+                    authorization_id = None
             task = task.model_copy(
-                update={"input": task.input.model_copy(update={"mutations": mutations})}
+                update={
+                    "input": task.input.model_copy(
+                        update={
+                            "mutations": mutations,
+                            "authorization_id": authorization_id,
+                            "authorization_interrupt_id": authorization_interrupt_id,
+                            "authorization_mutation_ids": [item.mutation_id for item in mutations],
+                            "authorization_payload_hashes": {
+                                item.mutation_id: content_hash(item.model_dump(mode="json"))
+                                for item in mutations
+                            },
+                        }
+                    )
+                }
             )
         return task
 
@@ -1164,15 +1266,24 @@ class MultiAgentSupervisor:
             turn_id=str(state["turn_id"]),
             subject_id=None,
         )
-        constraints = (
-            apply_memory_defaults(merged.constraints, memories) if memories else merged.constraints
-        )
+        application = resolve_memory_application(merged.constraints, memories)
+        constraints = apply_memory_defaults(merged.constraints, memories)
         state["canonical_understanding"] = CanonicalUnderstanding(
             recognition=recognition,
             intent_patch=intent,
             constraints=constraints,
             memory_records=memories,
+            memory_application=application,
         )
+        if any(
+            result.task_kind is AgentTaskKind.MEMORY_RECALL
+            and result.status in {NodeStatus.FAILED, NodeStatus.FALLBACK}
+            for result in results.values()
+        ):
+            state["notices"] = [
+                *list(state.get("notices") or []),
+                "历史偏好读取失败，本轮未应用",
+            ]
         if merged.notices:
             state["notices"] = [*list(state.get("notices") or []), *merged.notices]
 
@@ -1218,6 +1329,24 @@ class MultiAgentSupervisor:
         )
         if retrieval is None:
             return None
+        notices = list(state.get("notices") or [])
+        memory_commit = next(
+            (
+                result
+                for result in reversed(list(results.values()))
+                if result.task_kind is AgentTaskKind.MEMORY_COMMIT
+            ),
+            None,
+        )
+        if memory_commit is not None:
+            if memory_commit.status is NodeStatus.FAILED:
+                notices.append("长期偏好保存失败，本轮结果未声明已记住")
+            elif (
+                isinstance(memory_commit.output, MemoryTaskOutput)
+                and memory_commit.output.committed
+                and memory_commit.output.saved
+            ):
+                notices.append("已按你的明确要求更新长期偏好")
         if retrieval.status is NodeStatus.FAILED:
             return AgentResponse(
                 session_id=request.session_id,
@@ -1227,7 +1356,7 @@ class MultiAgentSupervisor:
                 message="检索服务不可用，请稍后重试。",
                 recognition=understanding.recognition,
                 effective_constraints=constraints,
-                notices=list(state.get("notices") or []),
+                notices=notices,
                 trace_id=str(state["trace_id"]),
             )
         retrieval_output = retrieval.output
@@ -1264,6 +1393,6 @@ class MultiAgentSupervisor:
             recognition=understanding.recognition,
             effective_constraints=constraints,
             groups=ranked,
-            notices=list(state.get("notices") or []),
+            notices=notices,
             trace_id=str(state["trace_id"]),
         )

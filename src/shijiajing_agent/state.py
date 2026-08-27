@@ -25,10 +25,12 @@ from shijiajing_agent.contracts import (
     ImageRef,
     IntentPatch,
     MatchPair,
+    MemoryApplication,
     MemoryMutation,
     MemoryRecord,
     NormalizedCandidate,
     RankedGroup,
+    RankingContext,
     RecognitionResult,
     RetrievalCandidate,
     RetrievalQuery,
@@ -158,6 +160,9 @@ class NativeTurnInput(TypedDict, total=False):
     relaxation_attempted: bool
     relaxed_attributes: list[str]
     normalized_candidates: list[NormalizedCandidate]
+    dynamic_schema_id: str | None
+    dynamic_schema_summary: dict[str, Any] | None
+    dynamic_shadow_summary: dict[str, int] | None
     spu_clusters: list[list[int]]
     same_item_review_pairs: list[MatchPair]
     sku_groups: list[SkuGroup]
@@ -168,6 +173,8 @@ class NativeTurnInput(TypedDict, total=False):
     explanation_verified: bool
     response: AgentResponse | None
     memory_context: list[MemoryRecord]
+    memory_application: MemoryApplication
+    ranking_context: RankingContext
     dirty_flags: dict[str, bool]
     retry_counters: dict[str, int]
     next_action: str
@@ -181,6 +188,7 @@ class NativeTurnInput(TypedDict, total=False):
     fallbacks: list[FallbackRecord]
     notices: list[str]
     pending_memory_mutations: list[MemoryMutation]
+    memory_effects: list[dict[str, str]]
     agent_results: list[AgentResult]
     active_interrupt: AgentInterrupt | None
     hitl_stage: str | None
@@ -227,6 +235,9 @@ class AgentState(TypedDict, total=False):
     relaxed_attributes: list[str]
     # 匹配
     normalized_candidates: list[NormalizedCandidate]
+    dynamic_schema_id: str | None
+    dynamic_schema_summary: dict[str, Any] | None
+    dynamic_shadow_summary: dict[str, int] | None
     spu_clusters: list[list[int]]
     same_item_review_pairs: list[MatchPair]
     sku_groups: list[SkuGroup]
@@ -256,7 +267,10 @@ class AgentState(TypedDict, total=False):
     execution_context: AgentExecutionContext | None
     recent_turns: list[ConversationTurnSummary]
     memory_context: list[MemoryRecord]
+    memory_application: MemoryApplication
+    ranking_context: RankingContext
     pending_memory_mutations: list[MemoryMutation]
+    memory_effects: list[dict[str, str]]
     agent_results: list[AgentResult]
     active_interrupt: AgentInterrupt | None
     resume_consumed: bool
@@ -299,6 +313,9 @@ def new_state(
         relaxation_attempted=False,
         relaxed_attributes=[],
         normalized_candidates=[],
+        dynamic_schema_id=None,
+        dynamic_schema_summary=None,
+        dynamic_shadow_summary=None,
         spu_clusters=[],
         same_item_review_pairs=[],
         sku_groups=[],
@@ -324,7 +341,10 @@ def new_state(
         execution_context=None,
         recent_turns=[],
         memory_context=[],
+        memory_application=MemoryApplication(),
+        ranking_context=RankingContext(),
         pending_memory_mutations=[],
+        memory_effects=[],
         agent_results=[],
         active_interrupt=None,
         resume_consumed=False,
@@ -379,6 +399,7 @@ class SupervisorState(TypedDict, total=False):
     task_records: dict[str, TaskRecord]
     task_results: Annotated[dict[str, AgentResultV2], merge_task_results]
     canonical_understanding: CanonicalUnderstanding
+    recent_turns: list[ConversationTurnSummary]
     active_interrupt: AgentInterrupt | None
     final_response: AgentResponse | None
     replan_count: int

@@ -324,6 +324,13 @@ class MemoryRecord(BaseModel):
     updated_at: str = Field(min_length=1)
     expires_at: str | None = None
 
+    @field_validator("scope_key")
+    @classmethod
+    def _scope_format(cls, value: str) -> str:
+        if not _MEMORY_SCOPE_RE.fullmatch(value):
+            raise ValueError("scope_key 只能是 global 或 category:<category_id>")
+        return value
+
 
 class MemoryQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -331,6 +338,48 @@ class MemoryQuery(BaseModel):
     scope_keys: list[str] = Field(min_length=1)
     memory_keys: list[str] = Field(default_factory=list[str])
     limit: int = Field(ge=1, le=100)
+
+    @field_validator("scope_keys")
+    @classmethod
+    def _scope_keys_are_bounded(cls, value: list[str]) -> list[str]:
+        if (
+            not value
+            or len(value) > 3
+            or any(not item or not _MEMORY_SCOPE_RE.fullmatch(item) for item in value)
+        ):
+            raise ValueError("scope_keys 只能包含 global 或 category:<category_id>")
+        return list(dict.fromkeys(value))
+
+
+class IgnoredMemoryRecord(BaseModel):
+    """MemoryApplication 中的固定忽略原因，不包含记忆值。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    memory_id: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    reason_code: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_]+$")
+
+
+class MemoryApplication(BaseModel):
+    """一次 turn 对长期记忆的确定性应用结果。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    constraint_defaults: dict[str, Any] = Field(default_factory=dict[str, Any])
+    ranking_priors: dict[str, Any] = Field(default_factory=dict[str, Any])
+    negative_preferences: list[str] = Field(default_factory=list[str])
+    applied_memory_ids: list[str] = Field(default_factory=list[str])
+    ignored_records: list[IgnoredMemoryRecord] = Field(default_factory=list[IgnoredMemoryRecord])
+
+
+class RankingContext(BaseModel):
+    """检索/排序接收的长期记忆投影；不把记忆默认值混入硬过滤。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    memory_priors: dict[str, Any] = Field(default_factory=dict[str, Any])
+    memory_negative_terms: list[str] = Field(default_factory=list[str])
+    applied_memory_ids: list[str] = Field(default_factory=list[str])
 
 
 class MemoryMutation(BaseModel):
@@ -476,6 +525,7 @@ class RetrievalTaskInput(BaseModel):
     index_version: str | None = None
     fusion_version: str | None = None
     rerank_version: str | None = None
+    ranking_context: RankingContext = Field(default_factory=RankingContext)
     same_item_review_action: Literal["accept", "split"] | None = None
     same_item_review_offer_ids: list[str] = Field(default_factory=list[str])
 
@@ -502,6 +552,9 @@ class MemoryTaskInput(BaseModel):
     directives: list[MemoryDirective] = Field(default_factory=list[MemoryDirective])
     mutations: list[MemoryMutation] = Field(default_factory=list[MemoryMutation])
     authorization_id: str | None = None
+    authorization_interrupt_id: str | None = None
+    authorization_mutation_ids: list[str] = Field(default_factory=list[str])
+    authorization_payload_hashes: dict[str, str] = Field(default_factory=dict[str, str])
 
 
 AgentTaskInput = Annotated[
@@ -762,6 +815,7 @@ class CanonicalUnderstanding(BaseModel):
     intent_patch: IntentPatch | None = None
     constraints: ShoppingConstraints | None = None
     memory_records: list[MemoryRecord] = Field(default_factory=list[MemoryRecord])
+    memory_application: MemoryApplication = Field(default_factory=MemoryApplication)
 
 
 class ExecutionPlan(BaseModel):
@@ -960,6 +1014,293 @@ class Offer(BaseModel):
         return v
 
 
+class CanonicalFieldEvidence(BaseModel):
+    """LLM 商品归一化字段的原文证据；系统会再次校验它确实存在于 Offer。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    field_path: str = Field(
+        min_length=1,
+        max_length=160,
+        pattern=(
+            r"^(category_id|brand|model|"
+            r"identity_attributes\.[A-Za-z0-9_:-]+|"
+            r"variant_attributes\.[A-Za-z0-9_:-]+)$"
+        ),
+    )
+    raw_value: str = Field(min_length=1, max_length=256)
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+_DYNAMIC_KEY_RE = r"^[a-z][a-z0-9_]{0,63}$"
+_DYNAMIC_SOURCE_PATH_RE = (
+    r"^(title|category_id|brand|model|"
+    r"identity_attributes\.[^\.\s]{1,128}|"
+    r"variant_attributes\.[^\.\s]{1,128}|"
+    r"descriptive_attributes\.[^\.\s]{1,128})$"
+)
+
+
+class EvidenceSpan(BaseModel):
+    """动态商品模型结果所引用的同一 Offer 原文证据。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    offer_id: str = Field(min_length=1, max_length=256)
+    source_path: str = Field(
+        min_length=1, max_length=160, pattern=_DYNAMIC_SOURCE_PATH_RE
+    )
+    raw_value: str = Field(min_length=1, max_length=256)
+    start: int | None = Field(default=None, ge=0)
+    end: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _valid_span(self) -> EvidenceSpan:
+        if self.start is not None and self.end is not None and self.end < self.start:
+            raise ValueError("EvidenceSpan.end 不能小于 start")
+        return self
+
+
+class DynamicAttributeProposal(BaseModel):
+    """当前候选窗口内发现的局部属性语义 proposal。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    canonical_key: str = Field(min_length=1, max_length=64, pattern=_DYNAMIC_KEY_RE)
+    aliases: list[str] = Field(default_factory=list[str], max_length=32)
+    role: Literal["identity", "variant", "descriptive"]
+    value_kind: Literal["string", "number", "boolean"]
+    unit_family: str | None = Field(default=None, max_length=64)
+    role_confidence: float = Field(ge=0.0, le=1.0)
+    support_offer_ids: list[str] = Field(default_factory=list[str], max_length=100)
+    evidence: list[EvidenceSpan] = Field(default_factory=list[EvidenceSpan], max_length=100)
+
+
+class DynamicConceptProposal(BaseModel):
+    """局部商品概念及其属性 proposal。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    local_concept_id: str = Field(min_length=1, max_length=128)
+    canonical_label: str = Field(min_length=1, max_length=256)
+    label_confidence: float = Field(ge=0.0, le=1.0)
+    evidence: list[EvidenceSpan] = Field(default_factory=list[EvidenceSpan], max_length=100)
+    attributes: list[DynamicAttributeProposal] = Field(
+        default_factory=list[DynamicAttributeProposal], max_length=64
+    )
+
+
+class OfferConceptAssignment(BaseModel):
+    """单条 Offer 到本次响应局部概念的关联。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    offer_id: str = Field(min_length=1, max_length=256)
+    local_concept_id: str = Field(min_length=1, max_length=128)
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence: list[EvidenceSpan] = Field(default_factory=list[EvidenceSpan], max_length=32)
+
+
+class DynamicSchemaProposal(BaseModel):
+    """模型提出的请求级动态局部 Schema；未经领域校验不得直接使用。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    concepts: list[DynamicConceptProposal] = Field(
+        default_factory=list[DynamicConceptProposal], max_length=16
+    )
+    assignments: list[OfferConceptAssignment] = Field(
+        default_factory=list[OfferConceptAssignment], max_length=100
+    )
+
+
+class VerifiedDynamicAttribute(BaseModel):
+    """通过证据、支持度和一致性校验后的动态属性。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    canonical_key: str = Field(min_length=1, max_length=64, pattern=_DYNAMIC_KEY_RE)
+    aliases: list[str] = Field(default_factory=list[str], max_length=32)
+    role: Literal["identity", "variant", "descriptive"]
+    value_kind: Literal["string", "number", "boolean"]
+    unit_family: str | None = Field(default=None, max_length=64)
+    role_confidence: float = Field(ge=0.0, le=1.0)
+    support_offer_ids: list[str] = Field(default_factory=list[str], max_length=100)
+    evidence: list[EvidenceSpan] = Field(default_factory=list[EvidenceSpan], max_length=100)
+
+
+class VerifiedDynamicConcept(BaseModel):
+    """通过确定性复核后的动态商品概念。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    local_concept_id: str = Field(min_length=1, max_length=128)
+    canonical_label: str = Field(min_length=1, max_length=256)
+    label_confidence: float = Field(ge=0.0, le=1.0)
+    evidence: list[EvidenceSpan] = Field(default_factory=list[EvidenceSpan], max_length=100)
+    attributes: list[VerifiedDynamicAttribute] = Field(
+        default_factory=list[VerifiedDynamicAttribute], max_length=64
+    )
+
+
+class VerifiedDynamicSchema(BaseModel):
+    """由服务端计算 schema_id 的、仅对当前候选窗口有效的 Schema。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    concepts: list[VerifiedDynamicConcept] = Field(
+        default_factory=list[VerifiedDynamicConcept], max_length=16
+    )
+    assignments: list[OfferConceptAssignment] = Field(
+        default_factory=list[OfferConceptAssignment], max_length=100
+    )
+    input_offer_ids: list[str] = Field(default_factory=list[str], max_length=100)
+
+    def concept_for_offer(self, offer_id: str) -> VerifiedDynamicConcept | None:
+        assignment = next((a for a in self.assignments if a.offer_id == offer_id), None)
+        if assignment is None:
+            return None
+        return next(
+            (
+                concept
+                for concept in self.concepts
+                if concept.local_concept_id == assignment.local_concept_id
+            ),
+            None,
+        )
+
+    def variant_keys_for_offer(self, offer_id: str) -> list[str]:
+        concept = self.concept_for_offer(offer_id)
+        if concept is None:
+            return []
+        return sorted(
+            {
+                attribute.canonical_key
+                for attribute in concept.attributes
+                if attribute.role == "variant"
+            }
+        )
+
+
+class DynamicCanonicalField(BaseModel):
+    """按已验证局部 Schema 提出的单个字段。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    canonical_key: str = Field(min_length=1, max_length=64, pattern=_DYNAMIC_KEY_RE)
+    canonical_value: str = Field(min_length=1, max_length=256)
+    role: Literal["identity", "variant", "descriptive"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence: EvidenceSpan
+
+
+class DynamicCanonicalizationItem(BaseModel):
+    """按已验证动态 Schema 归一化的单条 Offer proposal。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    offer_id: str = Field(min_length=1, max_length=256)
+    local_concept_id: str | None = Field(default=None, max_length=128)
+    category_concept: str | None = Field(default=None, max_length=256)
+    category_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    category_evidence: EvidenceSpan | None = None
+    brand: str | None = Field(default=None, max_length=256)
+    brand_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    brand_evidence: EvidenceSpan | None = None
+    model: str | None = Field(default=None, max_length=256)
+    model_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    model_evidence: EvidenceSpan | None = None
+    fields: list[DynamicCanonicalField] = Field(
+        default_factory=list[DynamicCanonicalField], max_length=128
+    )
+    unresolved_fields: list[str] = Field(default_factory=list[str], max_length=64)
+
+    @model_validator(mode="after")
+    def _unique_field_keys(self) -> DynamicCanonicalizationItem:
+        keys = [field.canonical_key for field in self.fields]
+        if len(keys) != len(set(keys)):
+            raise ValueError("dynamic canonicalization 的 canonical_key 不能重复")
+        return self
+
+
+class DynamicCanonicalizationBatch(BaseModel):
+    """动态商品归一化批次输出。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_id: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    items: list[DynamicCanonicalizationItem] = Field(
+        default_factory=list[DynamicCanonicalizationItem], max_length=100
+    )
+
+    @model_validator(mode="after")
+    def _unique_offer_ids(self) -> DynamicCanonicalizationBatch:
+        ids = [item.offer_id for item in self.items]
+        if len(ids) != len(set(ids)):
+            raise ValueError("dynamic canonicalization items 的 offer_id 不能重复")
+        return self
+
+
+class DynamicFieldStatus(StrEnum):
+    ACCEPTED = "accepted"
+    DESCRIPTIVE_ONLY = "descriptive_only"
+    REJECTED = "rejected"
+    UNRESOLVED = "unresolved"
+
+
+class ProductCanonicalizationItem(BaseModel):
+    """模型提出的商品字段归一化补丁；不是最终可信领域对象。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    offer_id: str = Field(min_length=1, max_length=256)
+    category_id: str | None = Field(default=None, max_length=128)
+    brand: str | None = Field(default=None, max_length=256)
+    model: str | None = Field(default=None, max_length=256)
+    identity_attributes: dict[str, str] = Field(default_factory=dict[str, str])
+    variant_attributes: dict[str, str] = Field(default_factory=dict[str, str])
+    evidence: list[CanonicalFieldEvidence] = Field(
+        default_factory=list[CanonicalFieldEvidence], max_length=64
+    )
+    unresolved_fields: list[str] = Field(default_factory=list[str], max_length=32)
+
+    @model_validator(mode="after")
+    def _bounded_attributes_and_evidence(self) -> ProductCanonicalizationItem:
+        for bucket_name, bucket in (
+            ("identity_attributes", self.identity_attributes),
+            ("variant_attributes", self.variant_attributes),
+        ):
+            if len(bucket) > 32:
+                raise ValueError(f"{bucket_name} 最多 32 个字段")
+            for key, value in bucket.items():
+                if not key or len(key) > 128 or not value or len(value) > 256:
+                    raise ValueError(f"{bucket_name} 包含非法键值")
+        paths = [item.field_path for item in self.evidence]
+        if len(paths) != len(set(paths)):
+            raise ValueError("同一 field_path 只能提供一条证据")
+        if any(not item or len(item) > 160 for item in self.unresolved_fields):
+            raise ValueError("unresolved_fields 包含非法字段名")
+        return self
+
+
+class ProductCanonicalizationBatch(BaseModel):
+    """一次批量商品归一化模型输出。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[ProductCanonicalizationItem] = Field(
+        default_factory=list[ProductCanonicalizationItem], max_length=100
+    )
+
+    @model_validator(mode="after")
+    def _unique_offer_ids(self) -> ProductCanonicalizationBatch:
+        ids = [item.offer_id for item in self.items]
+        if len(ids) != len(set(ids)):
+            raise ValueError("canonicalization items 的 offer_id 不能重复")
+        return self
+
+
 class RetrievalCandidate(BaseModel):
     """召回候选：Offer + 各通道分数 + 融合分。"""
 
@@ -993,6 +1334,14 @@ class NormalizedCandidate(BaseModel):
     normalized_model: str | None = None
     normalized_identity: dict[str, str] = Field(default_factory=dict[str, str])
     normalized_variant: dict[str, str] = Field(default_factory=dict[str, str])
+    normalized_descriptive: dict[str, str] = Field(default_factory=dict[str, str])
+    normalized_category_concept: str | None = None
+    dynamic_category_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    dynamic_schema_id: str | None = Field(default=None, max_length=64)
+    dynamic_variant_keys: list[str] = Field(default_factory=list[str], max_length=64)
+    dynamic_field_statuses: dict[str, DynamicFieldStatus] = Field(
+        default_factory=dict[str, DynamicFieldStatus]
+    )
     normalization_failures: list[str] = Field(default_factory=list[str])
     recall_score: float = 0.0
 
@@ -1191,6 +1540,10 @@ class ConversationTurnSummary(BaseModel):
 
     request_id: str = Field(min_length=1, max_length=128)
     turn_id: str = Field(min_length=1)
+    subject_id: str | None = Field(default=None, max_length=128)
+    category_id: str | None = Field(default=None, max_length=128)
+    constraint_delta: dict[str, Any] = Field(default_factory=dict[str, Any])
+    memory_effects: list[dict[str, str]] = Field(default_factory=list[dict[str, str]])
     user_text: str | None = Field(default=None, max_length=4000)
     user_text_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     user_text_length: int | None = Field(default=None, ge=0, le=4000)

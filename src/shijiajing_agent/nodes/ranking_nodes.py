@@ -31,8 +31,18 @@ def make_rank_groups_node(deps: AgentDependenciesPort) -> Any:
             SortBy(constraints.sort_by.value) if constraints.sort_by.value else SortBy.RECOMMENDED
         )
         preferences = list(constraints.preferences.value) if constraints.preferences.value else []
+        ranking_context = state.get("ranking_context")
         ranker = GroupRanker(preference_weights=deps.settings.preference_weights)
-        result = ranker.rank(groups, constraints, sort_by=sort_by, preferences=preferences)
+        result = ranker.rank(
+            groups,
+            constraints,
+            sort_by=sort_by,
+            preferences=preferences,
+            memory_priors=(ranking_context.memory_priors if ranking_context is not None else {}),
+            memory_negative_terms=(
+                ranking_context.memory_negative_terms if ranking_context is not None else []
+            ),
+        )
         return {"ranked_groups": result.ranked, "next_action": "ranked"}
 
     return rank_groups_node

@@ -764,7 +764,11 @@ async def test_native_memory_confirmation_rejects_commit(taxonomy: Any, tmp_path
     ]
     facade = AgentFacade(deps)
     first = await facade.start(
-        AgentRequest(session_id="native-memory", request_id="r1", text="找耳机"),
+        AgentRequest(
+            session_id="native-memory",
+            request_id="r1",
+            text="记住以后买耳机预算 1000 元",
+        ),
         AgentExecutionContext(memory_owner_id="owner-a", memory_enabled=True),
     )
     assert first.interrupt is not None

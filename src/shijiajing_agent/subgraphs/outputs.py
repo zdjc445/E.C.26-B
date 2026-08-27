@@ -8,9 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from shijiajing_agent.contracts import (
     IntentPatch,
+    MemoryApplication,
     MemoryMutation,
     MemoryRecord,
     NormalizedCandidate,
+    RankingContext,
     RecognitionResult,
     RetrievalCandidate,
     RetrievalQuery,
@@ -78,6 +80,8 @@ class ExplanationSubgraphOutput(_SubgraphOutput):
 class MemorySubgraphOutput(_SubgraphOutput):
     memory_context: list[MemoryRecord] = Field(default_factory=list[MemoryRecord])
     pending_memory_mutations: list[MemoryMutation] = Field(default_factory=list[MemoryMutation])
+    memory_application: MemoryApplication = Field(default_factory=MemoryApplication)
+    ranking_context: RankingContext = Field(default_factory=RankingContext)
     notices: list[str] = Field(default_factory=list[str])
     node_events: list[dict[str, Any]] = Field(default_factory=list[dict[str, Any]])
 

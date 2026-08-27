@@ -14,7 +14,7 @@ from typing import Any
 from shijiajing_agent.contracts import HardFilters, RetrievalCandidate, RetrievalQuery
 from shijiajing_agent.domain.cache_policy import safe_get, safe_set, versioned_key
 from shijiajing_agent.domain.filters import HardFilterBuilder, offer_matches_hard_filters
-from shijiajing_agent.domain.normalization import TaxonomyNormalizer
+from shijiajing_agent.domain.product_canonicalization import canonicalize_offers
 from shijiajing_agent.domain.retrieval_reranking import CandidateRelevanceReranker
 from shijiajing_agent.errors import RetrievalUnavailableError
 from shijiajing_agent.nodes.node_support import clear_dirty, record_cache_event, timed
@@ -56,6 +56,13 @@ def build_deterministic_query(deps: AgentDependenciesPort, state: AgentState) ->
         if kw not in soft_terms:
             soft_terms.append(kw)
     query.soft_terms = soft_terms
+    patch = state.get("intent_patch")
+    if patch is not None:
+        query.negative_terms = list(getattr(patch, "negative_terms", []) or [])
+    application = state.get("memory_application")
+    for term in list(getattr(application, "negative_preferences", []) or []):
+        if term not in query.negative_terms:
+            query.negative_terms.append(term)
     return query
 
 
@@ -81,6 +88,9 @@ def make_rewrite_query_node(deps: AgentDependenciesPort) -> Any:
                 "text": req.text or "",
                 "constraints": constraints.model_dump(mode="json") if constraints else None,
                 "recognition": recognition.model_dump(mode="json") if recognition else None,
+                "memory_negative_terms": list(
+                    getattr(state.get("memory_application"), "negative_preferences", []) or []
+                ),
             },
             {
                 "model": deps.settings.ark_text_model,
@@ -108,6 +118,15 @@ def make_rewrite_query_node(deps: AgentDependenciesPort) -> Any:
             hit=cached_query is not None,
         )
         if cached_query is not None:
+            cached_query = base.model_copy(
+                update={
+                    "query_text": cached_query.query_text,
+                    "soft_terms": cached_query.soft_terms,
+                    "negative_terms": list(
+                        dict.fromkeys([*cached_query.negative_terms, *base.negative_terms])
+                    ),
+                }
+            )
             return {
                 "retrieval_query": cached_query,
                 "next_action": "query_ready",
@@ -120,6 +139,14 @@ def make_rewrite_query_node(deps: AgentDependenciesPort) -> Any:
                 fallback_used = True
             else:
                 query = rewritten
+                deterministic = build_deterministic_query(deps, state)
+                query = query.model_copy(
+                    update={
+                        "negative_terms": list(
+                            dict.fromkeys([*query.negative_terms, *deterministic.negative_terms])
+                        )
+                    }
+                )
         except Exception:
             fallback_used = True
         delta: dict[str, Any] = {
@@ -335,31 +362,48 @@ def make_normalize_candidates_node(deps: AgentDependenciesPort) -> Any:
         candidates = state.get("candidates") or []
         matching_limit = deps.settings.matching_candidate_limit
         candidate_window = candidates[:matching_limit]
-        normalizer = TaxonomyNormalizer(deps.taxonomy)
-        normalized: list[Any] = []
-        bad: list[str] = []
-        for c in candidate_window:
-            try:
-                nc = normalizer.normalize_offer(c.offer)
-                nc.recall_score = c.recall_score
-                normalized.append(nc)
-            except Exception:
-                bad.append(c.offer.offer_id)
-        if bad:
-            notices = [
-                *list(state.get("notices") or []),
-                f"{len(bad)} 条商品数据无法标准化，已隔离",
-            ]
-            if not normalized:
-                from shijiajing_agent.errors import ProductSchemaInvalidError
-
-                raise ProductSchemaInvalidError("全部候选商品数据格式非法")
-        else:
-            notices = list(state.get("notices") or [])
+        run = await canonicalize_offers(
+            [candidate.offer for candidate in candidate_window],
+            deps.taxonomy,
+            getattr(deps, "product_canonicalizer", None),
+            enabled=deps.settings.product_canonicalization_enabled,
+            batch_size=deps.settings.product_canonicalization_batch_size,
+            min_confidence=deps.settings.product_canonicalization_min_confidence,
+            cache=getattr(deps, "cache", None),
+            cache_ttl_seconds=deps.settings.product_canonicalization_cache_ttl_seconds,
+            metrics=deps.metrics,
+            mode=deps.settings.product_canonicalization_mode,
+            dynamic_schema_inducer=getattr(deps, "dynamic_schema_inducer", None),
+            dynamic_product_canonicalizer=getattr(
+                deps, "dynamic_product_canonicalizer", None
+            ),
+            dynamic_schema_batch_size=deps.settings.dynamic_schema_batch_size,
+            dynamic_concept_min_confidence=deps.settings.dynamic_schema_concept_min_confidence,
+            dynamic_role_min_confidence=deps.settings.dynamic_schema_role_min_confidence,
+            dynamic_role_min_support=deps.settings.dynamic_schema_role_min_support,
+            dynamic_field_min_confidence=deps.settings.dynamic_canonicalization_field_min_confidence,
+        )
+        normalized = run.candidates
+        for item, candidate in zip(normalized, candidate_window, strict=True):
+            item.recall_score = candidate.recall_score
+        notices = [*list(state.get("notices") or []), *(run.notices or [])]
         if len(candidates) > matching_limit:
             notices.append(f"同款匹配候选超过上限，已截断至 {matching_limit} 条")
+        dynamic_schema_summary: dict[str, Any] = {}
+        if run.verified_schema is not None:
+            dynamic_schema_summary.update(
+                {
+                    "concept_count": len(run.verified_schema.concepts),
+                    "assignment_count": len(run.verified_schema.assignments),
+                    "accepted_field_count": run.accepted_fields,
+                    "descriptive_only_count": run.descriptive_only_fields,
+                }
+            )
         return {
             "normalized_candidates": normalized,
+            "dynamic_schema_id": run.schema_id,
+            "dynamic_schema_summary": dynamic_schema_summary or None,
+            "dynamic_shadow_summary": run.shadow_summary,
             "notices": notices,
             "next_action": "candidates_ready",
         }

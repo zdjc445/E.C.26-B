@@ -88,6 +88,7 @@ def build_entity(
             "category_id": nc.normalized_category_id or offer.category_id,
             "brand": nc.normalized_brand or offer.brand,
             "model": nc.normalized_model or offer.model,
+            "normalized_title": nc.offer.normalized_title,
             "identity_attributes": nc.normalized_identity,
             "variant_attributes": nc.normalized_variant,
         }

@@ -182,6 +182,7 @@ async def _build_agent_facade(
         cache=cache,
         event_store=event_store,
         supervisor_planner=getattr(base, "supervisor_planner", None),
+        product_canonicalizer=getattr(base, "product_canonicalizer", None),
     )
     return AgentFacade(deps)
 

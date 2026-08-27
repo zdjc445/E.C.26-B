@@ -26,7 +26,13 @@ _LEDGER_SQL = (
     "SELECT session_id, request_id, response_json, response_hash, created_at "
     "FROM agent_request_result"
 )
-_MEMORY_SQL = "SELECT mutation_id, operation, payload_json, applied_at FROM memory_mutation"
+_MEMORY_SQL = (
+    "SELECT mutation_id, memory_owner_id, operation, payload_hash, applied_at FROM memory_mutation"
+)
+_MEMORY_SOURCE_SQL = (
+    "SELECT DISTINCT memory_owner_id, source_session_id, source_request_id "
+    "FROM user_memory WHERE source_session_id <> '' AND source_request_id <> ''"
+)
 _EVENT_SQL = (
     "SELECT event_id, session_id, request_id, turn_id, trace_id, agent_name, node_name,"
     " event_type, status, input_hash, output_hash, state_version, payload_json, occurred_at"
@@ -103,12 +109,20 @@ def _candidate_events(
                 occurred_at=occurred_at,
             )
         )
-    for mutation_id, operation, raw, occurred_at in _fetch_rows(
+    source_candidates: dict[str, set[tuple[str, str]]] = {}
+    for owner, session_id, request_id in _fetch_rows(
+        memory_backend, memory_dsn, _MEMORY_SOURCE_SQL
+    ):
+        source_candidates.setdefault(str(owner), set()).add((str(session_id), str(request_id)))
+    for mutation_id, owner, operation, _payload_hash, occurred_at in _fetch_rows(
         memory_backend, memory_dsn, _MEMORY_SQL
     ):
-        mutation = json.loads(raw)
-        session_id = str(mutation["source_session_id"])
-        request_id = str(mutation["source_request_id"])
+        sources = source_candidates.get(str(owner), set())
+        # 新版 mutation ledger 只保留 payload_hash，不足以反推出来源请求。
+        # 只有 user_memory 能提供唯一来源时才修复，避免伪造 turn/trace。
+        if len(sources) != 1:
+            continue
+        session_id, request_id = next(iter(sources))
         source = ledger_context.get((session_id, request_id))
         # 没有 Request Ledger 就没有真实 turn/trace，不能为 repair 猜测标识。
         if source is None:

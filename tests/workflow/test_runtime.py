@@ -188,7 +188,11 @@ async def test_sqlite_backup_restore_preserves_native_interrupt_and_resources(
         event_store_dsn=str(source_dir / "events.db"),
         hitl_enabled=True,
     )
-    request = AgentRequest(session_id="sqlite-backup-hitl", request_id="r1", text="找耳机")
+    request = AgentRequest(
+        session_id="sqlite-backup-hitl",
+        request_id="r1",
+        text="记住以后买耳机预算 1000 元",
+    )
     context = AgentExecutionContext(memory_owner_id="owner-a", memory_enabled=True)
     created_fakes: list[dict[str, Any]] = []
 

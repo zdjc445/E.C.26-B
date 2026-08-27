@@ -307,14 +307,37 @@ def make_memory_confirmation_interrupt_node(deps: AgentDependenciesPort) -> Any:
                 "interrupt_generation": generation,
             }
         answer = MemoryConfirmationResume.model_validate(resumed)
+        rejected = answer.action == "reject"
+        response = state.get("response")
+        response_delta: dict[str, Any] = {}
+        if rejected:
+            notices = (
+                list(response.notices)
+                if hasattr(response, "notices")
+                else list(state.get("notices") or [])
+            )
+            notices.append("你已拒绝保存本轮长期偏好")
+            if response is not None and hasattr(response, "model_copy"):
+                response_delta["response"] = response.model_copy(update={"notices": notices})
         return {
             "pending_memory_mutations": mutations if answer.action == "approve" else [],
+            "memory_effects": [
+                {
+                    "mutation_id": item.mutation_id,
+                    "operation": item.operation.value,
+                    "status": "rejected",
+                }
+                for item in mutations
+            ]
+            if rejected
+            else [],
             "active_interrupt": None,
             "resume_consumed": True,
             "interrupt_generation": generation,
             "next_action": "memory_confirmation_approved"
             if answer.action == "approve"
             else "memory_confirmation_rejected",
+            **response_delta,
         }
 
     return memory_confirmation_interrupt_node

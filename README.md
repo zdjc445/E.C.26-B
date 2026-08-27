@@ -116,8 +116,10 @@ uv run --env-file .env shijiajing-planner-shadow \
 | [docs/architecture.md](docs/architecture.md) | 分层、端口、主图、会话恢复 |
 | [docs/workflow.md](docs/workflow.md) | 节点表、条件路由、多轮与修正、故障路径 |
 | [docs/contracts.md](docs/contracts.md) | 数据契约、硬过滤语义、Checkpoint 序列化 |
-| [docs/memory.md](docs/memory.md) | 长期记忆值域、owner 隔离、HITL 与失败策略 |
+| [docs/memory.md](docs/memory.md) | 三层上下文、显式记忆写入、scope/apply mode、HITL、持久化与验收设计 |
 | [docs/multi_agent.md](docs/multi_agent.md) | Supervisor、专业子图、并行汇合与确定性边界 |
+| [docs/product_canonicalization.md](docs/product_canonicalization.md) | 当前商品归一化、动态 Schema 四种迁移模式、证据校验、SPU/SKU 确定性处理 |
+| [docs/plans/dynamic_product_schema_implementation_plan.md](docs/plans/dynamic_product_schema_implementation_plan.md) | 无静态 Taxonomy 的 LLM 动态局部 Schema 目标架构、迁移与验收方案 |
 | [docs/plans/multi_agent_upgrade_plan.md](docs/plans/multi_agent_upgrade_plan.md) | 受控层级式 Multi-Agent 目标架构、协议、迁移阶段与 DoD |
 | [docs/plans/model_supervisor_planner_implementation_plan.md](docs/plans/model_supervisor_planner_implementation_plan.md) | 模型 Supervisor Planner 的受控提议、确定性物化、回退、审计与灰度实施方案 |
 | [docs/configuration.md](docs/configuration.md) | 全部配置项与缺失行为 |

@@ -59,6 +59,7 @@ export SHIJIAJING_ARK_API_KEY=...
 | `SHIJIAJING_QUERY_REWRITE_CACHE_TTL_SECONDS` | 604800 | query_rewrite 缓存 TTL |
 | `SHIJIAJING_RETRIEVAL_CACHE_TTL_SECONDS` | 300 | retrieval 缓存 TTL |
 | `SHIJIAJING_EXPLANATION_CACHE_TTL_SECONDS` | 86400 | explanation 缓存 TTL |
+| `SHIJIAJING_PRODUCT_CANONICALIZATION_CACHE_TTL_SECONDS` | 604800 | 商品归一化结构化结果缓存 TTL |
 | `SHIJIAJING_POSTGRES_POOL_MIN_SIZE` | 1 | PostgreSQL 业务适配器连接池最小连接数 |
 | `SHIJIAJING_POSTGRES_POOL_MAX_SIZE` | 4 | PostgreSQL 业务适配器连接池最大连接数 |
 | `SHIJIAJING_POSTGRES_POOL_TIMEOUT_SECONDS` | 30 | PostgreSQL 连接池等待连接超时 |
@@ -68,6 +69,9 @@ export SHIJIAJING_ARK_API_KEY=...
 | `SHIJIAJING_RETRIEVAL_TOP_K_PER_CHANNEL` | 100 | 每通道 Top-K |
 | `SHIJIAJING_RETRIEVAL_UNION_LIMIT` | 200 | 通道合并上限 |
 | `SHIJIAJING_MATCHING_CANDIDATE_LIMIT` | 60 | 同款匹配候选上限 |
+| `SHIJIAJING_PRODUCT_CANONICALIZATION_ENABLED` | `true` | 是否在聚类前调用 LLM 商品归一化组件 |
+| `SHIJIAJING_PRODUCT_CANONICALIZATION_BATCH_SIZE` | 20 | 单次商品归一化模型调用的 Offer 数量 |
+| `SHIJIAJING_PRODUCT_CANONICALIZATION_MIN_CONFIDENCE` | 0.75 | 采纳模型字段的最低证据置信度 |
 | `SHIJIAJING_BRAND_HARD_FILTER_CONFIDENCE` | 0.85 | 品牌硬过滤最低置信 |
 | `SHIJIAJING_MODEL_HARD_FILTER_CONFIDENCE` | 0.90 | 型号硬过滤最低置信 |
 | `SHIJIAJING_SAME_ITEM_ACCEPT_THRESHOLD` | 0.82 | 同款接受阈值 |
@@ -85,6 +89,11 @@ export SHIJIAJING_ARK_API_KEY=...
 | `SHIJIAJING_MEMORY_COMMIT_ENABLED` | `true` | 内部灰度开关；是否准备并提交显式记忆变更 |
 | `SHIJIAJING_MEMORY_BACKEND` | `disabled` | `disabled` / `sqlite` / `postgres` |
 | `SHIJIAJING_MEMORY_DSN` | 空 | Memory SQLite 文件或 PostgreSQL DSN |
+| `SHIJIAJING_MEMORY_RECALL_LIMIT` | `20` | 召回并完成 scope 去重后的最大记录数 |
+| `SHIJIAJING_RECENT_TURNS_LIMIT` | `6` | 会话摘要最大轮数 |
+| `SHIJIAJING_RECENT_TURNS_MAX_BYTES` | `65536` | 会话摘要序列化字节上限 |
+| `SHIJIAJING_MEMORY_PURGE_ENABLED` | `false` | 仅受信管理入口可用的物理清除开关 |
+| `SHIJIAJING_MEMORY_MUTATION_LEDGER_RETENTION_DAYS` | `90` | 仅 hash ledger 的保留天数 |
 | `SHIJIAJING_HITL_ENABLED` | `false` | 是否返回 `AgentTurnResult.interrupt` |
 | `SHIJIAJING_RECOGNITION_REVIEW_THRESHOLD` | `0.70` | 低于此识别置信度暂停审核 |
 | `SHIJIAJING_MEMORY_CONFIRMATION_REQUIRED` | `true` | 记忆变更提交前暂停确认 |
@@ -154,7 +163,8 @@ uv run --env-file .env shijiajing-planner-shadow \
 且 `SAME_ITEM_REVIEW_THRESHOLD` 不得大于 `SAME_ITEM_ACCEPT_THRESHOLD`。校验失败返回
 精确字段名，启动检查不得静默继续。
 
-五类缓存 TTL 分别对应 `vision`、`intent`、`query_rewrite`、`retrieval` 和 `explanation`
+六类缓存 TTL 分别对应 `vision`、`intent`、`query_rewrite`、`retrieval`、`explanation` 和
+`product_canonicalization`
 命名空间，并由节点从 `Settings` 读取；缓存 TTL 不再由节点硬编码。preflight JSON 的
 `cache_ttl_seconds` 显示实际生效值，所有 TTL 必须为至少 `1` 秒。
 
@@ -172,3 +182,9 @@ uv run --env-file .env shijiajing-planner-shadow \
 - `make_deps(settings)`：抛 `ValueError("缺少必要配置：...")`。
 - 应用层（`AgentFacade`）不产生任何配置默认值——缺失即报错，不做静默降级
   到假数据（样例数据只能通过显式 Fake 端口注入，见 tests/workflow/conftest.py）。
+### 商品归一化迁移
+
+`PRODUCT_CANONICALIZATION_MODE` 支持 `taxonomy`、`dynamic_shadow`、`hybrid` 和 `dynamic`。
+默认值为 `taxonomy`；动态模式使用请求级局部 Schema，Schema 与模型不可用时保守回退到通用
+规则基线，不阻断检索。动态阈值、批大小与缓存 TTL 分别由 `DYNAMIC_SCHEMA_*` 和
+`DYNAMIC_CANONICALIZATION_*` 配置项控制。动态 Schema 缓存只是性能优化，不是商品事实源。

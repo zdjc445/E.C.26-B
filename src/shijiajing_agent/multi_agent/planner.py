@@ -118,6 +118,9 @@ class DeterministicPlanner:
         memory_id: str | None = None
         if context is not None and context.memory_enabled and context.memory_owner_id:
             memory_id = f"{plan_id}:memory-recall"
+            memory_dependencies = [intent_id]
+            if recognition_id:
+                memory_dependencies.append(recognition_id)
             add(
                 memory_id,
                 SpecialistAgentName.MEMORY,
@@ -129,6 +132,7 @@ class DeterministicPlanner:
                     memory_owner_id=context.memory_owner_id,
                     query=None,
                 ),
+                memory_dependencies,
             )
 
         retrieval_dependencies = [intent_id]
@@ -176,7 +180,7 @@ class DeterministicPlanner:
                     session_id=request.session_id,
                     request_id=request.request_id,
                     memory_owner_id=context.memory_owner_id if context else None,
-                    authorization_id=f"auth:{plan_id}",
+                    authorization_id=None,
                 ),
                 [prepare_id],
             )
@@ -219,8 +223,7 @@ class PlanValidator:
                 ):
                     raise PlanValidationError("任务预算超过 Supervisor 计划预算")
                 if task.task_kind is AgentTaskKind.RETRIEVE_AND_RANK and not any(
-                    parent in task_map
-                    and task_map[parent].task_kind is AgentTaskKind.PARSE_INTENT
+                    parent in task_map and task_map[parent].task_kind is AgentTaskKind.PARSE_INTENT
                     for parent in task.depends_on
                 ):
                     raise PlanValidationError("Retrieval 必须依赖 Intent")
@@ -231,13 +234,8 @@ class PlanValidator:
                 ):
                     raise PlanValidationError("Explanation 必须依赖 Retrieval")
                 if task.task_kind is AgentTaskKind.MEMORY_COMMIT:
-                    if (
-                        not isinstance(task.input, MemoryTaskInput)
-                        or not task.input.authorization_id
-                    ):
-                        raise PlanValidationError(
-                            "Memory commit 必须携带 Supervisor authorization_id"
-                        )
+                    if not isinstance(task.input, MemoryTaskInput):
+                        raise PlanValidationError("Memory commit 必须使用 MemoryTaskInput")
             return plan
         except PlanValidationError:
             raise

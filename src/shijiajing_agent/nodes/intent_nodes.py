@@ -13,13 +13,19 @@ from typing import Any, cast
 from shijiajing_agent.contracts import (
     AgentRequest,
     IntentPatch,
+    MemoryApplication,
+    RankingContext,
     ShoppingConstraints,
     SourcedValue,
 )
 from shijiajing_agent.domain.cache_policy import safe_get, safe_set, versioned_key
 from shijiajing_agent.domain.constraints import ConstraintMerger
 from shijiajing_agent.domain.intent_rules import RuleIntentParser
-from shijiajing_agent.domain.memory_policy import apply_memory_defaults
+from shijiajing_agent.domain.memory_policy import (
+    apply_memory_defaults,
+    resolve_memory_application,
+    validate_memory_directives,
+)
 from shijiajing_agent.errors import ModelOutputInvalidError
 from shijiajing_agent.nodes.node_support import record_cache_event, timed
 from shijiajing_agent.ports.dependencies import AgentDependenciesPort
@@ -69,7 +75,7 @@ def make_parse_intent_node(deps: AgentDependenciesPort) -> Any:
             },
             {
                 "model": deps.settings.ark_text_model,
-                "prompt": "v1",
+                "prompt": "v2",
                 "taxonomy": deps.taxonomy.taxonomy_version,
             },
         )
@@ -92,7 +98,14 @@ def make_parse_intent_node(deps: AgentDependenciesPort) -> Any:
             if cached_patch is not None:
                 patch = cached_patch
             else:
-                patch = await intent_model.extract_intent(text, prev, deps.taxonomy)
+                recent_turns = list(state.get("recent_turns") or [])
+                try:
+                    patch = await intent_model.extract_intent(
+                        text, prev, deps.taxonomy, recent_turns=recent_turns
+                    )
+                except TypeError:
+                    # 兼容尚未升级的测试/第三方 Port；生产适配器支持 recent_turns。
+                    patch = await intent_model.extract_intent(text, prev, deps.taxonomy)
                 await safe_set(
                     deps.cache,
                     "intent",
@@ -108,6 +121,17 @@ def make_parse_intent_node(deps: AgentDependenciesPort) -> Any:
         if patch is None:
             parser = RuleIntentParser(deps.taxonomy)
             patch = parser.parse(text)
+        current_category_id = patch.category_id or _previous_category_id(prev)
+        patch = patch.model_copy(
+            update={
+                "memory_directives": validate_memory_directives(
+                    list(patch.memory_directives),
+                    text=text,
+                    taxonomy=deps.taxonomy,
+                    current_category_id=current_category_id,
+                )
+            }
+        )
         delta: dict[str, Any] = {
             "intent_patch": patch,
             "next_action": "intent_done",
@@ -126,6 +150,18 @@ def make_parse_intent_node(deps: AgentDependenciesPort) -> Any:
         return delta
 
     return parse_intent_node
+
+
+def _previous_category_id(value: Any) -> str | None:
+    if isinstance(value, ShoppingConstraints):
+        raw = value.category_id.value
+        return raw if isinstance(raw, str) else None
+    if isinstance(value, dict):
+        raw = value.get("category_id")
+        if isinstance(raw, dict):
+            raw = raw.get("value")
+        return raw if isinstance(raw, str) else None
+    return None
 
 
 def make_merge_constraints_node(deps: AgentDependenciesPort) -> Any:
@@ -156,10 +192,6 @@ def make_merge_constraints_node(deps: AgentDependenciesPort) -> Any:
             subject_id=state.get("subject_id"),
         )
         effective_constraints = result.constraints
-        if state.get("memory_context"):
-            effective_constraints = apply_memory_defaults(
-                effective_constraints, list(state.get("memory_context") or [])
-            )
         return {
             "effective_constraints": effective_constraints,
             "conflicts": [c.__dict__ for c in result.conflicts],
@@ -171,6 +203,33 @@ def make_merge_constraints_node(deps: AgentDependenciesPort) -> Any:
         }
 
     return merge_constraints_node
+
+
+def make_apply_memory_node(deps: AgentDependenciesPort) -> Any:
+    """当前品类合并后才召回/应用长期记忆，确保 category scope 不串类。"""
+
+    @timed("apply_memory")
+    async def apply_memory_node(state: AgentState) -> dict[str, Any]:
+        constraints = state.get("effective_constraints")
+        memories = list(state.get("memory_context") or [])
+        if not isinstance(constraints, ShoppingConstraints):
+            return {
+                "memory_application": MemoryApplication(),
+                "ranking_context": RankingContext(),
+            }
+        application = resolve_memory_application(constraints, memories)
+        effective = apply_memory_defaults(constraints, memories)
+        return {
+            "effective_constraints": effective,
+            "memory_application": application,
+            "ranking_context": RankingContext(
+                memory_priors=application.ranking_priors,
+                memory_negative_terms=application.negative_preferences,
+                applied_memory_ids=application.applied_memory_ids,
+            ),
+        }
+
+    return apply_memory_node
 
 
 def _field_pair(

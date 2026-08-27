@@ -23,6 +23,7 @@ from shijiajing_agent.nodes.input_nodes import (
     validate_input_node,
 )
 from shijiajing_agent.nodes.intent_nodes import (
+    make_apply_memory_node,
     make_merge_constraints_node,
     make_parse_intent_node,
     make_validate_constraints_node,
@@ -31,6 +32,7 @@ from shijiajing_agent.nodes.matching_nodes import make_match_same_item_node, mak
 from shijiajing_agent.nodes.memory_nodes import (
     append_turn_summary_node,
     make_commit_memory_node,
+    make_prepare_memory_mutations_node,
 )
 from shijiajing_agent.nodes.ranking_nodes import make_rank_groups_node
 from shijiajing_agent.nodes.response_nodes import (
@@ -215,7 +217,11 @@ def build_graph(
     hitl_enabled = bool(getattr(getattr(deps, "settings", None), "hitl_enabled", False))
 
     def append_summary(state: AgentState) -> dict[str, Any]:
-        return append_turn_summary_node(state, recent_turns_limit=deps.settings.recent_turns_limit)
+        return append_turn_summary_node(
+            state,
+            recent_turns_limit=deps.settings.recent_turns_limit,
+            recent_turns_max_bytes=deps.settings.recent_turns_max_bytes,
+        )
 
     # recent_turns 是 bounded conversation memory，与长期 Memory 的开关独立。
     g.add_node("append_turn_summary", append_summary)
@@ -223,12 +229,14 @@ def build_graph(
         g.add_node(
             "memory_subgraph",
             _make_subgraph_node(
-                build_memory_subgraph(deps, include_commit=False),
+                build_memory_subgraph(deps, include_commit=False, include_prepare=False),
                 MemorySubgraphOutput,
                 node_name="memory_subgraph",
             ),
         )
+        g.add_node("apply_memory", make_apply_memory_node(deps))
         if memory_commit_enabled:
+            g.add_node("prepare_memory_mutations", make_prepare_memory_mutations_node(deps))
             g.add_node("commit_memory", make_commit_memory_node(deps))
     if hitl_enabled:
         g.add_node("clarification_interrupt", make_clarification_interrupt_node(deps))
@@ -260,15 +268,14 @@ def build_graph(
     g.add_edge("intent_subgraph", "intent_done")
     g.add_edge(["recognition_done", "intent_done"], "join_understanding")
     if memory_runtime_enabled and getattr(deps, "memory", None) is not None:
-        g.add_edge("join_understanding", "memory_subgraph")
-        if hitl_enabled and memory_commit_enabled and deps.settings.memory_confirmation_required:
-            g.add_edge("memory_subgraph", "memory_confirmation_interrupt")
-            g.add_edge("memory_confirmation_interrupt", "merge_constraints")
-        else:
-            g.add_edge("memory_subgraph", "merge_constraints")
+        # 先合并本轮显式意图得到 current category，再构造 MemoryQuery。
+        g.add_edge("join_understanding", "merge_constraints")
+        g.add_edge("merge_constraints", "memory_subgraph")
+        g.add_edge("memory_subgraph", "apply_memory")
+        g.add_edge("apply_memory", "validate_constraints")
     else:
         g.add_edge("join_understanding", "merge_constraints")
-    g.add_edge("merge_constraints", "validate_constraints")
+        g.add_edge("merge_constraints", "validate_constraints")
 
     g.add_conditional_edges(
         "validate_constraints",
@@ -311,18 +318,24 @@ def build_graph(
 
     g.add_edge("build_no_results", "build_response")
 
-    # 失败也是已完成的 terminal response，需要进入 bounded conversation memory。
-    g.add_edge("build_failed_response", "append_turn_summary")
-
     if (
         memory_runtime_enabled
         and memory_commit_enabled
         and getattr(deps, "memory", None) is not None
     ):
-        g.add_edge("build_response", "commit_memory")
+        # 业务响应先构建完成，再准备/确认/提交长期记忆。
+        g.add_edge("build_response", "prepare_memory_mutations")
+        g.add_edge("build_failed_response", "prepare_memory_mutations")
+        if hitl_enabled and deps.settings.memory_confirmation_required:
+            g.add_edge("prepare_memory_mutations", "memory_confirmation_interrupt")
+            g.add_edge("memory_confirmation_interrupt", "commit_memory")
+        else:
+            g.add_edge("prepare_memory_mutations", "commit_memory")
         g.add_edge("commit_memory", "append_turn_summary")
         g.add_edge("append_turn_summary", END)
     else:
+        # 失败也是已完成的 terminal response，需要进入 bounded conversation memory。
+        g.add_edge("build_failed_response", "append_turn_summary")
         g.add_edge("build_response", "append_turn_summary")
         g.add_edge("append_turn_summary", END)
     if deps.graph_checkpointer is None:

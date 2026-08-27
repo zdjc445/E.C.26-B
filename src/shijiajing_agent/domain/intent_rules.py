@@ -19,7 +19,14 @@ from __future__ import annotations
 
 import re
 
-from shijiajing_agent.contracts import IntentPatch, Preference, SortBy
+from shijiajing_agent.contracts import (
+    IntentPatch,
+    MemoryApplyMode,
+    MemoryDirective,
+    MemoryOperation,
+    Preference,
+    SortBy,
+)
 from shijiajing_agent.domain.taxonomy import Taxonomy
 
 _PRICE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*(元|块)?")
@@ -79,7 +86,116 @@ class RuleIntentParser:
         patch.preferences = self._parse_preferences(text)
         patch.cancelled_preferences = self._parse_cancelled_preferences(text)
         patch.clear_fields = self._parse_clear_fields(text)
+        patch.negative_terms = self._parse_negative_terms(text)
+        patch.memory_directives = self._parse_memory_directives(text)
         return patch
+
+    def _parse_memory_directives(self, text: str) -> list[MemoryDirective]:
+        """覆盖固定的显式长期记忆表达；普通购物条件永不产生 directive。"""
+        directives: list[MemoryDirective] = []
+        if (
+            "清空" in text
+            and any(token in text for token in ("所有购物偏好", "全部偏好", "所有偏好", "所有记忆"))
+        ) or any(token in text for token in ("清除全部偏好", "全部忘掉")):
+            return [MemoryDirective(operation=MemoryOperation.CLEAR_OWNER)]
+
+        key = self._memory_key(text)
+        if key is None:
+            return directives
+        scope = "global"
+        category = self._resolve_category(text)[0]
+        if category:
+            scope = f"category:{category}"
+
+        if any(token in text for token in ("忘掉", "忘记", "不要记", "别记")):
+            directives.append(
+                MemoryDirective(operation=MemoryOperation.FORGET, memory_key=key, scope_key=scope)
+            )
+            return directives
+        if not any(token in text for token in ("记住", "记为", "保存", "以后默认", "以后买")):
+            return directives
+        value = self._memory_value(key, text)
+        if value is None:
+            return directives
+        mode = (
+            MemoryApplyMode.RANKING_PRIOR
+            if key in {"preferences"} or "优先" in text
+            else MemoryApplyMode.CONSTRAINT_DEFAULT
+        )
+        if key == "negative_terms":
+            mode = MemoryApplyMode.NEGATIVE_PREFERENCE
+        try:
+            directives.append(
+                MemoryDirective(
+                    operation=MemoryOperation.UPSERT,
+                    memory_key=key,
+                    value=value,
+                    scope_key=scope,
+                    apply_mode=mode,
+                )
+            )
+        except ValueError:
+            return []
+        return directives
+
+    @staticmethod
+    def _memory_key(text: str) -> str | None:
+        if "评分" in text and any(token in text for token in ("以上", "不低于", "至少")):
+            return "min_rating"
+        if "预算" in text or (
+            "价格" in text and any(token in text for token in ("不超过", "以内", "以下", "上限"))
+        ):
+            return "max_price"
+        if "平台" in text or any(alias in text for alias in _PLATFORM_ALIASES):
+            return "platforms"
+        if "颜色" in text or any(color in text for color in _COLOR_WORDS):
+            return "colors"
+        if "排序" in text or "按价格" in text:
+            return "sort_by"
+        if any(
+            token in text
+            for token in ("官方", "自营", "配送快", "低价", "性价比", "高评分", "高销量")
+        ):
+            return "preferences"
+        if any(token in text for token in ("不喜欢", "讨厌", "避开")):
+            return "negative_terms"
+        return None
+
+    def _memory_value(self, key: str, text: str) -> object | None:
+        if key == "max_price":
+            lo, hi = self._parse_budget(text)
+            if hi is not None:
+                return hi
+            if lo is not None:
+                return lo
+        if key == "min_rating":
+            return self._parse_min_rating(text)
+        if key == "platforms":
+            return self._parse_platforms(text)
+        if key == "colors":
+            return self._parse_colors(text)
+        if key == "sort_by":
+            return self._parse_sort(text)
+        if key == "preferences":
+            return self._parse_preferences(text)
+        if key == "negative_terms":
+            for marker in ("不喜欢", "讨厌", "避开"):
+                if marker in text:
+                    tail = text.split(marker, 1)[1]
+                    tail = re.split(r"[，。,.；;\s]", tail, maxsplit=1)[0].strip()
+                    if tail:
+                        return [tail]
+        return None
+
+    @staticmethod
+    def _parse_negative_terms(text: str) -> list[str]:
+        for marker in ("不喜欢", "讨厌", "避开"):
+            if marker in text:
+                tail = text.split(marker, 1)[1]
+                term = re.split(r"[，。,.；;\s]", tail, maxsplit=1)[0].strip()
+                if term:
+                    return [term]
+        return []
 
     # ------------------------------------------------------------------
     def _resolve_category(self, text: str) -> tuple[str | None, str | None]:
@@ -123,6 +239,11 @@ class RuleIntentParser:
             m = re.search(rf"{word}\s*{_PRICE_RE.pattern}", text)
             if m:
                 return float(m.group(1)), None
+        # “预算 1000 元”没有上下限词时，按当前轮/显式记忆的上限处理。
+        if "预算" in text:
+            m = re.search(r"预算\s*(?:为|是|记为)?\s*" + _PRICE_RE.pattern, text)
+            if m:
+                return None, float(m.group(1))
         return None, None
 
     def _parse_colors(self, text: str) -> list[str] | None:

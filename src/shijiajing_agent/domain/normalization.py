@@ -31,6 +31,21 @@ _UNIT_PATTERNS: list[tuple[re.Pattern[str], str, float]] = [
 ]
 
 
+def canonical_identity_title(
+    category_id: str | None,
+    brand: str | None,
+    model: str | None,
+    identity: dict[str, str],
+) -> str | None:
+    """用可信身份字段构造匹配标题；没有品牌+型号锚点时保守返回 None。"""
+
+    if not brand or not model:
+        return None
+    parts = [category_id or "", brand, model]
+    parts.extend(f"{key}={identity[key]}" for key in sorted(identity))
+    return " ".join(part for part in parts if part)
+
+
 def build_search_text(
     offer: Offer,
     *,
@@ -81,22 +96,26 @@ class TaxonomyNormalizer:
 
         identity: dict[str, str] = {}
         for key, raw in offer.identity_attributes.items():
-            std = self._normalize_attribute(category_id, key, raw)
+            std = self.normalize_attribute(category_id, key, raw)
             if std is not None:
                 identity[key] = std
             elif raw:
                 failures.append(f"identity:{key}")
         variant: dict[str, str] = {}
         for key, raw in offer.variant_attributes.items():
-            std = self._normalize_attribute(category_id, key, raw)
+            std = self.normalize_attribute(category_id, key, raw)
             if std is not None:
                 variant[key] = std
             elif raw:
                 failures.append(f"variant:{key}")
 
+        normalized_title = canonical_identity_title(category_id, brand, model, identity)
+        normalized_offer = offer.model_copy(
+            update={"normalized_title": normalized_title or offer.normalized_title}
+        )
         return NormalizedCandidate(
             offer_id=offer.offer_id,
-            offer=offer,
+            offer=normalized_offer,
             normalized_category_id=category_id,
             normalized_brand=brand,
             normalized_model=model,
@@ -120,7 +139,7 @@ class TaxonomyNormalizer:
         std_model = self._taxonomy.normalize_model(model, cat_id) if model else None
         std_attrs: dict[str, str] = {}
         for key, raw in (attributes or {}).items():
-            std = self._normalize_attribute(cat_id, key, raw)
+            std = self.normalize_attribute(cat_id, key, raw)
             if std is not None:
                 std_attrs[key] = std
         return {
@@ -131,7 +150,9 @@ class TaxonomyNormalizer:
             "attributes": std_attrs,
         }
 
-    def _normalize_attribute(self, category_id: str | None, key: str, raw: str) -> str | None:
+    def normalize_attribute(self, category_id: str | None, key: str, raw: str) -> str | None:
+        """规范化单个商品属性，供确定性流程和 LLM 补丁校验共用。"""
+
         text = unicodedata.normalize("NFKC", raw.strip())
         text = re.sub(r"\s+", " ", text)
         if not text:
@@ -157,6 +178,11 @@ class TaxonomyNormalizer:
                             return candidate
                     return None
         return text
+
+    def _normalize_attribute(self, category_id: str | None, key: str, raw: str) -> str | None:
+        """兼容旧调用；新代码使用公开的 ``normalize_attribute``。"""
+
+        return self.normalize_attribute(category_id, key, raw)
 
     @staticmethod
     def model_equivalent(a: str, b: str) -> bool:

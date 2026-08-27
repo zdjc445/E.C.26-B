@@ -28,15 +28,33 @@ def make_match_same_item_node(deps: AgentDependenciesPort) -> Any:
         if not normalized:
             return {"spu_clusters": [], "next_action": "spu_ready"}
         try:
+            matcher_mode = (
+                "taxonomy"
+                if deps.settings.product_canonicalization_mode == "dynamic_shadow"
+                else deps.settings.product_canonicalization_mode
+            )
             matcher = default_same_item_matcher(
                 deps.taxonomy,
-                accept_threshold=deps.settings.same_item_accept_threshold,
-                review_threshold=deps.settings.same_item_review_threshold,
+                accept_threshold=(
+                    deps.settings.dynamic_same_item_accept_threshold
+                    if deps.settings.product_canonicalization_mode
+                    in {"dynamic", "hybrid"}
+                    else deps.settings.same_item_accept_threshold
+                ),
+                review_threshold=(
+                    deps.settings.dynamic_same_item_review_threshold
+                    if deps.settings.product_canonicalization_mode
+                    in {"dynamic", "hybrid"}
+                    else deps.settings.same_item_review_threshold
+                ),
+                mode=matcher_mode,
             )
             pairs = matcher.generate_candidates(normalized)
             review_pairs: list[MatchPair] = []
+            pair_verdicts: list[str] = []
             for i, j in pairs:
                 pair = matcher.judge_pair(normalized[i], normalized[j])
+                pair_verdicts.append(pair.verdict)
                 if pair.verdict == "review":
                     review_pairs.append(
                         MatchPair(
@@ -48,6 +66,18 @@ def make_match_same_item_node(deps: AgentDependenciesPort) -> Any:
                         )
                     )
             clusters = matcher.cluster(normalized, pairs)
+            if matcher_mode in {"dynamic", "hybrid"}:
+                _inc_metric(
+                    deps,
+                    "open_world_singleton_spu_total",
+                    sum(len(cluster) == 1 for cluster in clusters),
+                )
+            for verdict in pair_verdicts:
+                _inc_metric(
+                    deps,
+                    "same_item_pair_total",
+                    labels={"verdict": verdict, "mode": matcher_mode},
+                )
             return {
                 "spu_clusters": clusters,
                 "same_item_review_pairs": review_pairs,
@@ -81,13 +111,37 @@ def make_split_sku_node(deps: AgentDependenciesPort) -> Any:
     async def split_sku_node(state: AgentState) -> dict[str, Any]:
         normalized = state.get("normalized_candidates") or []
         clusters = state.get("spu_clusters") or []
-        splitter = SkuSplitter(deps.taxonomy)
+        splitter = SkuSplitter(
+            deps.taxonomy,
+            dynamic=deps.settings.product_canonicalization_mode
+            in {"dynamic", "hybrid"},
+        )
         groups: list[Any] = []
+        dynamic_mode = deps.settings.product_canonicalization_mode in {"dynamic", "hybrid"}
         for cluster in clusters:
             members = [normalized[i] for i in cluster]
             if not members:
                 continue
             groups.extend(splitter.split_spu(members, spu_id_for(members)))
+        if dynamic_mode:
+            _inc_metric(
+                deps,
+                "open_world_singleton_sku_total",
+                sum(group.offer_count == 1 for group in groups),
+            )
         return {"sku_groups": groups, "next_action": "sku_ready"}
 
     return split_sku_node
+
+
+def _inc_metric(
+    deps: AgentDependenciesPort,
+    name: str,
+    value: int = 1,
+    *,
+    labels: dict[str, str] | None = None,
+) -> None:
+    try:
+        deps.metrics.inc(name, labels=labels, value=float(value))
+    except Exception:
+        return

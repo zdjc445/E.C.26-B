@@ -42,19 +42,19 @@ CREATE TABLE IF NOT EXISTS memory_mutation (
     mutation_id TEXT PRIMARY KEY,
     memory_owner_id TEXT NOT NULL,
     operation TEXT NOT NULL,
-    payload_json TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
     applied_at TEXT NOT NULL
 );
 """
 
 
-def _mutation_matches(payload_json: str, mutation: MemoryMutation) -> bool:
-    """比较 mutation_id 绑定的完整内容，而不是只比较 owner。"""
-    try:
-        stored_payload = json.loads(payload_json)
-    except (TypeError, ValueError) as exc:
-        raise MemoryUnavailableError("memory_mutation payload 已损坏") from exc
-    return content_hash(stored_payload) == content_hash(mutation.model_dump(mode="json"))
+def _mutation_payload_hash(mutation: MemoryMutation) -> str:
+    return content_hash(mutation.model_dump(mode="json"))
+
+
+def _mutation_matches(stored_hash: str, mutation: MemoryMutation) -> bool:
+    """ledger 只保留 canonical payload hash，不把 value 写入审计表。"""
+    return stored_hash == _mutation_payload_hash(mutation)
 
 
 class DisabledMemoryAdapter:
@@ -80,6 +80,9 @@ class DisabledMemoryAdapter:
 
     async def clear_owner(self, memory_owner_id: str, mutation_id: str) -> None:
         del memory_owner_id, mutation_id
+
+    async def purge_owner(self, memory_owner_id: str) -> None:
+        del memory_owner_id
 
 
 class SQLiteMemoryAdapter:
@@ -111,6 +114,35 @@ class SQLiteMemoryAdapter:
                 raise MemoryUnavailableError("Memory adapter 已关闭")
             conn = self._connect()
             conn.executescript(_DDL)
+            columns = {
+                str(row[1]) for row in conn.execute("PRAGMA table_info(memory_mutation)").fetchall()
+            }
+            if "payload_hash" not in columns and "payload_json" in columns:
+                # 旧版本 ledger 含 value payload，迁移时只带出 hash 并物理移除旧表。
+                conn.execute("ALTER TABLE memory_mutation RENAME TO memory_mutation_legacy")
+                conn.execute(
+                    "CREATE TABLE memory_mutation ("
+                    "mutation_id TEXT PRIMARY KEY, memory_owner_id TEXT NOT NULL,"
+                    "operation TEXT NOT NULL, payload_hash TEXT NOT NULL, applied_at TEXT NOT NULL)"
+                )
+                old_rows = conn.execute(
+                    "SELECT mutation_id, memory_owner_id, operation, payload_json, applied_at "
+                    "FROM memory_mutation_legacy"
+                ).fetchall()
+                for mutation_id_value, owner, operation, payload_json, applied_at in old_rows:
+                    conn.execute(
+                        "INSERT INTO memory_mutation "
+                        "(mutation_id, memory_owner_id, operation, payload_hash, applied_at) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (
+                            mutation_id_value,
+                            owner,
+                            operation,
+                            content_hash(json.loads(payload_json)),
+                            applied_at,
+                        ),
+                    )
+                conn.execute("DROP TABLE memory_mutation_legacy")
             conn.commit()
 
     async def close(self) -> None:
@@ -141,10 +173,13 @@ class SQLiteMemoryAdapter:
                     key_ph = ",".join("?" for _ in query.memory_keys)
                     sql += f" AND memory_key IN ({key_ph})"
                     params.extend(query.memory_keys)
-                sql += " ORDER BY updated_at DESC LIMIT ?"
-                params.append(query.limit)
+                # 必须在 scope 去重后再应用 limit；否则 global 的新记录可能先占满
+                # SQL limit，导致较旧但优先级更高的 category 记录永远无法参与去重。
+                sql += " ORDER BY updated_at DESC"
                 rows = self._connect().execute(sql, params).fetchall()
-                return [_row_to_record(row) for row in rows]
+                return _dedupe_scope_records(
+                    _safe_rows_to_records(rows), query.scope_keys, query.limit
+                )
             except Exception as exc:
                 raise MemoryUnavailableError(f"Memory recall 失败: {exc}") from exc
 
@@ -163,7 +198,7 @@ class SQLiteMemoryAdapter:
                     )
                     .fetchall()
                 )
-                return [_row_to_record(row) for row in rows]
+                return _safe_rows_to_records(rows)
             except Exception as exc:
                 raise MemoryUnavailableError(f"Memory list 失败: {exc}") from exc
 
@@ -181,7 +216,7 @@ class SQLiteMemoryAdapter:
                 changed: list[MemoryRecord] = []
                 for mutation in validated_mutations:
                     exists = conn.execute(
-                        "SELECT memory_owner_id, payload_json FROM memory_mutation"
+                        "SELECT memory_owner_id, payload_hash FROM memory_mutation"
                         " WHERE mutation_id = ?",
                         (mutation.mutation_id,),
                     ).fetchone()
@@ -195,13 +230,13 @@ class SQLiteMemoryAdapter:
                         self._clear_sync_in_transaction(conn, owner)
                         conn.execute(
                             "INSERT INTO memory_mutation"
-                            " (mutation_id, memory_owner_id, operation, payload_json, applied_at)"
+                            " (mutation_id, memory_owner_id, operation, payload_hash, applied_at)"
                             " VALUES (?, ?, ?, ?, ?)",
                             (
                                 mutation.mutation_id,
                                 owner,
                                 mutation.operation.value,
-                                json.dumps(mutation.model_dump(mode="json"), ensure_ascii=False),
+                                _mutation_payload_hash(mutation),
                                 now_iso(),
                             ),
                         )
@@ -218,13 +253,13 @@ class SQLiteMemoryAdapter:
                     if mutation.operation is MemoryOperation.FORGET and current is None:
                         conn.execute(
                             "INSERT INTO memory_mutation"
-                            " (mutation_id, memory_owner_id, operation, payload_json, applied_at)"
+                            " (mutation_id, memory_owner_id, operation, payload_hash, applied_at)"
                             " VALUES (?, ?, ?, ?, ?)",
                             (
                                 mutation.mutation_id,
                                 owner,
                                 mutation.operation.value,
-                                json.dumps(mutation.model_dump(mode="json"), ensure_ascii=False),
+                                _mutation_payload_hash(mutation),
                                 now_iso(),
                             ),
                         )
@@ -233,19 +268,19 @@ class SQLiteMemoryAdapter:
                     changed.append(record)
                     conn.execute(
                         "INSERT INTO memory_mutation"
-                        " (mutation_id, memory_owner_id, operation, payload_json, applied_at)"
+                        " (mutation_id, memory_owner_id, operation, payload_hash, applied_at)"
                         " VALUES (?, ?, ?, ?, ?)",
                         (
                             mutation.mutation_id,
                             owner,
                             mutation.operation.value,
-                            json.dumps(mutation.model_dump(mode="json"), ensure_ascii=False),
+                            _mutation_payload_hash(mutation),
                             now_iso(),
                         ),
                     )
                 conn.commit()
                 return changed
-            except (MemoryConflictError, sqlite3.Error) as exc:
+            except Exception as exc:
                 conn.rollback()
                 if isinstance(exc, MemoryConflictError):
                     raise
@@ -267,6 +302,21 @@ class SQLiteMemoryAdapter:
             source_request_id=mutation_id,
         )
         await self.commit(memory_owner_id, [mutation])
+
+    async def purge_owner(self, memory_owner_id: str) -> None:
+        await asyncio.to_thread(self._purge_sync, memory_owner_id)
+
+    def _purge_sync(self, owner: str) -> None:
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                conn.execute("DELETE FROM user_memory WHERE memory_owner_id = ?", (owner,))
+                conn.execute("DELETE FROM memory_mutation WHERE memory_owner_id = ?", (owner,))
+                conn.commit()
+            except Exception as exc:
+                conn.rollback()
+                raise MemoryUnavailableError(f"Memory purge 失败: {exc}") from exc
 
 
 def _apply_mutation(
@@ -380,6 +430,28 @@ def _row_to_record(row: tuple[Any, ...]) -> MemoryRecord:
     )
 
 
+def _safe_rows_to_records(rows: list[tuple[Any, ...]]) -> list[MemoryRecord]:
+    """旧数据的非法 key/mode/value 进入隔离路径，不阻断正常 recall/list。"""
+    records: list[MemoryRecord] = []
+    for row in rows:
+        try:
+            records.append(_row_to_record(row))
+        except Exception:
+            continue
+    return records
+
+
+def _dedupe_scope_records(
+    records: list[MemoryRecord], scope_keys: list[str], limit: int
+) -> list[MemoryRecord]:
+    """先按 scope 优先级去重，再应用 recall limit。"""
+    scope_rank = {scope: index for index, scope in enumerate(scope_keys)}
+    selected: dict[str, MemoryRecord] = {}
+    for record in sorted(records, key=lambda item: scope_rank.get(item.scope_key, 99)):
+        selected.setdefault(record.memory_key, record)
+    return list(selected.values())[:limit]
+
+
 def make_memory_adapter(
     backend: str,
     dsn: str | None,
@@ -434,6 +506,28 @@ class PostgresMemoryAdapter:
                     for statement in _DDL.split(";"):
                         if statement.strip():
                             await conn.execute(statement)
+                    columns_cur = await conn.execute(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'memory_mutation'"
+                    )
+                    columns = {str(row[0]) for row in await columns_cur.fetchall()}
+                    if "payload_hash" not in columns and "payload_json" in columns:
+                        await conn.execute(
+                            "ALTER TABLE memory_mutation ADD COLUMN payload_hash TEXT"
+                        )
+                        rows_cur = await conn.execute(
+                            "SELECT mutation_id, payload_json FROM memory_mutation"
+                        )
+                        for mutation_id_value, payload_json in await rows_cur.fetchall():
+                            await conn.execute(
+                                "UPDATE memory_mutation SET payload_hash = %s "
+                                "WHERE mutation_id = %s",
+                                (content_hash(json.loads(payload_json)), mutation_id_value),
+                            )
+                        await conn.execute(
+                            "ALTER TABLE memory_mutation ALTER COLUMN payload_hash SET NOT NULL"
+                        )
+                        await conn.execute("ALTER TABLE memory_mutation DROP COLUMN payload_json")
         except Exception as exc:
             raise MemoryUnavailableError(f"Memory setup 失败: {exc}") from exc
 
@@ -455,12 +549,12 @@ class PostgresMemoryAdapter:
                 key_placeholders = ",".join("%s" for _ in query.memory_keys)
                 sql += f" AND memory_key IN ({key_placeholders})"
                 params.extend(query.memory_keys)
-            sql += " ORDER BY updated_at DESC LIMIT %s"
-            params.append(query.limit)
+            # scope 优先级去重在应用层完成，不能让 SQL limit 抢先截断 category 记录。
+            sql += " ORDER BY updated_at DESC"
             async with self._pool.connection() as conn:
                 cur = await conn.execute(sql, params)
                 rows = await cur.fetchall()
-            return [_row_to_record(row) for row in rows]
+            return _dedupe_scope_records(_safe_rows_to_records(rows), query.scope_keys, query.limit)
         except Exception as exc:
             raise MemoryUnavailableError(f"Memory recall 失败: {exc}") from exc
 
@@ -475,7 +569,7 @@ class PostgresMemoryAdapter:
                     (memory_owner_id,),
                 )
                 rows = await cur.fetchall()
-            return [_row_to_record(row) for row in rows]
+            return _safe_rows_to_records(rows)
         except Exception as exc:
             raise MemoryUnavailableError(f"Memory list 失败: {exc}") from exc
 
@@ -501,7 +595,7 @@ class PostgresMemoryAdapter:
                             (mutation.mutation_id,),
                         )
                         existing_cur = await conn.execute(
-                            "SELECT memory_owner_id, payload_json FROM memory_mutation"
+                            "SELECT memory_owner_id, payload_hash FROM memory_mutation"
                             " WHERE mutation_id = %s",
                             (mutation.mutation_id,),
                         )
@@ -569,13 +663,13 @@ class PostgresMemoryAdapter:
     async def _record_mutation(self, conn: Any, owner: str, mutation: MemoryMutation) -> None:
         await conn.execute(
             "INSERT INTO memory_mutation"
-            " (mutation_id, memory_owner_id, operation, payload_json, applied_at)"
+            " (mutation_id, memory_owner_id, operation, payload_hash, applied_at)"
             " VALUES (%s, %s, %s, %s, %s)",
             (
                 mutation.mutation_id,
                 owner,
                 mutation.operation.value,
-                json.dumps(mutation.model_dump(mode="json"), ensure_ascii=False),
+                _mutation_payload_hash(mutation),
                 now_iso(),
             ),
         )
@@ -588,6 +682,22 @@ class PostgresMemoryAdapter:
             source_request_id=mutation_id,
         )
         await self.commit(memory_owner_id, [mutation])
+
+    async def purge_owner(self, memory_owner_id: str) -> None:
+        try:
+            async with self._pool.connection() as conn:
+                async with conn.transaction():
+                    await conn.execute(
+                        "SELECT pg_advisory_xact_lock(hashtext(%s))", (memory_owner_id,)
+                    )
+                    await conn.execute(
+                        "DELETE FROM user_memory WHERE memory_owner_id = %s", (memory_owner_id,)
+                    )
+                    await conn.execute(
+                        "DELETE FROM memory_mutation WHERE memory_owner_id = %s", (memory_owner_id,)
+                    )
+        except Exception as exc:
+            raise MemoryUnavailableError(f"Memory purge 失败: {exc}") from exc
 
 
 def _record_for_mutation(

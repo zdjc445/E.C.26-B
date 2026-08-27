@@ -492,7 +492,11 @@ async def test_multi_agent_memory_confirmation_has_single_authorized_commit(
     fakes["retrieval"].sequence = [two_candidate_result()]
     checkpoint = InMemoryMultiAgentCheckpoint()
     supervisor = MultiAgentSupervisor(deps, checkpoint=checkpoint)
-    request = AgentRequest(session_id="multi-hitl", request_id="memory-1", text="索尼耳机")
+    request = AgentRequest(
+        session_id="multi-hitl",
+        request_id="memory-1",
+        text="记住以后买耳机预算 1000 元",
+    )
     context = AgentExecutionContext(memory_enabled=True, memory_owner_id="owner-1")
 
     paused = await supervisor.run(request, context=context, pause_for_hitl=True)

@@ -62,8 +62,19 @@ class GroupRanker:
         *,
         sort_by: SortBy = SortBy.RECOMMENDED,
         preferences: list[Preference] | None = None,
+        memory_priors: dict[str, object] | None = None,
+        memory_negative_terms: list[str] | None = None,
     ) -> RankResult:
         prefs = [p for p in (preferences or []) if p in list(Preference)]
+        prior_values = memory_priors or {}
+        raw_preferences = prior_values.get("preferences", [])
+        for raw in raw_preferences if isinstance(raw_preferences, list) else []:
+            try:
+                pref = Preference(raw)
+            except ValueError:
+                continue
+            if pref not in prefs:
+                prefs.append(pref)
         weights = self._effective_weights(prefs)
 
         ranked: list[RankedGroup] = []
@@ -85,6 +96,9 @@ class GroupRanker:
             active = {k: w for k, w in weights.items() if k not in missing}
             total = sum(active.values())
             score = sum(active[k] * dims.get(k, 0.0) for k in active) / total if total else 0.0
+            score += 0.05 * self._memory_prior_boost(g, prior_values)
+            score -= 0.05 * self._negative_penalty(g, memory_negative_terms or [])
+            score = max(0.0, min(1.0, score))
             ranked.append(
                 RankedGroup(
                     group=g,
@@ -105,6 +119,33 @@ class GroupRanker:
         for i, r in enumerate(ranked):
             r.rank = i + 1
         return RankResult(ranked=ranked, weights_used=weights)
+
+    @staticmethod
+    def _memory_prior_boost(g: SkuGroup, priors: dict[str, object]) -> float:
+        boost = 0.0
+        platforms = priors.get("platforms")
+        if isinstance(platforms, list) and any(offer.platform in platforms for offer in g.offers):
+            boost += 1.0
+        colors = priors.get("colors")
+        if isinstance(colors, list):
+            actual = str(g.sku_attributes.get("color", "")).lower()
+            if any(str(color).lower() in actual for color in colors):
+                boost += 1.0
+        return min(1.0, boost)
+
+    @staticmethod
+    def _negative_penalty(g: SkuGroup, terms: list[str]) -> float:
+        if not terms:
+            return 0.0
+        searchable = " ".join(
+            [
+                g.brand or "",
+                g.model or "",
+                str(g.sku_attributes),
+                " ".join(offer.title for offer in g.offers),
+            ]
+        ).lower()
+        return 1.0 if any(term.lower() in searchable for term in terms if term.strip()) else 0.0
 
     # ------------------------------------------------------------------
     def _effective_weights(self, prefs: list[Preference]) -> dict[str, float]:

@@ -29,16 +29,19 @@ from shijiajing_agent.contracts import (
     RetrievalTaskOutput,
     SkuGroup,
     SpecialistAgentName,
+    content_hash,
 )
 from shijiajing_agent.domain.evidence import EvidenceBuilder, FactualConsistencyChecker
 from shijiajing_agent.domain.filters import HardFilterBuilder
 from shijiajing_agent.domain.intent_rules import RuleIntentParser
 from shijiajing_agent.domain.memory_policy import (
     build_memory_mutation,
-    build_memory_query,
+    memory_authorization_id,
     validate_directive,
+    validate_memory_directives,
 )
 from shijiajing_agent.domain.normalization import TaxonomyNormalizer
+from shijiajing_agent.domain.product_canonicalization import canonicalize_offers
 from shijiajing_agent.domain.ranking import GroupRanker
 from shijiajing_agent.domain.same_item import default_same_item_matcher
 from shijiajing_agent.domain.sku import SkuSplitter, spu_id_for
@@ -161,10 +164,31 @@ class IntentAgent:
         if not data.text:
             return result_for(task, status=NodeStatus.SUCCESS, output=IntentTaskOutput(patch=None))
         try:
-            patch = await self._deps.intent.extract_intent(
-                data.text,
-                data.previous_constraints,
-                self._deps.taxonomy,
+            try:
+                patch = await self._deps.intent.extract_intent(
+                    data.text,
+                    data.previous_constraints,
+                    self._deps.taxonomy,
+                    recent_turns=data.recent_turns,
+                )
+            except TypeError:
+                patch = await self._deps.intent.extract_intent(
+                    data.text, data.previous_constraints, self._deps.taxonomy
+                )
+            current_category = patch.category_id or (
+                data.previous_constraints.category_id.value
+                if data.previous_constraints is not None
+                else None
+            )
+            patch = patch.model_copy(
+                update={
+                    "memory_directives": validate_memory_directives(
+                        list(patch.memory_directives),
+                        text=data.text,
+                        taxonomy=self._deps.taxonomy,
+                        current_category_id=current_category,
+                    )
+                }
             )
             return result_for(
                 task,
@@ -218,16 +242,49 @@ class RetrievalAgent:
                     for category in self._deps.taxonomy.categories()
                 },
             )
-            normalized = [
-                TaxonomyNormalizer(self._deps.taxonomy).normalize_offer(item.offer)
-                for item in retrieval.candidates
-            ]
+            canonicalization = await canonicalize_offers(
+                [item.offer for item in retrieval.candidates],
+                self._deps.taxonomy,
+                getattr(self._deps, "product_canonicalizer", None),
+                enabled=self._deps.settings.product_canonicalization_enabled,
+                batch_size=self._deps.settings.product_canonicalization_batch_size,
+                min_confidence=self._deps.settings.product_canonicalization_min_confidence,
+                cache=getattr(self._deps, "cache", None),
+                cache_ttl_seconds=self._deps.settings.product_canonicalization_cache_ttl_seconds,
+                metrics=self._deps.metrics,
+                mode=self._deps.settings.product_canonicalization_mode,
+                dynamic_schema_inducer=getattr(self._deps, "dynamic_schema_inducer", None),
+                dynamic_product_canonicalizer=getattr(
+                    self._deps, "dynamic_product_canonicalizer", None
+                ),
+                dynamic_schema_batch_size=self._deps.settings.dynamic_schema_batch_size,
+                dynamic_concept_min_confidence=self._deps.settings.dynamic_schema_concept_min_confidence,
+                dynamic_role_min_confidence=self._deps.settings.dynamic_schema_role_min_confidence,
+                dynamic_role_min_support=self._deps.settings.dynamic_schema_role_min_support,
+                dynamic_field_min_confidence=self._deps.settings.dynamic_canonicalization_field_min_confidence,
+            )
+            normalized = canonicalization.candidates
             for item, candidate in zip(normalized, retrieval.candidates, strict=True):
                 item.recall_score = candidate.recall_score
             matcher = default_same_item_matcher(
                 self._deps.taxonomy,
-                accept_threshold=self._deps.settings.same_item_accept_threshold,
-                review_threshold=self._deps.settings.same_item_review_threshold,
+                accept_threshold=(
+                    self._deps.settings.dynamic_same_item_accept_threshold
+                    if self._deps.settings.product_canonicalization_mode
+                    in {"dynamic", "hybrid"}
+                    else self._deps.settings.same_item_accept_threshold
+                ),
+                review_threshold=(
+                    self._deps.settings.dynamic_same_item_review_threshold
+                    if self._deps.settings.product_canonicalization_mode
+                    in {"dynamic", "hybrid"}
+                    else self._deps.settings.same_item_review_threshold
+                ),
+                mode=(
+                    "taxonomy"
+                    if self._deps.settings.product_canonicalization_mode == "dynamic_shadow"
+                    else self._deps.settings.product_canonicalization_mode
+                ),
             )
             pairs = matcher.generate_candidates(normalized)
             review_pairs = [
@@ -258,13 +315,20 @@ class RetrievalAgent:
                     if remaining:
                         split_clusters.append(remaining)
                 clusters = split_clusters
-            splitter = SkuSplitter(self._deps.taxonomy)
+            splitter = SkuSplitter(
+                self._deps.taxonomy,
+                dynamic=self._deps.settings.product_canonicalization_mode
+                in {"dynamic", "hybrid"},
+            )
             groups: list[SkuGroup] = []
             for cluster in clusters:
                 members = [normalized[index] for index in cluster]
                 groups.extend(splitter.split_spu(members, spu_id_for(members)))
             ranking = GroupRanker(preference_weights=self._deps.settings.preference_weights).rank(
-                groups, data.constraints
+                groups,
+                data.constraints,
+                memory_priors=data.ranking_context.memory_priors,
+                memory_negative_terms=data.ranking_context.memory_negative_terms,
             )
             output = RetrievalTaskOutput(
                 query=query,
@@ -278,7 +342,11 @@ class RetrievalAgent:
                 task,
                 status=NodeStatus.FALLBACK if retrieval.fallback_used else NodeStatus.SUCCESS,
                 output=output,
-                usage=_usage(start),
+                usage=_usage(
+                    start,
+                    calls=canonicalization.model_calls,
+                    fallback=canonicalization.fallback_batches > 0,
+                ),
             )
         except Exception:
             return result_for(
@@ -362,7 +430,9 @@ class MemoryAgent:
             )
         try:
             if data.operation == "recall":
-                query = data.query or build_memory_query({}, 20)
+                if data.query is None:
+                    raise ValueError("memory.recall 必须由 Supervisor 提供当前品类 MemoryQuery")
+                query = data.query
                 records = await self._deps.memory.recall(data.memory_owner_id, query)
                 return result_for(
                     task,
@@ -373,16 +443,20 @@ class MemoryAgent:
             if data.operation == "prepare":
                 if not data.session_id or not data.request_id:
                     raise ValueError("memory.prepare 缺少 session_id/request_id")
-                mutations = [
-                    build_memory_mutation(
-                        data.memory_owner_id,
-                        data.session_id,
-                        data.request_id,
-                        index,
-                        validate_directive(item, self._deps.taxonomy),
-                    )
-                    for index, item in enumerate(data.directives)
-                ]
+                mutations = []
+                for index, item in enumerate(data.directives):
+                    try:
+                        mutations.append(
+                            build_memory_mutation(
+                                data.memory_owner_id,
+                                data.session_id,
+                                data.request_id,
+                                index,
+                                validate_directive(item, self._deps.taxonomy),
+                            )
+                        )
+                    except Exception:
+                        continue
                 return result_for(
                     task,
                     status=NodeStatus.SUCCESS,
@@ -390,8 +464,19 @@ class MemoryAgent:
                     proposed_memory_mutations=mutations,
                     usage=_usage(start),
                 )
-            if not data.authorization_id:
+            if not data.authorization_id or not data.authorization_interrupt_id:
                 raise CapabilityDeniedError("Memory commit 必须携带 Supervisor 授权")
+            expected_payload_hashes = {
+                item.mutation_id: content_hash(item.model_dump(mode="json"))
+                for item in data.mutations
+            }
+            if (
+                data.authorization_id
+                != memory_authorization_id(data.authorization_interrupt_id, data.mutations)
+                or data.authorization_mutation_ids != [item.mutation_id for item in data.mutations]
+                or data.authorization_payload_hashes != expected_payload_hashes
+            ):
+                raise CapabilityDeniedError("Memory commit 授权与当前 mutations 不匹配")
             pending = [
                 mutation
                 for mutation in data.mutations

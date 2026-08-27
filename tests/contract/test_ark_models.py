@@ -352,7 +352,7 @@ async def test_model_adapters_close_shared_client_idempotently(ark_settings: Set
 async def test_prompt_versions_loaded() -> None:
     for name in ("vision.md", "intent.md", "query_rewrite.md", "explanation.md"):
         version, text = load_prompt(name)
-        assert version == "v1"
+        assert version == ("v2" if name == "intent.md" else "v1")
         assert len(text) > 200
         assert "PROMPT_VERSION" not in text  # 版本行已剥离
     # taxonomy 摘要占位符只出现在需要 taxonomy 的两个 prompt 中
