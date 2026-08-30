@@ -36,7 +36,8 @@
 
 ### 1.1 Phase 1 provisional 数据集（`evals/datasets/provisional/v1`）
 
-Phase 1（docs/plans/phase1_provisional_evaluation_plan.md）在种子之外新增
+Phase 1（历史方案见
+[`docs/archive/plans/phase1_provisional_evaluation_plan.md`](archive/plans/phase1_provisional_evaluation_plan.md)）在种子之外新增
 provisional 数据集构建工具链，数据位于 `evals/datasets/provisional/v1/`
 （含 manifest.json 与六类数据集 + `offer_labels.jsonl` Gold 目录）：
 

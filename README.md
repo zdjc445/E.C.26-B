@@ -120,8 +120,6 @@ uv run --env-file .env shijiajing-planner-shadow \
 | [docs/multi_agent.md](docs/multi_agent.md) | Supervisor、专业子图、并行汇合与确定性边界 |
 | [docs/product_canonicalization.md](docs/product_canonicalization.md) | 当前商品归一化、动态 Schema 四种迁移模式、证据校验、SPU/SKU 确定性处理 |
 | [docs/plans/dynamic_product_schema_implementation_plan.md](docs/plans/dynamic_product_schema_implementation_plan.md) | 无静态 Taxonomy 的 LLM 动态局部 Schema 目标架构、迁移与验收方案 |
-| [docs/plans/multi_agent_upgrade_plan.md](docs/plans/multi_agent_upgrade_plan.md) | 受控层级式 Multi-Agent 目标架构、协议、迁移阶段与 DoD |
-| [docs/plans/model_supervisor_planner_implementation_plan.md](docs/plans/model_supervisor_planner_implementation_plan.md) | 模型 Supervisor Planner 的受控提议、确定性物化、回退、审计与灰度实施方案 |
 | [docs/configuration.md](docs/configuration.md) | 全部配置项与缺失行为 |
 | [docs/milvus_schema.md](docs/milvus_schema.md) | Collection 结构、索引脚本、混合召回、降级 |
 | [docs/evaluation.md](docs/evaluation.md) | 数据集、指标阈值、冻结流程、诚实性说明 |
@@ -131,7 +129,7 @@ uv run --env-file .env shijiajing-planner-shadow \
 | [docs/operations/event_repair.md](docs/operations/event_repair.md) | Event Store 一致性事件 dry-run/apply 与冲突处理 |
 | `shijiajing-release-check` | 汇总本地、正式评测和生产外部证据；缺失证据时 fail-closed |
 | [deploy/phase2/README.md](deploy/phase2/README.md) | PostgreSQL/OTLP 本地依赖与可重复验收编排 |
-| [docs/plans/phase2_completion_report.md](docs/plans/phase2_completion_report.md) | 二期阶段性完成报告与未完成证据 |
+| [docs/archive/README.md](docs/archive/README.md) | 已完成或已被当前实现替代的历史方案与阶段报告 |
 
 ## 开发
 

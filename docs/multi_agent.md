@@ -5,10 +5,9 @@
 > checkpoint namespace、Send/Command 派发、受控 replan、四类 HITL resume 和三种灰度模式。
 > shadow 对照报告与发布门禁已提供；正式外部证据仍需部署环境生成。模型 Supervisor Planner 已提供
 > allowlist proposal、确定性 Materializer、Ark 适配器和可回退模式；默认仍为 `off`。
-> 目标 Multi-Agent 架构和分阶段迁移方案见
-> [`docs/plans/multi_agent_upgrade_plan.md`](plans/multi_agent_upgrade_plan.md)。模型 Supervisor
-> Planner 通过 `SHIJIAJING_SUPERVISOR_PLANNER_MODE` 可选接入真实模型，默认使用确定性回退；实施设计见
-> [`docs/plans/model_supervisor_planner_implementation_plan.md`](plans/model_supervisor_planner_implementation_plan.md)。
+> Multi-Agent 和模型 Planner 的历史实施方案已归档至
+> [历史文档归档](archive/README.md)。模型 Supervisor Planner 通过
+> `SHIJIAJING_SUPERVISOR_PLANNER_MODE` 可选接入真实模型，默认使用确定性回退。
 
 根图名称固定为 `shijiajing-supervisor`。专业子图提供可独立装配的 LangGraph 入口；根图负责依赖、汇合、HITL、持久化和最终响应，确定性业务算法仍留在 `domain/`。
 

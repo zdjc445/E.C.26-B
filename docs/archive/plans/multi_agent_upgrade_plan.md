@@ -29,7 +29,7 @@ Cache、Memory owner 隔离与发布门禁，不把确定性算法迁入 LLM。
 ## 2. 当前基线与差距
 
 当前实现是 Supervisor 编排的专业 LangGraph 子图，详细现状见
-[`docs/multi_agent.md`](../multi_agent.md)。当前已经具备：
+[`docs/multi_agent.md`](../../multi_agent.md)。当前已经具备：
 
 - 根图名称 `shijiajing-supervisor`。
 - Recognition、Intent、Retrieval、Explanation、Memory 五个专业子图入口。
