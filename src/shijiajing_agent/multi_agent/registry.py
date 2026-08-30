@@ -11,13 +11,11 @@ from collections.abc import Mapping
 from shijiajing_agent.contracts import AgentResultV2, AgentTaskV2, SpecialistAgentName
 from shijiajing_agent.errors import CapabilityDeniedError
 from shijiajing_agent.multi_agent.agents.base import SpecialistAgent
-from shijiajing_agent.multi_agent.agents.specialists import (
-    ExplanationAgent,
-    IntentAgent,
-    MemoryAgent,
-    RecognitionAgent,
-    RetrievalAgent,
-)
+from shijiajing_agent.multi_agent.agents.explanation import ExplanationAgent
+from shijiajing_agent.multi_agent.agents.intent import IntentAgent
+from shijiajing_agent.multi_agent.agents.memory import MemoryAgent
+from shijiajing_agent.multi_agent.agents.recognition import RecognitionAgent
+from shijiajing_agent.multi_agent.agents.retrieval import RetrievalAgent
 
 
 class SpecialistAgentRegistry:

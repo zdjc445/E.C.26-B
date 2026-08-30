@@ -498,7 +498,7 @@ Trace 中增加 `mode`、`schema_id`、`concept_count`、`accepted_field_count`�
 
 ### 14.4 编排与配置
 
-- `multi_agent/agents/specialists.py`
+- `multi_agent/agents/retrieval.py`
   - 必须调用统一的 `canonicalize_offers` 策略服务；
   - shadow 结果不能改变当前输出；
 - `ports/dependencies.py`、`deps.py`

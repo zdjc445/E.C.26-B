@@ -11,6 +11,12 @@ src/shijiajing_agent/
 ├── state.py           SupervisorState 与任务结果 reducer
 ├── facade.py          幂等、会话串行、超时和 Supervisor 生命周期
 ├── multi_agent/       Planner、Supervisor、Agent registry、任务派发与 Checkpoint
+│   └── agents/
+│       ├── recognition.py   图片识别与修正
+│       ├── intent.py        意图和购物约束抽取
+│       ├── retrieval.py     召回、归一化、同款、SKU 与排序
+│       ├── explanation.py   证据约束解释
+│       └── memory.py        长期记忆召回与受控写入
 ├── domain/            约束、归一化、同款、SKU、排序和证据等纯领域逻辑
 ├── ports/             外部能力 Protocol
 ├── adapters/          Ark、检索、Memory、Cache、Event、Trace 等端口实现

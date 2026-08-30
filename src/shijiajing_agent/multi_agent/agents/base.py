@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Protocol
 
 from shijiajing_agent.contracts import (
@@ -21,6 +22,15 @@ class SpecialistAgent(Protocol):
     name: SpecialistAgentName
 
     async def execute(self, task: AgentTaskV2) -> AgentResultV2: ...
+
+
+def task_usage(start: float, *, calls: int = 0, fallback: bool = False) -> AgentTaskUsage:
+    """构造所有 Specialist Agent 共用的任务用量。"""
+    return AgentTaskUsage(
+        model_calls=calls,
+        duration_ms=max(0.0, (perf_counter() - start) * 1000),
+        retry_count=1 if fallback else 0,
+    )
 
 
 def result_for(

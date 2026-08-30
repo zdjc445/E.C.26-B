@@ -1,19 +1,16 @@
 """Specialist Agent implementations and private state contracts."""
 
-from shijiajing_agent.multi_agent.agents.specialists import (
+from shijiajing_agent.multi_agent.agents.explanation import (
     ExplanationAgent,
-    IntentAgent,
-    MemoryAgent,
-    RecognitionAgent,
-    RetrievalAgent,
-)
-from shijiajing_agent.multi_agent.agents.states import (
     ExplanationAgentState,
-    IntentAgentState,
-    MemoryAgentState,
-    RecognitionAgentState,
-    RetrievalAgentState,
 )
+from shijiajing_agent.multi_agent.agents.intent import IntentAgent, IntentAgentState
+from shijiajing_agent.multi_agent.agents.memory import MemoryAgent, MemoryAgentState
+from shijiajing_agent.multi_agent.agents.recognition import (
+    RecognitionAgent,
+    RecognitionAgentState,
+)
+from shijiajing_agent.multi_agent.agents.retrieval import RetrievalAgent, RetrievalAgentState
 
 __all__ = [
     "ExplanationAgent",
