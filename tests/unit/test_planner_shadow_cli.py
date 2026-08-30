@@ -9,7 +9,9 @@ import pytest
 
 from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import AgentTaskKind
-from shijiajing_agent.multi_agent.shadow import validate_shadow_report_payload
+from shijiajing_agent.multi_agent.planner_shadow import (
+    validate_planner_shadow_report_payload,
+)
 from shijiajing_agent.tools.run_planner_shadow import (
     _load_cases,
     build_planner_shadow_report,
@@ -64,9 +66,7 @@ def test_load_cases_accepts_frozen_multi_agent_shape(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_shadow_report_proves_validation_without_executing_candidate_plan() -> None:
     settings = Settings(supervisor_planner_mode="shadow", supervisor_model="planner-test")
-    cases = _load_cases_from_payload(
-        [{"id": "planner-1", "text": "索尼耳机，预算 1000"}]
-    )
+    cases = _load_cases_from_payload([{"id": "planner-1", "text": "索尼耳机，预算 1000"}])
 
     report = await build_planner_shadow_report(
         cases,
@@ -75,20 +75,18 @@ async def test_shadow_report_proves_validation_without_executing_candidate_plan(
         data_version="frozen-test-v1",
     )
 
-    assert validate_shadow_report_payload(report) is None
+    assert validate_planner_shadow_report_payload(report) is None
     assert report["gate_passed"] is True
     assert report["planner"]["sample_count"] == 1
     assert report["planner"]["plan_difference_count"] == 1
     assert report["planner"]["token_total"] == 15
     assert report["planner"]["fallback_count"] == 1
     case = report["cases"][0]
-    assert case["equivalent"] is True
+    assert case["execution_plan_preserved"] is True
     assert case["planner_outcome"]["validated"] is True
     assert case["planner_outcome"]["accepted"] is False
     assert case["planner_outcome"]["fallback_reason"] == "MODEL_PLAN_SHADOWED"
-    assert case["planner_outcome"]["candidate_plan_hash"] != case["planner_outcome"][
-        "plan_hash"
-    ]
+    assert case["planner_outcome"]["candidate_plan_hash"] != case["planner_outcome"]["plan_hash"]
     serialized = json.dumps(report, ensure_ascii=False)
     assert "索尼耳机" not in serialized
     assert "raw_response" not in serialized

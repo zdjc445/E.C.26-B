@@ -196,7 +196,7 @@ class MilvusHybridRetrievalAdapter:
                 category_names=category_names,
             )
             result.fallback_used = True
-            # 底层异常可能包含 host、DSN 或供应商响应；只把固定原因带入 AgentState，
+            # 底层异常可能包含 host、DSN 或供应商响应；只把固定原因带入 Agent 结果，
             # 详细异常不进入 Checkpoint/Event payload，适配器仅增加降级指标。
             result.fallback_reason = "milvus_unavailable"
             return result

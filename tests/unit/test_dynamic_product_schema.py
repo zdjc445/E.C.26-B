@@ -89,9 +89,9 @@ def test_dynamic_schema_hashes_verified_content_and_demotes_weak_roles() -> None
                 proposal.concepts[0].model_copy(
                     update={
                         "attributes": [
-                            proposal.concepts[0].attributes[0].model_copy(
-                                update={"role": "identity", "role_confidence": 0.5}
-                            )
+                            proposal.concepts[0]
+                            .attributes[0]
+                            .model_copy(update={"role": "identity", "role_confidence": 0.5})
                         ]
                     }
                 )
@@ -123,9 +123,9 @@ def test_dynamic_schema_rejects_duplicate_assignment_and_forged_evidence() -> No
     forged = _schema_proposal(offers).model_copy(
         update={
             "concepts": [
-                _schema_proposal(offers).concepts[0].model_copy(
-                    update={"evidence": [_evidence("a", "not-in-title")]}
-                )
+                _schema_proposal(offers)
+                .concepts[0]
+                .model_copy(update={"evidence": [_evidence("a", "not-in-title")]})
             ]
         }
     )

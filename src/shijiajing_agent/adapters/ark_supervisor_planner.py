@@ -76,10 +76,7 @@ class ArkSupervisorPlanner:
                 for action in catalog.actions
                 if action.action == "keep"
                 or (action.action == "retry" and action.target_task_id in failed)
-                or (
-                    action.action == "add_template"
-                    and action.target_task_id in failed
-                )
+                or (action.action == "add_template" and action.target_task_id in failed)
             ],
         )
         proposal = await self._call(
@@ -137,8 +134,7 @@ class ArkSupervisorPlanner:
                 "agent": task.agent_name.value,
                 "depends_on": list(task.depends_on),
                 "attempt": task.attempt,
-                "terminal": task.task_kind
-                in {AgentTaskKind.EXPLAIN, AgentTaskKind.MEMORY_COMMIT},
+                "terminal": task.task_kind in {AgentTaskKind.EXPLAIN, AgentTaskKind.MEMORY_COMMIT},
             }
             for task in plan.tasks
         ]
@@ -166,9 +162,7 @@ class ArkSupervisorPlanner:
             "allowed_actions": catalog.prompt_payload(),
         }
 
-    def _revise_payload(
-        self, request: SupervisorReplanningInput, catalog: Any
-    ) -> dict[str, Any]:
+    def _revise_payload(self, request: SupervisorReplanningInput, catalog: Any) -> dict[str, Any]:
         failed: list[dict[str, Any]] = []
         for task_id in request.failed_task_ids:
             result = request.task_results.get(task_id)

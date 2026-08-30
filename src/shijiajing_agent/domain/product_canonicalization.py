@@ -783,9 +783,8 @@ async def dynamic_canonicalize_offers(
                 try:
                     candidate_result = DynamicCanonicalizationBatch.model_validate(cached_result)
                     expected_ids = {offer.offer_id for offer in canonical_offers}
-                    if (
-                        candidate_result.schema_id == schema.schema_id
-                        and all(item.offer_id in expected_ids for item in candidate_result.items)
+                    if candidate_result.schema_id == schema.schema_id and all(
+                        item.offer_id in expected_ids for item in candidate_result.items
                     ):
                         result = candidate_result
                         total_cache_hits += 1
@@ -909,9 +908,7 @@ def _dynamic_field_kind(field_path: str) -> str:
 
 
 def _count_role_demotions(proposal: Any, verified: VerifiedDynamicSchema) -> int:
-    verified_by_concept = {
-        concept.local_concept_id: concept for concept in verified.concepts
-    }
+    verified_by_concept = {concept.local_concept_id: concept for concept in verified.concepts}
     count = 0
     for proposed_concept in proposal.concepts:
         verified_concept = verified_by_concept.get(proposed_concept.local_concept_id)

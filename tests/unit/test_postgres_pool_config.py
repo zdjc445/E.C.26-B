@@ -7,7 +7,6 @@ from unittest.mock import patch
 import pytest
 
 from shijiajing_agent.adapters.cache import PostgresVersionedCacheAdapter
-from shijiajing_agent.adapters.checkpoint import PostgresCheckpointAdapter
 from shijiajing_agent.adapters.event_store import PostgresEventStoreAdapter
 from shijiajing_agent.adapters.memory import PostgresMemoryAdapter
 from shijiajing_agent.adapters.request_ledger import PostgresRequestLedgerAdapter
@@ -16,7 +15,6 @@ from shijiajing_agent.adapters.request_ledger import PostgresRequestLedgerAdapte
 @pytest.mark.parametrize(
     "adapter_type",
     (
-        PostgresCheckpointAdapter,
         PostgresRequestLedgerAdapter,
         PostgresMemoryAdapter,
         PostgresVersionedCacheAdapter,

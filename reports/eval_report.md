@@ -20,7 +20,7 @@
 | retrieval | 3 | 2 | 7dc92fb58b421cb3 |
 | same_item | 5 | 0 | 76598cb0905895aa |
 | ranking | 3 | 0 | d8f656321db5f261 |
-| workflow | 3 | 3 | f0490463afb0ce47 |
+| end_to_end | 3 | 3 | f0490463afb0ce47 |
 | memory | 2 | 0 | c3dcc40cb06f420e |
 | multi_agent | 2 | 0 | ec3f0b5807d7862b |
 | interrupt | 4 | 0 | 28ff5c7c21ea9b4b |

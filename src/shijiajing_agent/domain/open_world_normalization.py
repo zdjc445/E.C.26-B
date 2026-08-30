@@ -120,9 +120,7 @@ class DynamicFieldDecision:
 @dataclass(frozen=True)
 class DynamicPatchResult:
     candidate: NormalizedCandidate
-    decisions: list[DynamicFieldDecision] = field(
-        default_factory=list[DynamicFieldDecision]
-    )
+    decisions: list[DynamicFieldDecision] = field(default_factory=list[DynamicFieldDecision])
 
     @property
     def rejected_count(self) -> int:
@@ -159,11 +157,7 @@ def _core_patch(
     failures: list[str],
     decisions: list[DynamicFieldDecision],
 ) -> str | None:
-    current = (
-        baseline.normalized_brand
-        if field_name == "brand"
-        else baseline.normalized_model
-    )
+    current = baseline.normalized_brand if field_name == "brand" else baseline.normalized_model
     if proposed is None:
         return current
     if confidence is None or confidence < min_confidence or not _evidence_ok(offer, evidence):
@@ -234,10 +228,15 @@ def apply_dynamic_patch(
 
     assignment = next((a for a in schema.assignments if a.offer_id == offer.offer_id), None)
     concept = schema.concept_for_offer(offer.offer_id)
-    if assignment is None or concept is None or item.local_concept_id not in {
-        None,
-        assignment.local_concept_id,
-    }:
+    if (
+        assignment is None
+        or concept is None
+        or item.local_concept_id
+        not in {
+            None,
+            assignment.local_concept_id,
+        }
+    ):
         if item.local_concept_id is not None:
             decisions.append(
                 DynamicFieldDecision(
@@ -376,11 +375,11 @@ def apply_dynamic_patch(
         model,
         identity,
     )
-    dynamic_variant_keys = [
-        attribute.canonical_key
-        for attribute in concept.attributes
-        if attribute.role == "variant"
-    ] if concept is not None else []
+    dynamic_variant_keys = (
+        [attribute.canonical_key for attribute in concept.attributes if attribute.role == "variant"]
+        if concept is not None
+        else []
+    )
     updated = candidate.model_copy(
         update={
             "offer": offer.model_copy(

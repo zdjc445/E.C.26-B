@@ -1,8 +1,8 @@
 # 识价镜 Agent（shijiajing-agent）
 
 图片/文本输入 → 商品识别 → 意图理解 → 混合召回 → 同款匹配 → SKU 拆分 →
-比价排序 → 多轮筛选修正 的**可恢复层级式 Multi-Agent**（LangGraph）。默认由 Supervisor
-通过任务 DAG 调度五类 Specialist Agent；旧 `workflow` 保留为兼容与回滚路径。
+比价排序 → 多轮筛选修正 的**可恢复层级式 Multi-Agent**（LangGraph）。Supervisor
+通过类型化任务 DAG 调度五类 Specialist Agent。
 
 工程只实现 Agent 逻辑，不包含 Web API 与客户端（方案 §3.2 非目标）。
 
@@ -26,8 +26,8 @@ cp .env.example .env      # 然后按注释填写
 |---|---|
 | 模型 | `SHIJIAJING_ARK_API_KEY` `SHIJIAJING_ARK_BASE_URL` `SHIJIAJING_ARK_VISION_MODEL` `SHIJIAJING_ARK_TEXT_MODEL` `SHIJIAJING_EMBEDDING_MODEL` |
 | 检索 | `SHIJIAJING_MILVUS_URI` `SHIJIAJING_MILVUS_TOKEN` `SHIJIAJING_MILVUS_COLLECTION`（或 `SHIJIAJING_LOCAL_PRODUCT_SNAPSHOT_PATH` 本地词法降级） |
-| 持久化 | `SHIJIAJING_CHECKPOINT_BACKEND` `SHIJIAJING_CHECKPOINT_DSN` `SHIJIAJING_GRAPH_PERSISTENCE_MODE` `SHIJIAJING_REQUEST_LEDGER_BACKEND` `SHIJIAJING_REQUEST_LEDGER_DSN` |
-| 编排模式 | `SHIJIAJING_ORCHESTRATION_MODE`（`workflow` / `multi_agent_shadow` / `multi_agent`）`SHIJIAJING_SUPERVISOR_PLANNER_MODE`（`off` / `shadow` / `active_replan` / `active`）`SHIJIAJING_SUPERVISOR_MODEL` `SHIJIAJING_MAX_AGENT_TASKS` `SHIJIAJING_MAX_SUPERVISOR_REPLANS` |
+| 持久化 | `SHIJIAJING_CHECKPOINT_BACKEND` `SHIJIAJING_CHECKPOINT_DSN` `SHIJIAJING_REQUEST_LEDGER_BACKEND` `SHIJIAJING_REQUEST_LEDGER_DSN` |
+| 编排控制 | `SHIJIAJING_SUPERVISOR_PLANNER_MODE`（`off` / `shadow` / `active_replan` / `active`）`SHIJIAJING_SUPERVISOR_MODEL` `SHIJIAJING_MAX_AGENT_TASKS` `SHIJIAJING_MAX_SUPERVISOR_REPLANS` |
 | 二期能力 | `SHIJIAJING_MEMORY_*` `SHIJIAJING_HITL_ENABLED` `SHIJIAJING_CACHE_*` `SHIJIAJING_RETRIEVAL_FUSION_STRATEGY` `SHIJIAJING_RETRIEVAL_RERANK_ENABLED` `SHIJIAJING_EVENT_STORE_*` |
 | 可观测 | `SHIJIAJING_TRACE_BACKEND` `SHIJIAJING_TRACE_DSN` |
 | 数据 | `SHIJIAJING_TAXONOMY_PATH` `SHIJIAJING_LOCAL_PRODUCT_SNAPSHOT_PATH` |
@@ -89,35 +89,32 @@ uv run --env-file .env shijiajing-planner-shadow \
 
 **降级状态**：Milvus 不可用时自动降级本地词法检索（同一领域协议，响应标记
 `fallback_used`，不声称执行了向量检索）；模型失败时规则/模板降级并在 notice 中
-标注。测试环境通过 Fake 端口注入样例数据（tests/workflow/conftest.py），
+标注。测试环境通过 Fake 端口注入样例数据（tests/multi_agent/conftest.py），
 生产装配不会静默回退到样例数据。
 
 ## 架构
 
-```
-输入 → prepare_subject ┬→ Recognition → join_understanding → Memory/约束合并
-                       └→ Intent      ──────────────────────┘
-     → 查询改写 → 混合召回 → 同款匹配 → SKU 拆分 → 排序 → 证据 → 解释 → 响应
-     ；多轮经 Checkpoint 恢复，native start/resume 支持 HITL
+```text
+请求 → Supervisor 生成并校验任务 DAG
+     ├→ Recognition Agent ─┐
+     ├→ Intent Agent ──────┼→ Retrieval Agent → Explanation Agent → Supervisor 汇合响应
+     └→ Memory Agent ──────┘
+     ；Supervisor/task 双层 Checkpoint 支持恢复与 HITL
 ```
 
-- 分层：contracts（Pydantic）→ domain（纯领域）→ nodes（图）→ adapters（外部能力）
+- 分层：contracts（Pydantic）→ domain（纯领域）→ multi_agent（编排与 Agent）→ adapters（外部能力）
 - 全部外部能力通过 Protocol 端口注入（VLM/意图/改写/解释/检索/Checkpoint/Trace/指标）
 - 幂等（request_id）、乐观版本冲突重放、同会话并发控制
-- 详细：[docs/architecture.md](docs/architecture.md)、[docs/workflow.md](docs/workflow.md)
-- 受控 Multi-Agent 入口：[docs/multi_agent.md](docs/multi_agent.md)。默认模式为 `multi_agent`；
-  `multi_agent_shadow` 执行隔离的旧图/新图对照且不提交 Memory、账本、事件或缓存副作用，
-  `workflow` 保留为显式回滚路径。
+- 详细：[docs/architecture.md](docs/architecture.md)、[docs/multi_agent.md](docs/multi_agent.md)
 
 ## 文档
 
 | 文档 | 内容 |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | 分层、端口、主图、会话恢复 |
-| [docs/workflow.md](docs/workflow.md) | 节点表、条件路由、多轮与修正、故障路径 |
+| [docs/architecture.md](docs/architecture.md) | 分层、端口、Supervisor 与会话恢复 |
 | [docs/contracts.md](docs/contracts.md) | 数据契约、硬过滤语义、Checkpoint 序列化 |
 | [docs/memory.md](docs/memory.md) | 三层上下文、显式记忆写入、scope/apply mode、HITL、持久化与验收设计 |
-| [docs/multi_agent.md](docs/multi_agent.md) | Supervisor、专业子图、并行汇合与确定性边界 |
+| [docs/multi_agent.md](docs/multi_agent.md) | Supervisor、Specialist Agent、并行汇合与确定性边界 |
 | [docs/product_canonicalization.md](docs/product_canonicalization.md) | 当前商品归一化、动态 Schema 四种迁移模式、证据校验、SPU/SKU 确定性处理 |
 | [docs/plans/dynamic_product_schema_implementation_plan.md](docs/plans/dynamic_product_schema_implementation_plan.md) | 无静态 Taxonomy 的 LLM 动态局部 Schema 目标架构、迁移与验收方案 |
 | [docs/configuration.md](docs/configuration.md) | 全部配置项与缺失行为 |
@@ -125,7 +122,6 @@ uv run --env-file .env shijiajing-planner-shadow \
 | [docs/evaluation.md](docs/evaluation.md) | 数据集、指标阈值、冻结流程、诚实性说明 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 常见故障与处理 |
 | [docs/operations_phase2.md](docs/operations_phase2.md) | 二期备份、迁移、事件修复与回滚 |
-| [docs/operations/state_migration.md](docs/operations/state_migration.md) | Legacy Checkpoint 1.0 → 1.1 迁移 runbook |
 | [docs/operations/event_repair.md](docs/operations/event_repair.md) | Event Store 一致性事件 dry-run/apply 与冲突处理 |
 | `shijiajing-release-check` | 汇总本地、正式评测和生产外部证据；缺失证据时 fail-closed |
 | [deploy/phase2/README.md](deploy/phase2/README.md) | PostgreSQL/OTLP 本地依赖与可重复验收编排 |

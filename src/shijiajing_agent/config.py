@@ -30,7 +30,6 @@ _DEFAULTS: dict[str, str] = {
     "POSTGRES_POOL_TIMEOUT_SECONDS": "30",
     "MAX_MODEL_REPAIRS": "2",
     "MAX_NETWORK_ATTEMPTS": "2",
-    "MAX_WORKFLOW_STEPS": "40",
     "RETRIEVAL_TOP_K_PER_CHANNEL": "100",
     "RETRIEVAL_UNION_LIMIT": "200",
     "MATCHING_CANDIDATE_LIMIT": "60",
@@ -103,8 +102,6 @@ class Settings:
     milvus_collection: str | None = None
     checkpoint_backend: str = "sqlite"
     checkpoint_dsn: str | None = None
-    graph_persistence_mode: str = "legacy"
-    orchestration_mode: str = "multi_agent"
     supervisor_model: str | None = None
     supervisor_planner_mode: str = "off"
     supervisor_planner_timeout_seconds: float = 8.0
@@ -134,7 +131,6 @@ class Settings:
     postgres_pool_timeout_seconds: float = 30.0
     max_model_repairs: int = 2
     max_network_attempts: int = 2
-    max_workflow_steps: int = 40
     retrieval_top_k_per_channel: int = 100
     retrieval_union_limit: int = 200
     matching_candidate_limit: int = 60
@@ -235,10 +231,6 @@ class Settings:
 
         if self.env not in _ENVIRONMENTS:
             errors.append(f"ENV={self.env}")
-        if self.graph_persistence_mode not in {"legacy", "native"}:
-            errors.append(f"GRAPH_PERSISTENCE_MODE={self.graph_persistence_mode}")
-        if self.orchestration_mode not in {"workflow", "multi_agent_shadow", "multi_agent"}:
-            errors.append(f"ORCHESTRATION_MODE={self.orchestration_mode}")
         if self.supervisor_planner_mode not in {"off", "shadow", "active_replan", "active"}:
             errors.append(f"SUPERVISOR_PLANNER_MODE={self.supervisor_planner_mode}")
         if self.supervisor_planner_mode != "off" and not self.supervisor_model:
@@ -262,8 +254,6 @@ class Settings:
                 allowed.add("memory")
             if value not in allowed:
                 errors.append(f"{name}={value}")
-        if self.graph_persistence_mode == "native" and self.request_ledger_backend == "disabled":
-            errors.append("REQUEST_LEDGER_BACKEND")
         if self.request_ledger_backend in {"sqlite", "postgres"} and not (
             self.request_ledger_dsn or self.checkpoint_dsn
         ):
@@ -289,9 +279,6 @@ class Settings:
             "dynamic",
         }:
             errors.append(f"PRODUCT_CANONICALIZATION_MODE={self.product_canonicalization_mode}")
-        if self.hitl_enabled and self.graph_persistence_mode != "native":
-            errors.append("HITL_REQUIRES_NATIVE_PERSISTENCE")
-
         for name, value in (
             ("VISION_TIMEOUT_SECONDS", self.vision_timeout_seconds),
             ("TEXT_MODEL_TIMEOUT_SECONDS", self.text_model_timeout_seconds),
@@ -341,7 +328,6 @@ class Settings:
         ):
             require_nonnegative(name, value)
         for name, value in (
-            ("MAX_WORKFLOW_STEPS", self.max_workflow_steps),
             ("RETRIEVAL_TOP_K_PER_CHANNEL", self.retrieval_top_k_per_channel),
             ("RETRIEVAL_UNION_LIMIT", self.retrieval_union_limit),
             ("MATCHING_CANDIDATE_LIMIT", self.matching_candidate_limit),
@@ -449,8 +435,6 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         milvus_collection=get("MILVUS_COLLECTION"),
         checkpoint_backend=get("CHECKPOINT_BACKEND") or "sqlite",
         checkpoint_dsn=get("CHECKPOINT_DSN"),
-        graph_persistence_mode=get("GRAPH_PERSISTENCE_MODE") or "legacy",
-        orchestration_mode=get("ORCHESTRATION_MODE") or "multi_agent",
         supervisor_model=get("SUPERVISOR_MODEL"),
         supervisor_planner_mode=get("SUPERVISOR_PLANNER_MODE") or "off",
         supervisor_planner_timeout_seconds=getf("SUPERVISOR_PLANNER_TIMEOUT_SECONDS"),
@@ -479,14 +463,12 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         postgres_pool_timeout_seconds=getf("POSTGRES_POOL_TIMEOUT_SECONDS"),
         max_model_repairs=geti("MAX_MODEL_REPAIRS"),
         max_network_attempts=geti("MAX_NETWORK_ATTEMPTS"),
-        max_workflow_steps=geti("MAX_WORKFLOW_STEPS"),
         retrieval_top_k_per_channel=geti("RETRIEVAL_TOP_K_PER_CHANNEL"),
         retrieval_union_limit=geti("RETRIEVAL_UNION_LIMIT"),
         matching_candidate_limit=geti("MATCHING_CANDIDATE_LIMIT"),
         product_canonicalization_enabled=getb("PRODUCT_CANONICALIZATION_ENABLED", True),
         product_canonicalization_mode=(
-            get("PRODUCT_CANONICALIZATION_MODE")
-            or _DEFAULTS["PRODUCT_CANONICALIZATION_MODE"]
+            get("PRODUCT_CANONICALIZATION_MODE") or _DEFAULTS["PRODUCT_CANONICALIZATION_MODE"]
         ),
         product_canonicalization_batch_size=geti("PRODUCT_CANONICALIZATION_BATCH_SIZE"),
         product_canonicalization_min_confidence=getf("PRODUCT_CANONICALIZATION_MIN_CONFIDENCE"),

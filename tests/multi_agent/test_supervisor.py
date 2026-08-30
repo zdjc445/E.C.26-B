@@ -1,4 +1,4 @@
-"""Multi-Agent Supervisor 的并行 barrier、私有 Agent 和旧业务算法回归。"""
+"""Multi-Agent Supervisor 的并行 barrier、私有 Agent 和领域算法回归。"""
 
 from __future__ import annotations
 
@@ -73,9 +73,7 @@ class _InvalidPlanPlanner:
         return plan.model_copy(
             update={
                 "tasks": [
-                    task
-                    for task in plan.tasks
-                    if task.task_kind is not AgentTaskKind.PARSE_INTENT
+                    task for task in plan.tasks if task.task_kind is not AgentTaskKind.PARSE_INTENT
                 ]
             }
         )
@@ -245,34 +243,15 @@ async def test_multi_agent_missing_category_skips_retrieval(
 
 
 @pytest.mark.asyncio
-async def test_facade_defaults_to_multi_agent(
+async def test_facade_uses_supervisor_path(
     deps_factory: Any,
 ) -> None:
-    settings = Settings()
-    assert settings.orchestration_mode == "multi_agent"
-    deps, fakes = deps_factory(settings)
+    deps, fakes = deps_factory(Settings())
     fakes["retrieval"].sequence = [two_candidate_result()]
     response = await AgentFacade(deps).run(
         AgentRequest(session_id="multi", request_id="r3", text="索尼耳机")
     )
     assert response.status is AgentStatus.SUCCESS
-
-
-@pytest.mark.asyncio
-async def test_facade_shadow_compares_legacy_and_multi_agent_without_ledger_side_effects(
-    deps_factory: Any,
-) -> None:
-    settings = replace(Settings(), orchestration_mode="multi_agent_shadow")
-    deps, fakes = deps_factory(settings)
-    fakes["retrieval"].sequence = [two_candidate_result(), two_candidate_result()]
-
-    response = await AgentFacade(deps).run(
-        AgentRequest(session_id="shadow", request_id="r-shadow", text="索尼耳机")
-    )
-
-    assert response.status is AgentStatus.SUCCESS
-    assert "shadow_compare:match" in response.notices
-    assert fakes["retrieval"].calls == 2
 
 
 @pytest.mark.asyncio

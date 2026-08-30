@@ -108,7 +108,7 @@ def test_full_pipeline_round_trip(workspace: Path, datasets_dir: Path) -> None:
     assert manifest["counts_by_file"]["retrieval_dataset.jsonl"] == 150
     assert manifest["counts_by_file"]["same_item_pairs.jsonl"] == 600
     assert manifest["counts_by_file"]["ranking_dataset.jsonl"] == 90
-    assert manifest["counts_by_file"]["workflow_dataset.jsonl"] == 120
+    assert manifest["counts_by_file"]["end_to_end_dataset.jsonl"] == 120
     assert manifest["image_domain"] == "listing_image"
     assert any("模拟" in limitation for limitation in manifest["known_limitations"])
     # manifest 自身不进入 files

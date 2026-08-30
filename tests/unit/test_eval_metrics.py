@@ -110,7 +110,7 @@ def test_load_all_datasets_seed_dir() -> None:
         "retrieval",
         "same_item",
         "ranking",
-        "workflow",
+        "end_to_end",
         "memory",
         "multi_agent",
         "interrupt",
@@ -120,7 +120,7 @@ def test_load_all_datasets_seed_dir() -> None:
     for rows in datasets.values():
         assert rows, "每个数据集至少一行"
     # recorded 型数据集（除按构造评测的 same_item_pairs/ranking）都应含 recorded 行
-    for kind in ("recognition", "intent", "retrieval", "workflow"):
+    for kind in ("recognition", "intent", "retrieval", "end_to_end"):
         rows = datasets[kind]
         assert any(getattr(r, "recorded", None) is not None for r in rows), kind
 

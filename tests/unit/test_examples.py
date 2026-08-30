@@ -18,8 +18,8 @@ from examples import _common, correction_example, image_example, text_example
 
 from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import AgentRequest, AgentResponse, AgentStatus
-from tests.workflow.conftest import make_deps as make_fake_deps
-from tests.workflow.conftest import two_candidate_result
+from tests.multi_agent.conftest import make_deps as make_fake_deps
+from tests.multi_agent.conftest import two_candidate_result
 
 # SHIJIAJING_* 外部配置清单（validate(require_real_adapters=True) 所需）
 _REQUIRED_ENV = {

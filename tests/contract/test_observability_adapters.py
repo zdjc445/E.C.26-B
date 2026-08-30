@@ -83,29 +83,35 @@ class TestPrometheusMetrics:
         m = PrometheusMetrics()
         m.inc("agent_turn_total", {"status": "success"})
         with pytest.raises(ValueError):
-            m.inc("agent_turn_total", {"status": "failed", "workflow_version": "1.0"})
+            m.inc("agent_turn_total", {"status": "failed", "orchestration_version": "1.0"})
 
     def test_version_grouping_via_consistent_labels(self) -> None:
-        """§20.2：按 workflow_version / prompt_version 等标签分组对比。"""
+        """§20.2：按 orchestration_version / prompt_version 等标签分组对比。"""
         m = PrometheusMetrics()
-        m.inc("agent_turn_total", {"status": "success", "workflow_version": "1.0"})
-        m.inc("agent_turn_total", {"status": "failed", "workflow_version": "1.0"})
-        m.inc("agent_turn_total", {"status": "failed", "workflow_version": "2.0"})
+        m.inc("agent_turn_total", {"status": "success", "orchestration_version": "1.0"})
+        m.inc("agent_turn_total", {"status": "failed", "orchestration_version": "1.0"})
+        m.inc("agent_turn_total", {"status": "failed", "orchestration_version": "2.0"})
         assert (
             sample_value(
-                m.registry, "agent_turn_total", {"status": "success", "workflow_version": "1.0"}
+                m.registry,
+                "agent_turn_total",
+                {"status": "success", "orchestration_version": "1.0"},
             )
             == 1.0
         )
         assert (
             sample_value(
-                m.registry, "agent_turn_total", {"status": "failed", "workflow_version": "1.0"}
+                m.registry,
+                "agent_turn_total",
+                {"status": "failed", "orchestration_version": "1.0"},
             )
             == 1.0
         )
         assert (
             sample_value(
-                m.registry, "agent_turn_total", {"status": "failed", "workflow_version": "2.0"}
+                m.registry,
+                "agent_turn_total",
+                {"status": "failed", "orchestration_version": "2.0"},
             )
             == 1.0
         )

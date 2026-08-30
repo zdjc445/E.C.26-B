@@ -133,7 +133,7 @@ class TaxonomyNormalizer:
         model: str | None,
         attributes: dict[str, str] | None,
     ) -> dict[str, object]:
-        """识别结果标准化（nodes/normalize_recognition 使用）。未知值置空。"""
+        """识别结果标准化（Recognition Agent 使用）。未知值置空。"""
         cat_id, cat_name = self._taxonomy.resolve_category(category_id)
         std_brand = self._taxonomy.normalize_brand(brand) if brand else None
         std_model = self._taxonomy.normalize_model(model, cat_id) if model else None

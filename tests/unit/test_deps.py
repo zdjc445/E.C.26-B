@@ -24,7 +24,7 @@ from shijiajing_agent.adapters.milvus_retrieval import MilvusHybridRetrievalAdap
 from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import RetrievalQuery
 from shijiajing_agent.deps import make_deps, make_retrieval
-from tests.workflow.conftest import make_offer
+from tests.multi_agent.conftest import make_offer
 
 # ---------------------------------------------------------------------------
 # make_retrieval 分支
@@ -122,7 +122,6 @@ def test_make_deps_assembles_with_full_config(tmp_path: Path) -> None:
     assert isinstance(deps.retrieval, MilvusHybridRetrievalAdapter)
     assert deps.retrieval._metrics is deps.metrics
     assert deps.vision._client._metrics is deps.metrics
-    assert deps.checkpoint is not None
 
 
 def test_make_deps_assembles_configured_supervisor_planner(tmp_path: Path) -> None:
@@ -140,24 +139,6 @@ def test_make_deps_assembles_configured_supervisor_planner(tmp_path: Path) -> No
     )
     deps = make_deps(settings)
     assert isinstance(deps.supervisor_planner, ArkSupervisorPlanner)
-
-
-def test_make_deps_does_not_create_planner_for_legacy_workflow(tmp_path: Path) -> None:
-    snapshot = tmp_path / "offers.jsonl"
-    snapshot.write_text(make_offer("o-workflow", price=1999.0).model_dump_json(), encoding="utf-8")
-    settings = Settings(
-        orchestration_mode="workflow",
-        supervisor_model="mock-supervisor",
-        supervisor_planner_mode="active",
-        ark_api_key="mock-key",
-        ark_base_url="https://mock-ark.example/v1",
-        ark_vision_model="mock-vision",
-        ark_text_model="mock-text",
-        local_product_snapshot_path=str(snapshot),
-        checkpoint_dsn=str(tmp_path / "checkpoint.db"),
-    )
-    deps = make_deps(settings)
-    assert deps.supervisor_planner is None
 
 
 def test_make_deps_assembles_with_local_snapshot_only(tmp_path: Path) -> None:

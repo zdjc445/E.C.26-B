@@ -115,7 +115,6 @@ async def test_runtime_closes_constructed_resources_when_early_setup_fails() -> 
     trace = FailingTrace()
     vision = ConstructedResource("vision")
     retrieval = ConstructedResource("retrieval")
-    checkpoint = ConstructedResource("checkpoint")
 
     def deps_factory(_: object) -> SimpleNamespace:
         return SimpleNamespace(
@@ -123,14 +122,13 @@ async def test_runtime_closes_constructed_resources_when_early_setup_fails() -> 
             trace=trace,
             vision=vision,
             retrieval=retrieval,
-            checkpoint=checkpoint,
         )
 
     with pytest.raises(RuntimeError, match="trace setup failed"):
         async with open_agent_runtime(Settings(), deps_factory=deps_factory):
             raise AssertionError("runtime should not yield after setup failure")
 
-    assert close_order == ["checkpoint", "retrieval", "vision", "trace"]
+    assert close_order == ["retrieval", "vision", "trace"]
 
 
 @pytest.mark.asyncio
@@ -201,7 +199,6 @@ async def test_runtime_preserves_configured_supervisor_planner() -> None:
         query_rewrite=SimpleNamespace(),
         explanation=SimpleNamespace(),
         retrieval=_AsyncResource(),
-        checkpoint=_AsyncResource(),
         trace=_AsyncResource(),
         metrics=SimpleNamespace(),
         supervisor_planner=planner,  # type: ignore[arg-type]

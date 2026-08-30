@@ -7,11 +7,6 @@ import pytest
 from shijiajing_agent.config import Settings, load_settings
 
 
-def test_multi_agent_is_the_default_orchestration_mode() -> None:
-    assert Settings().orchestration_mode == "multi_agent"
-    assert load_settings({}).orchestration_mode == "multi_agent"
-
-
 def test_supervisor_planner_modes_and_limits_are_loaded() -> None:
     settings = load_settings(
         {
@@ -48,10 +43,8 @@ def test_unknown_environment_is_rejected() -> None:
     assert "CHECKPOINT_DSN" in errors
 
 
-def test_checkpoint_dsn_is_required_for_legacy_and_native_backends() -> None:
-    for mode in ("legacy", "native"):
-        errors = Settings(graph_persistence_mode=mode).validate_engineering()
-        assert errors.count("CHECKPOINT_DSN") == 1
+def test_checkpoint_dsn_is_required() -> None:
+    assert Settings().validate_engineering().count("CHECKPOINT_DSN") == 1
 
 
 def test_production_requires_persistent_event_store() -> None:
@@ -136,7 +129,6 @@ def test_numeric_engineering_settings_reject_invalid_values() -> None:
         explanation_cache_ttl_seconds=0,
         max_model_repairs=-1,
         max_network_attempts=-1,
-        max_workflow_steps=0,
         retrieval_top_k_per_channel=0,
         retrieval_union_limit=0,
         matching_candidate_limit=0,
@@ -165,7 +157,6 @@ def test_numeric_engineering_settings_reject_invalid_values() -> None:
         "EXPLANATION_CACHE_TTL_SECONDS",
         "MAX_MODEL_REPAIRS",
         "MAX_NETWORK_ATTEMPTS",
-        "MAX_WORKFLOW_STEPS",
         "RETRIEVAL_TOP_K_PER_CHANNEL",
         "RETRIEVAL_UNION_LIMIT",
         "MATCHING_CANDIDATE_LIMIT",
@@ -198,7 +189,6 @@ def test_numeric_engineering_settings_accept_documented_boundaries() -> None:
         postgres_pool_timeout_seconds=0.001,
         max_model_repairs=0,
         max_network_attempts=0,
-        max_workflow_steps=1,
         retrieval_top_k_per_channel=1,
         retrieval_union_limit=1,
         matching_candidate_limit=1,

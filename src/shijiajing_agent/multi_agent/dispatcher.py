@@ -1,7 +1,6 @@
-"""LangGraph dynamic dispatch 边界。
+"""Supervisor 任务 DAG 的 LangGraph dynamic dispatch 边界。
 
-实际 legacy graph 仍由 `graph.py` 维护；此模块把 2.0 plan 转换为 LangGraph `Send`，供
-Supervisor graph 迁移时直接复用，并集中保证 ready-task barrier 语义。
+本模块把类型化任务转换为 LangGraph ``Send``，并集中保证 ready-task barrier 语义。
 """
 
 from __future__ import annotations

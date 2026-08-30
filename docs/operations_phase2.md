@@ -1,10 +1,11 @@
 # 二期存储与发布运维
 
-本文档对应第二阶段方案的备份、迁移、事件修复和回滚边界。Checkpoint 是工作流状态事实源；Request Ledger、Memory 和 Event Store 分别保存请求结果、长期记忆和追加式审计数据。Event Store 不能反向覆盖 Checkpoint。
+本文档对应第二阶段方案的备份、事件修复和回滚边界。Supervisor/task Checkpoint 是执行状态
+事实源；Request Ledger、Memory 和 Event Store 分别保存请求结果、长期记忆和追加式审计数据。
+Event Store 不能反向覆盖 Checkpoint。
 
 专项 runbook：
 
-- [Legacy Checkpoint 状态迁移](operations/state_migration.md)
 - [一致性事件修复](operations/event_repair.md)
 
 ## 0. 启动前 preflight
@@ -39,7 +40,7 @@ uv run shijiajing-preflight --storage-only --verify-trace --json
 命令返回 `status=ok` 且 `trace_verified=true` 才表示 exporter 完成了一次真实发送；连接
 失败、HTTP 非成功响应或 exporter 返回 `SpanExportResult.FAILURE` 时退出码为 2。
 preflight 失败的 JSON 只保留精确配置缺失项或固定资源错误消息，不输出 provider 异常、主机、
-DSN 或密钥。`shijiajing-migrate-state`、`shijiajing-repair-events` 和
+DSN 或密钥。`shijiajing-repair-events` 和
 `shijiajing-reconstruct-turn` 也使用同一公开错误边界。
 
 `status=ok` 只证明配置、资源 setup 和（若显式启用）trace probe 成功；PostgreSQL contract、
@@ -128,7 +129,7 @@ uv run shijiajing-release-check create-manifest `
 ```
 
 Windows 下所有会进入异步外部资源的 CLI 统一使用 `SelectorEventLoop` 兼容 psycopg；
-这包括 preflight、live 评测、迁移、事件还原、事件修复、Milvus 初始化和商品索引，
+这包括 preflight、live 评测、事件还原、事件修复、Milvus 初始化和商品索引，
 其他平台保持默认事件循环策略。
 
 仓库提供可重复的本地依赖环境：[`deploy/phase2/README.md`](../deploy/phase2/README.md)
@@ -188,40 +189,16 @@ Store 记录冒充外部 Collector 的完整 Trace。
 
 ## 1. 启动前检查
 
-先确认配置使用精确的 `SHIJIAJING_` 前缀：
+先确认配置使用精确的 `SHIJIAJING_` 前缀，并完成 Checkpoint 与事件一致性检查：
 
 ```powershell
-uv run shijiajing-migrate-state inspect --dsn $env:SHIJIAJING_CHECKPOINT_DSN
-uv run shijiajing-migrate-state validate --dsn $env:SHIJIAJING_CHECKPOINT_DSN
+uv run shijiajing-preflight --storage-only --json
 uv run shijiajing-repair-events --dry-run
 ```
 
-`shijiajing-migrate-state` 当前检查 legacy SQLite `agent_checkpoint` 表；native LangGraph Checkpointer 的 DDL 由 `open_graph_checkpointer()` 在 runtime 启动阶段完成。任何数据库都必须先完成 setup，再允许业务请求进入。
-
-Checkpoint 数据库同时维护 `agent_resume_claim`；native HITL resume 在执行前按
-`(session_id, interrupt_id)` 原子抢占，重复恢复直接拒绝。该表与 Checkpoint 位于同一数据库，
-随同数据库备份和恢复，不单独迁移业务状态。
-
-### 1.1 Legacy checkpoint 迁移
-
-`inspect` 和 `validate` 只读。需要实际把 legacy 1.0 checkpoint 写成 1.1 时，先做
-预览，再在已完成备份的文件上显式执行 `migrate --apply`：
-
-```powershell
-uv run shijiajing-migrate-state migrate --dsn $env:SHIJIAJING_CHECKPOINT_DSN
-uv run shijiajing-migrate-state migrate `
-  --dsn $env:SHIJIAJING_CHECKPOINT_DSN `
-  --apply `
-  --event-store-backend sqlite `
-  --event-store-dsn $env:SHIJIAJING_EVENT_STORE_DSN
-```
-
-迁移先在 SQLite 事务中提交 `state_json` 与 `schema_version=1.1`，成功后才追加
-`checkpoint_migrated`。只有 checkpoint 中真实存在非空的 `request_id`、`turn_id`、
-`trace_id` 才会追加该事件；缺少任何标识时只报告 `audit_skipped_missing_ids`，不填充
-推测值。事务同时写入 `checkpoint_migration_audit`，因此 Event Store 暂时不可用时，
-再次执行同一 `migrate --apply` 可以补发缺失的 `checkpoint_migrated`，不会把已完成的
-checkpoint 再次当成新迁移。默认不写入 Event Store；启用审计时必须显式提供 backend 和 DSN。
+LangGraph Checkpointer 的 DDL 由 `open_graph_checkpointer()` 在 runtime 启动阶段完成。
+任何数据库都必须先完成 setup，再允许业务请求进入。HITL 的活动计划、任务结果和中断信息
+与 Supervisor Checkpoint 一起备份和恢复。
 
 ## 2. SQLite 备份
 
@@ -371,21 +348,18 @@ Memory mutation 只有在 Request Ledger 提供真实 `turn_id` 与 `trace_id` �
 校验失败按 miss 重新调用真实提供方。Cache get/set/delete 故障只增加
 `cache_failure_total{operation="get|set|delete"}`，不改变响应正确性。
 
-native runtime 除了打开 LangGraph Checkpointer，还会在启动阶段 setup `CheckpointPort`
-使用的 resume fence 表 `agent_resume_claim`；不会把该 DDL 延迟到首个 resume。resume
-开始时先原子 claim；流程异常会释放未完成 claim，成功恢复后的 claim 保留，跨进程重复
-resume 直接拒绝。同一 turn 内重复产生的同类 interrupt 由持久化的
-`interrupt_generation` 区分，其参与 `interrupt_id` 的 SHA-256 计算。
+runtime 在启动阶段打开 LangGraph Checkpointer。resume 从活动 Supervisor namespace 加载
+计划、任务结果和中断信息；不匹配或已消费的中断必须拒绝。
 
 ## 5. 回滚顺序
 
 回滚属于部署操作，不是客户端输入：
 
-1. 停止新请求写入，记录 `session_id`、`request_id`、`turn_id` 和每个 native checkpoint 的 `active_interrupt`。
-2. 存在 active interrupt 时，不切回 legacy；先完成 resume，或在业务确认后清理对应会话。
-3. native 持久化故障只切回 legacy 的读取路径；Event Store 不得覆盖 Checkpoint。
+1. 停止新请求写入，记录 `session_id`、`request_id`、`turn_id` 和每个 checkpoint 的 `active_interrupt`。
+2. 存在 active interrupt 时，先完成 resume，或在业务确认后清理对应会话。
+3. Checkpoint 故障时停止需要恢复或 HITL 的请求；Event Store 不得覆盖 Checkpoint。
 4. Memory、Cache、Event Store 或 OpenTelemetry 故障分别切换到 `disabled`，不得删除正确性数据；Cache 关闭只产生 miss。
 5. RRF/rerank 回归时把 `SHIJIAJING_RETRIEVAL_FUSION_STRATEGY` 设为 `weighted`，并将 `SHIJIAJING_RETRIEVAL_RERANK_ENABLED` 设为 `false`。
-6. 完成恢复后重新执行迁移检查、离线测试和 `shijiajing-repair-events --dry-run`，再开放写入。
+6. 完成恢复后重新执行 preflight、离线测试和 `shijiajing-repair-events --dry-run`，再开放写入。
 
 回滚完成条件是：Checkpoint schema 可读、Request Ledger 可重放、Memory owner 隔离仍成立、Event Store 不出现新的冲突事件，且 active interrupt 清单与切换前一致或已被明确消费。

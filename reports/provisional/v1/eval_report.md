@@ -20,7 +20,7 @@
 | retrieval | 150 | 0 | aa9dc0a33d9d4313 |
 | same_item | 600 | 0 | 2fd3362991b09be4 |
 | ranking | 90 | 0 | 843c31d508bca4ee |
-| workflow | 120 | 0 | e6bbcf19b01e00ca |
+| end_to_end | 120 | 0 | e6bbcf19b01e00ca |
 
 ## 指标
 

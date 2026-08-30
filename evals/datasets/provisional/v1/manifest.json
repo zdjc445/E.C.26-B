@@ -19,7 +19,7 @@
     "retrieval_dataset.jsonl": 150,
     "same_item_pairs.jsonl": 600,
     "ranking_dataset.jsonl": 90,
-    "workflow_dataset.jsonl": 120
+    "end_to_end_dataset.jsonl": 120
   },
   "counts_by_split": {
     "holdout": 590,
@@ -43,7 +43,7 @@
     "recognition_dataset.jsonl": "b5d030025c02f4ab658b40affa2975c25efc335ca41d1d78de24e252ef5eb71a",
     "retrieval_dataset.jsonl": "aa9dc0a33d9d43135e652ab7346671d01963a1be36016cd4218847132926d9b1",
     "same_item_pairs.jsonl": "2fd3362991b09be45036f5f93206d36ccd288d5ddbbfd5d542a1cbbd6f2684ef",
-    "workflow_dataset.jsonl": "e6bbcf19b01e00ca9414556551294a9f3ce35840a8501d39600754b9a02c6f1b"
+    "end_to_end_dataset.jsonl": "e6bbcf19b01e00ca9414556551294a9f3ce35840a8501d39600754b9a02c6f1b"
   },
   "source_ids": [
     "src:sim-hair_dryer-0000",
@@ -1053,7 +1053,7 @@
     "platform 覆盖 taobao/jd/pinduoduo 为模拟分配；本环境实测仅京东移动详情页可匿名访问，淘宝/拼多多需登录或验证码（计划 §5.2 禁止绕过）。",
     "label_source=agent（生成器按构造标注），无独立人工复核；gate_eligible=false。",
     "image_domain=listing_image：识别图片为 32x32 确定性模拟主图，不冒充用户实拍。",
-    "recognition/intent/retrieval/workflow 指标在缺少真实模型配置时保持 pending；same_item/ranking 指标为领域代码确定性计算。",
+    "recognition/intent/retrieval/end_to_end 指标在缺少真实模型配置时保持 pending；same_item/ranking 指标为领域代码确定性计算。",
     "live 运行需真实 Ark/Milvus/Checkpoint 配置（计划 §16 清单），本阶段不执行。"
   ]
 }

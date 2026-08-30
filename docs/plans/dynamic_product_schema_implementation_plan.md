@@ -53,7 +53,7 @@
 - 任一采纳字段都能回溯到同一 Offer 的原文位置；
 - 低置信、角色不一致或证据不足的字段不会成为硬冲突依据；
 - 模型和缓存失败不降低检索可用性，也不产生激进合并；
-- Workflow 与 Multi-Agent 复用同一应用服务和采纳策略；
+- Retrieval Agent 统一复用同一应用服务和采纳策略；
 - 支持 shadow、hybrid、dynamic 分阶段迁移和一键回滚。
 
 ### 3.2 非目标
@@ -498,8 +498,8 @@ Trace 中增加 `mode`、`schema_id`、`concept_count`、`accepted_field_count`�
 
 ### 14.4 编排与配置
 
-- `multi_agent/agents/specialists.py` 和 `nodes/retrieval_nodes.py`
-  - 必须调用同一 `canonicalize_offers` 策略服务；
+- `multi_agent/agents/specialists.py`
+  - 必须调用统一的 `canonicalize_offers` 策略服务；
   - shadow 结果不能改变当前输出；
 - `ports/dependencies.py`、`deps.py`
   - 注入两个新端口；
@@ -588,11 +588,11 @@ DYNAMIC_SAME_ITEM_REVIEW_THRESHOLD=0.74
 - 缓存污染、版本失效和读写异常；
 - 模型缺项、超时、修复失败和整批回退。
 
-### 16.2 契约与工作流测试
+### 16.2 契约与端到端测试
 
 - Ark 两阶段结构化输出符合 Pydantic 契约；
 - 商品文本 Prompt 注入不能改变输出协议；
-- Workflow 与 Multi-Agent 对相同输入产生相同 verified candidates 和 SKU groups；
+- Retrieval Agent 对相同输入产生稳定的 verified candidates 和 SKU groups；
 - `dynamic_shadow` 不改变对外结果或副作用；
 - `hybrid` 只对 miss/缺失字段启用动态补丁；
 - `dynamic` 故障时检索仍成功并返回保守结果；
@@ -647,9 +647,9 @@ DYNAMIC_SAME_ITEM_REVIEW_THRESHOLD=0.74
 - 所有字段均经过同 Offer 证据校验和状态化采纳；
 - 未知品类不再因缺少静态 category ID 被召回层直接排除；
 - Complete-Link 和 SKU 缺失单列安全边界保持；
-- Workflow/Multi-Agent 行为对齐；
+- Retrieval Agent 的动态与 taxonomy 基线行为完成对照；
 - 四种迁移模式、指标、审计和回滚文档齐全；
-- 单元、契约、工作流、故障注入和真实金标评测通过；
+- 单元、契约、端到端、故障注入和真实金标评测通过；
 - 发布门槛包含生产外部证据，不能用模拟集替代；
 - `data/taxonomy.json` 已不再参与生产请求决策，旧代码删除有单独回滚版本。
 

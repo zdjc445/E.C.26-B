@@ -17,7 +17,7 @@ def test_engineering_datasets_are_loaded_with_strict_models() -> None:
         "retrieval",
         "same_item",
         "ranking",
-        "workflow",
+        "end_to_end",
         "memory",
         "multi_agent",
         "interrupt",

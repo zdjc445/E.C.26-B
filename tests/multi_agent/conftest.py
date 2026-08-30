@@ -1,8 +1,7 @@
-"""Workflow 层测试公共夹具：Fake Ports + mini taxonomy + Settings（方案 §21.3）。"""
+"""Multi-Agent 测试公共夹具：Fake Ports、mini taxonomy 与 Settings。"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -23,18 +22,8 @@ from shijiajing_agent.contracts import (
 from shijiajing_agent.domain.filters import HardFilterBuilder
 from shijiajing_agent.domain.intent_rules import RuleIntentParser
 from shijiajing_agent.domain.taxonomy import Taxonomy, TaxonomyFile
-from shijiajing_agent.errors import SessionConflictError
 from shijiajing_agent.facade import AgentDependencies, AgentFacade
 from shijiajing_agent.ports.retrieval import RetrievalResult
-from shijiajing_agent.state import AgentState
-
-
-@dataclass(frozen=True)
-class WorkflowSettings(Settings):
-    """旧图专项测试使用的显式配置，避免依赖应用默认编排模式。"""
-
-    orchestration_mode: str = "workflow"
-
 
 # ---------------------------------------------------------------------------
 # Fake Ports
@@ -158,54 +147,6 @@ class FakeRetrieval:
                 raise item
             return item
         return RetrievalResult(candidates=[], total_found=0)
-
-
-class FakeCheckpoint:
-    """内存版 Checkpoint：乐观版本号 + 可注入冲突。"""
-
-    def __init__(self) -> None:
-        self.store: dict[str, tuple[AgentState, int]] = {}
-        self.version = 0
-        self.conflict_on_save = False
-        self.resume_claims: set[tuple[str, str]] = set()
-
-    async def setup(self) -> None:
-        return None
-
-    async def close(self) -> None:
-        return None
-
-    def seed(self, session_id: str, state: AgentState, version: int) -> None:
-        self.version = max(self.version, version)
-        self.store[session_id] = (dict(state), version)
-
-    async def load(self, session_id: str) -> tuple[AgentState, int] | None:
-        return self.store.get(session_id)
-
-    async def save(self, session_id: str, state: AgentState, expected_version: int | None) -> int:
-        if self.conflict_on_save:
-            raise SessionConflictError("乐观版本冲突（注入）")
-        prev = self.store.get(session_id)
-        prev_version = prev[1] if prev else 0
-        if expected_version is not None and prev_version != expected_version:
-            raise SessionConflictError(
-                f"乐观版本冲突：期望 {expected_version}，实际 {prev_version}"
-            )
-        self.version += 1
-        # §17：state_version 由 Checkpoint 维护，随状态一起持久化
-        state["state_version"] = self.version
-        self.store[session_id] = (dict(state), self.version)
-        return self.version
-
-    async def claim_resume(self, session_id: str, interrupt_id: str) -> bool:
-        key = (session_id, interrupt_id)
-        if key in self.resume_claims:
-            return False
-        self.resume_claims.add(key)
-        return True
-
-    async def release_resume(self, session_id: str, interrupt_id: str) -> None:
-        self.resume_claims.discard((session_id, interrupt_id))
 
 
 class FakeTraceSink:
@@ -368,7 +309,7 @@ def taxonomy() -> Taxonomy:
 
 @pytest.fixture
 def settings() -> Settings:
-    return WorkflowSettings()
+    return Settings()
 
 
 def make_deps(
@@ -380,7 +321,6 @@ def make_deps(
     rewrite: FakeQueryRewrite | None = None,
     explanation: FakeExplanation | None = None,
     retrieval: FakeRetrieval | None = None,
-    checkpoint: FakeCheckpoint | None = None,
     trace: FakeTraceSink | None = None,
     metrics: FakeMetrics | None = None,
 ) -> tuple[
@@ -392,7 +332,6 @@ def make_deps(
         | FakeQueryRewrite
         | FakeExplanation
         | FakeRetrieval
-        | FakeCheckpoint
         | FakeTraceSink
         | FakeMetrics,
     ],
@@ -404,7 +343,6 @@ def make_deps(
         "rewrite": rewrite or FakeQueryRewrite(),
         "explanation": explanation or FakeExplanation(),
         "retrieval": retrieval or FakeRetrieval(),
-        "checkpoint": checkpoint or FakeCheckpoint(),
         "trace": trace or FakeTraceSink(),
         "metrics": metrics or FakeMetrics(),
     }
@@ -416,7 +354,6 @@ def make_deps(
         query_rewrite=fakes["rewrite"],
         explanation=fakes["explanation"],
         retrieval=fakes["retrieval"],
-        checkpoint=fakes["checkpoint"],
         trace=fakes["trace"],
         metrics=fakes["metrics"],
     )
@@ -432,7 +369,7 @@ def deps_factory(taxonomy: Taxonomy) -> Any:
     ) -> tuple[AgentDependencies, dict[str, Any]]:
         return make_deps(
             taxonomy,
-            settings or WorkflowSettings(),
+            settings or Settings(),
             **overrides,
         )
 

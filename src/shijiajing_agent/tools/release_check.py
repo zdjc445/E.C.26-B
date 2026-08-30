@@ -21,7 +21,6 @@ def _check_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--backup-summary", type=Path)
     parser.add_argument("--eval-report", type=Path)
     parser.add_argument("--benchmark-report", type=Path)
-    parser.add_argument("--shadow-report", type=Path)
     parser.add_argument("--planner-shadow-report", type=Path)
     parser.add_argument("--production-evidence-manifest", type=Path)
     parser.add_argument("--json", action="store_true", help="输出机器可读 JSON")
@@ -58,7 +57,6 @@ def main(argv: list[str] | None = None) -> int:
         backup_summary=args.backup_summary,
         eval_report=args.eval_report,
         benchmark_report=args.benchmark_report,
-        shadow_report=args.shadow_report,
         planner_shadow_report=args.planner_shadow_report,
         production_evidence_manifest=args.production_evidence_manifest,
     )

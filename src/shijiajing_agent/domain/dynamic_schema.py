@@ -265,9 +265,7 @@ def verify_dynamic_schema(
         )
         valid_concepts.add(concept.local_concept_id)
 
-    assignments = [
-        item for item in assignments if item.local_concept_id in valid_concepts
-    ]
+    assignments = [item for item in assignments if item.local_concept_id in valid_concepts]
     input_offer_ids = [offer.offer_id for offer in offers]
     schema_id = _verified_schema_hash(verified_concepts, assignments, input_offer_ids)
     return VerifiedDynamicSchema(

@@ -16,7 +16,7 @@
 - `retrieval_dataset.jsonl`：查询 + 硬过滤 + 相关 SPU/SKU 集合。
 - `same_item_pairs.jsonl`：Offer 对 + 同 SPU/SKU 标签 + 冲突原因。
 - `ranking_dataset.jsonl`：查询 + 候选组 + 人工偏好顺序。
-- `workflow_dataset.jsonl`：完整多轮轨迹 + 期望结果。
+- `end_to_end_dataset.jsonl`：完整多轮轨迹 + 期望结果。
 - `memory_dataset.jsonl`：owner、session 序列、显式 directive、覆盖与 forget 后状态。
 - `multi_agent_dataset.jsonl`：子图输入/输出、汇合状态与最终业务结果。
 - `interrupt_dataset.jsonl`：四类 interrupt 的恢复节点与副作用计数。

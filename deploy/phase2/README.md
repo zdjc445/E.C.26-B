@@ -76,7 +76,6 @@ $env:SHIJIAJING_POSTGRES_POOL_MAX_SIZE = "8"
 $env:SHIJIAJING_POSTGRES_POOL_TIMEOUT_SECONDS = "12.5"
 $env:SHIJIAJING_CHECKPOINT_BACKEND = "postgres"
 $env:SHIJIAJING_CHECKPOINT_DSN = $pg
-$env:SHIJIAJING_GRAPH_PERSISTENCE_MODE = "native"
 $env:SHIJIAJING_REQUEST_LEDGER_BACKEND = "postgres"
 $env:SHIJIAJING_REQUEST_LEDGER_DSN = $pg
 $env:SHIJIAJING_MEMORY_ENABLED = "true"
@@ -94,7 +93,7 @@ uv run shijiajing-preflight --storage-only --json
 `--storage-only` 只验证资源 setup/close；模型、Milvus 和本地商品快照仍需按根目录
 `.env.example` 配置后执行完整 `shijiajing-preflight --json`。
 
-Windows 下 preflight、live 评测、迁移、事件还原、事件修复、Milvus 初始化和商品索引 CLI
+Windows 下 preflight、live 评测、事件还原、事件修复、Milvus 初始化和商品索引 CLI
 会使用 `SelectorEventLoop` 运行 psycopg 异步连接；其他平台保持默认事件循环策略。
 
 ## OTLP 验证

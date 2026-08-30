@@ -1,7 +1,7 @@
 # 一致性事件修复 Runbook
 
 本 runbook 用 Request Ledger 和 Memory 的真实事务记录补建 Event Store 一致性事件。
-Checkpoint 仍是工作流状态事实源，Event Store 不得覆盖 Checkpoint。普通诊断事件不是本
+Checkpoint 仍是 Supervisor/Agent 任务执行状态事实源，Event Store 不得覆盖 Checkpoint。普通诊断事件不是本
 命令的修复对象。
 
 ## 修复范围与前提

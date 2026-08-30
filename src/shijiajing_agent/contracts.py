@@ -414,31 +414,6 @@ class SpecialistAgentName(StrEnum):
     MEMORY = "memory"
 
 
-class AgentTask(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    task_id: str = Field(min_length=1)
-    session_id: str = Field(min_length=1, max_length=128)
-    request_id: str = Field(min_length=1, max_length=128)
-    turn_id: str = Field(min_length=1)
-    trace_id: str = Field(min_length=1)
-    agent_name: SpecialistAgentName
-    input_payload: dict[str, Any]
-    memory_context: list[MemoryRecord] = Field(default_factory=list[MemoryRecord])
-
-
-class AgentResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    task_id: str = Field(min_length=1)
-    agent_name: SpecialistAgentName
-    status: NodeStatus
-    output_payload: dict[str, Any] = Field(default_factory=dict[str, Any])
-    evidence_refs: list[str] = Field(default_factory=list[str])
-    proposed_memory_mutations: list[MemoryMutation] = Field(default_factory=list[MemoryMutation])
-    notices: list[str] = Field(default_factory=list[str])
-
-
 # ---------------------------------------------------------------------------
 # 受控层级式 Multi-Agent 协议（schema 2.0）
 # ---------------------------------------------------------------------------
@@ -1047,9 +1022,7 @@ class EvidenceSpan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     offer_id: str = Field(min_length=1, max_length=256)
-    source_path: str = Field(
-        min_length=1, max_length=160, pattern=_DYNAMIC_SOURCE_PATH_RE
-    )
+    source_path: str = Field(min_length=1, max_length=160, pattern=_DYNAMIC_SOURCE_PATH_RE)
     raw_value: str = Field(min_length=1, max_length=256)
     start: int | None = Field(default=None, ge=0)
     end: int | None = Field(default=None, ge=0)

@@ -49,11 +49,7 @@ class SkuSplitter:
         dynamic_mode = self._dynamic or any(member.dynamic_schema_id for member in spu_members)
         if dynamic_mode:
             variant_keys = sorted(
-                {
-                    key
-                    for member in spu_members
-                    for key in member.dynamic_variant_keys
-                }
+                {key for member in spu_members for key in member.dynamic_variant_keys}
             )
         else:
             variant_keys = self._taxonomy.variant_attributes(category_id) if category_id else []

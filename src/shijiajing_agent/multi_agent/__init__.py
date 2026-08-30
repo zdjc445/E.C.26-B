@@ -27,17 +27,12 @@ from shijiajing_agent.multi_agent.planner_materializer import (
     MaterializationResult,
     PlanMaterializer,
 )
-from shijiajing_agent.multi_agent.registry import SpecialistAgentRegistry, build_registry
-from shijiajing_agent.multi_agent.shadow import (
+from shijiajing_agent.multi_agent.planner_shadow import (
     PlannerShadowEvidence,
-    ShadowComparison,
-    ShadowComparisonReport,
     build_planner_shadow_evidence,
-    compare_responses,
-    run_shadow_case,
-    run_shadow_suite,
-    validate_shadow_report_payload,
+    validate_planner_shadow_report_payload,
 )
+from shijiajing_agent.multi_agent.registry import SpecialistAgentRegistry, build_registry
 from shijiajing_agent.multi_agent.supervisor import MultiAgentSupervisor, SupervisorRunResult
 
 __all__ = [
@@ -56,18 +51,13 @@ __all__ = [
     "PlannerProposal",
     "PlannerShadowEvidence",
     "PlanningOutcome",
-    "ShadowComparison",
-    "ShadowComparisonReport",
     "SpecialistAgentRegistry",
     "SupervisorRunResult",
     "apply_plan_patch",
     "build_action_catalog",
     "build_planner_shadow_evidence",
     "build_registry",
-    "compare_responses",
     "dispatch_ready_tasks",
     "find_ready_tasks",
-    "run_shadow_case",
-    "run_shadow_suite",
-    "validate_shadow_report_payload",
+    "validate_planner_shadow_report_payload",
 ]

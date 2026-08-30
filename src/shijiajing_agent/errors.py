@@ -21,7 +21,6 @@ class ErrorCode(StrEnum):
     PRODUCT_SCHEMA_INVALID = "PRODUCT_SCHEMA_INVALID"
     CHECKPOINT_UNAVAILABLE = "CHECKPOINT_UNAVAILABLE"
     SESSION_CONFLICT = "SESSION_CONFLICT"
-    WORKFLOW_STEP_LIMIT = "WORKFLOW_STEP_LIMIT"
     TURN_TIMEOUT = "TURN_TIMEOUT"
     INTERNAL_ERROR = "INTERNAL_ERROR"
     REQUEST_LEDGER_UNAVAILABLE = "REQUEST_LEDGER_UNAVAILABLE"
@@ -95,11 +94,6 @@ class CheckpointUnavailableError(ShijiajingError):
 class SessionConflictError(ShijiajingError):
     code = ErrorCode.SESSION_CONFLICT
     user_message = "会话并发冲突，请重试"
-
-
-class WorkflowStepLimitError(ShijiajingError):
-    code = ErrorCode.WORKFLOW_STEP_LIMIT
-    user_message = "工作流步数超限"
 
 
 class TurnTimeoutError(ShijiajingError):

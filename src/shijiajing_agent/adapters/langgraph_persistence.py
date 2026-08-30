@@ -40,8 +40,6 @@ _CONTRACT_NAMES = (
     "MemoryQuery",
     "MemoryMutation",
     "SpecialistAgentName",
-    "AgentTask",
-    "AgentResult",
     "AgentTaskKind",
     "AgentTaskBudget",
     "AgentTaskError",

@@ -38,8 +38,8 @@
 | 现象 | 处理 |
 |---|---|
 | `SessionConflictError` | 同会话并发请求冲突；幂等重放一次后仍冲突，说明确有并发，应用层应串行 |
-| `CheckpointUnavailableError` | `CHECKPOINT_DSN` 不可写（sqlite 目录不存在 / postgres 不可达）；版本不符时检查 `SCHEMA_VERSION` |
-| 多轮之间状态丢失 | 每轮必须使用相同 `session_id`；`request_id` 重复会被幂等跳过（不是 bug） |
+| `CheckpointUnavailableError` | `CHECKPOINT_DSN` 不可写（sqlite 目录不存在 / postgres 不可达）；运行 preflight 检查连接和 DDL |
+| HITL 恢复状态丢失 | `start/resume` 必须使用相同 `session_id`，并确认活动 Supervisor namespace 仍存在 |
 | 数据库文件被多个进程写 | sqlite 适合单实例开发；生产用 postgres 后端 |
 
 ## 5. 修正不生效
@@ -80,11 +80,9 @@ set PYTHONIOENCODING=utf-8
 
 ## 9. 二期存储与回滚
 
-- 迁移检查：`uv run shijiajing-migrate-state inspect` 与
-  `uv run shijiajing-migrate-state validate`。
+- 持久化检查：`uv run shijiajing-preflight --storage-only --json`。
 - 事件修复：先运行 `uv run shijiajing-repair-events --dry-run`，确认缺失集合后才允许
   `--apply`；事件追加失败不回滚 Request Ledger 或 Memory 已成功的事务。
-- native Checkpoint 切回 legacy 前，必须确认没有 `active_interrupt`；存在中断时先 resume
-  或人工确认清理，避免 native-only 恢复状态丢失。
+- 部署回滚前必须确认没有 `active_interrupt`；存在中断时先 resume 或人工确认清理。
 - SQLite 备份、PostgreSQL dump/restore 和完整回滚顺序见
   [operations_phase2.md](operations_phase2.md)。

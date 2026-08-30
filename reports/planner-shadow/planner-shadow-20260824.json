@@ -4,8 +4,8 @@
     {
       "case_id": "multi-agent-join-001",
       "differences": [],
-      "equivalent": true,
-      "legacy_signature": {
+      "execution_plan_preserved": true,
+      "baseline_signature": {
         "plan_hash": "de6597b6755c7679aec6c9d4db1f417107b16a0de62a518b01c6885c08adb741",
         "task_count": 3,
         "task_kinds": [
@@ -14,7 +14,7 @@
           "explanation.explain"
         ]
       },
-      "multi_agent_signature": {
+      "executed_signature": {
         "plan_hash": "de6597b6755c7679aec6c9d4db1f417107b16a0de62a518b01c6885c08adb741",
         "task_count": 3,
         "task_kinds": [
@@ -49,8 +49,8 @@
     {
       "case_id": "multi-agent-failure-isolation-002",
       "differences": [],
-      "equivalent": true,
-      "legacy_signature": {
+      "execution_plan_preserved": true,
+      "baseline_signature": {
         "plan_hash": "ff1f3822aefd2b05b25cc151c838081ae0316c3ca58ffad1f38b3e0ee2715e2b",
         "task_count": 3,
         "task_kinds": [
@@ -59,7 +59,7 @@
           "explanation.explain"
         ]
       },
-      "multi_agent_signature": {
+      "executed_signature": {
         "plan_hash": "ff1f3822aefd2b05b25cc151c838081ae0316c3ca58ffad1f38b3e0ee2715e2b",
         "task_count": 3,
         "task_kinds": [
@@ -92,10 +92,10 @@
       "side_effects_blocked": true
     }
   ],
-  "equivalent_count": 2,
-  "equivalent_rate": 1.0,
+  "preserved_count": 2,
+  "preserved_rate": 1.0,
   "gate_passed": true,
-  "mode": "multi_agent_shadow",
+  "mode": "planner_shadow",
   "planner": {
     "data_version": "provisional-v1",
     "fallback_count": 2,

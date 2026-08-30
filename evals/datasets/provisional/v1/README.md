@@ -23,7 +23,7 @@
 | retrieval_dataset.jsonl | 150 | 检索 |
 | same_item_pairs.jsonl | 600 | 同款 |
 | ranking_dataset.jsonl | 90 | 排序 |
-| workflow_dataset.jsonl | 120 | 工作流 |
+| end_to_end_dataset.jsonl | 120 | 端到端多 Agent 执行 |
 
 ## 校验与评测
 

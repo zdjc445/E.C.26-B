@@ -16,7 +16,6 @@ from shijiajing_agent.adapters.ark_models import (
     build_ark_models,
 )
 from shijiajing_agent.adapters.ark_supervisor_planner import ArkSupervisorPlanner
-from shijiajing_agent.adapters.checkpoint import make_checkpoint
 from shijiajing_agent.adapters.embeddings import build_embedding_ports
 from shijiajing_agent.adapters.local_retrieval import LocalLexicalRetrievalAdapter
 from shijiajing_agent.adapters.milvus_retrieval import MilvusHybridRetrievalAdapter
@@ -103,7 +102,7 @@ def make_deps(
         resource_registrar(vision)
 
     supervisor_planner = None
-    if settings.orchestration_mode != "workflow" and settings.supervisor_planner_mode != "off":
+    if settings.supervisor_planner_mode != "off":
         client = getattr(vision, "client", None)
         if client is None:
             raise ValueError("Supervisor Planner 无法取得共享 ArkModelClient")
@@ -113,10 +112,6 @@ def make_deps(
     if resource_registrar is not None:
         resource_registrar(retrieval)
 
-    checkpoint = make_checkpoint(settings)
-    if resource_registrar is not None:
-        resource_registrar(checkpoint)
-
     return AgentDependencies(
         taxonomy=taxonomy,
         settings=settings,
@@ -125,7 +120,6 @@ def make_deps(
         query_rewrite=query_rewrite,
         explanation=explanation,
         retrieval=retrieval,
-        checkpoint=checkpoint,
         trace=trace,
         metrics=metrics,
         supervisor_planner=supervisor_planner,

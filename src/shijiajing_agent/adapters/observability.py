@@ -3,9 +3,8 @@
 - ``StructlogTraceSink``：每个 AgentEvent 一条结构化日志（structlog）。
 - ``PrometheusMetrics``：prometheus-client Counter / Histogram，按名称 + 标签集动态注册。
 
-失败语义（§20）：trace sink 与指标失败均不阻断业务结果；facade 对 trace 失败
-额外累加 ``trace_sink_failure_total`` 本地错误计数。Checkpoint 失败阻断成功提交，
-见 ``adapters.checkpoint``。
+失败语义（§20）：trace sink 与指标失败均不阻断业务结果；Checkpoint 失败阻断
+需要持久化恢复的执行。
 """
 
 from __future__ import annotations

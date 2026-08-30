@@ -582,7 +582,7 @@ def validate_datasets(
         "retrieval": 150,
         "same_item": 600,
         "ranking": 90,
-        "workflow": 120,
+        "end_to_end": 120,
     }
     for kind, expected in expected_rows.items():
         actual = len(datasets.get(kind) or [])
@@ -711,7 +711,7 @@ def validate_datasets(
         ret = cast_any(row)
         all_expected_spu.update(ret.expected_spu_ids)
         all_expected_sku.update(ret.expected_sku_ids)
-    for row in datasets.get("workflow") or []:
+    for row in datasets.get("end_to_end") or []:
         wf = cast_any(row)
         all_expected_sku.update(wf.expected_sku_ids)
     missing_spu = all_expected_spu - gold_spu_ids

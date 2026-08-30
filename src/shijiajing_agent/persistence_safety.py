@@ -1,8 +1,7 @@
 """持久化边界脱敏。
 
 Checkpoint 和 Cache 只能保存可恢复所需的结构化结果，不能把原始请求、图片内容或
-用户自由 metadata 写入长期存储。该模块同时供 legacy JSON 序列化和 LangGraph
-native serializer 使用，避免两条持久化路径出现不同的脱敏规则。
+用户自由 metadata 写入长期存储。该模块供 LangGraph native serializer 使用。
 """
 
 from __future__ import annotations

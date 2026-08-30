@@ -42,8 +42,8 @@
       "n_recorded": 0,
       "digest": "d8f656321db5f261"
     },
-    "workflow": {
-      "kind": "workflow",
+    "end_to_end": {
+      "kind": "end_to_end",
       "n_rows": 3,
       "n_recorded": 3,
       "digest": "f0490463afb0ce47"

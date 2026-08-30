@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 from shijiajing_agent.contracts import (
     Preference,
@@ -68,13 +69,16 @@ class GroupRanker:
         prefs = [p for p in (preferences or []) if p in list(Preference)]
         prior_values = memory_priors or {}
         raw_preferences = prior_values.get("preferences", [])
-        for raw in raw_preferences if isinstance(raw_preferences, list) else []:
-            try:
-                pref = Preference(raw)
-            except ValueError:
-                continue
-            if pref not in prefs:
-                prefs.append(pref)
+        if isinstance(raw_preferences, list):
+            for raw in cast(list[object], raw_preferences):
+                if not isinstance(raw, str):
+                    continue
+                try:
+                    pref = Preference(raw)
+                except ValueError:
+                    continue
+                if pref not in prefs:
+                    prefs.append(pref)
         weights = self._effective_weights(prefs)
 
         ranked: list[RankedGroup] = []
@@ -129,7 +133,10 @@ class GroupRanker:
         colors = priors.get("colors")
         if isinstance(colors, list):
             actual = str(g.sku_attributes.get("color", "")).lower()
-            if any(str(color).lower() in actual for color in colors):
+            if any(
+                isinstance(color, str) and color.lower() in actual
+                for color in cast(list[object], colors)
+            ):
                 boost += 1.0
         return min(1.0, boost)
 

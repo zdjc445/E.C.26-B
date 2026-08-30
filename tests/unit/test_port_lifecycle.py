@@ -8,7 +8,6 @@ import pytest
 
 from shijiajing_agent.adapters.ark_models import ArkVisionModel
 from shijiajing_agent.adapters.cache import InMemoryVersionedCache
-from shijiajing_agent.adapters.checkpoint import SQLiteCheckpointAdapter
 from shijiajing_agent.adapters.event_store import InMemoryEventStore
 from shijiajing_agent.adapters.local_retrieval import LocalLexicalRetrievalAdapter
 from shijiajing_agent.adapters.memory import DisabledMemoryAdapter
@@ -19,7 +18,6 @@ from shijiajing_agent.adapters.observability import (
 from shijiajing_agent.adapters.request_ledger import InMemoryRequestLedger
 from shijiajing_agent.evals_live import CallCounts, CountedRetrieval, CountedVision
 from shijiajing_agent.ports.cache import VersionedCachePort
-from shijiajing_agent.ports.checkpoint import CheckpointPort
 from shijiajing_agent.ports.event_store import EventStorePort
 from shijiajing_agent.ports.lifecycle import ResourceLifecyclePort
 from shijiajing_agent.ports.memory import MemoryPort
@@ -31,7 +29,6 @@ from shijiajing_agent.ports.retrieval import ProductRetrievalPort
 
 def test_persistence_ports_declare_runtime_lifecycle(tmp_path) -> None:
     resources_and_ports = (
-        (SQLiteCheckpointAdapter(str(tmp_path / "checkpoint.db")), CheckpointPort),
         (InMemoryRequestLedger(), RequestLedgerPort),
         (DisabledMemoryAdapter(), MemoryPort),
         (InMemoryVersionedCache(), VersionedCachePort),

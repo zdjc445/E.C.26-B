@@ -6,13 +6,11 @@ import asyncio
 import json
 import sqlite3
 from pathlib import Path
-from types import SimpleNamespace
 from typing import TypedDict
 
 import pytest
 from langgraph.graph import END, START, StateGraph
 
-from shijiajing_agent.adapters.ark_models import ModelCallRecord, record_model_call
 from shijiajing_agent.adapters.cache import (
     InMemoryVersionedCache,
     canonical_cache_key,
@@ -56,7 +54,6 @@ from shijiajing_agent.errors import (
     MemoryConflictError,
     RequestLedgerUnavailableError,
 )
-from shijiajing_agent.nodes.node_support import record_cache_event, timed
 
 
 def _response(request_id: str = "r1") -> AgentResponse:
@@ -471,62 +468,6 @@ def test_disabled_event_store_is_not_attached() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cache_audit_events_keep_only_namespace_and_hash() -> None:
-    store = InMemoryEventStore()
-    deps = SimpleNamespace(
-        event_store=store,
-        metrics=SimpleNamespace(inc=lambda *args, **kwargs: None),
-    )
-    state = {
-        "current_request": AgentRequest(session_id="s-cache", request_id="r1", text="用户文本"),
-        "turn_id": "t1",
-        "trace_id": "tr1",
-        "node_events": [],
-    }
-    cache_key = "a" * 64
-    await record_cache_event(
-        deps,
-        state,
-        node_name="parse_intent",
-        namespace="intent",
-        cache_key=cache_key,
-        hit=False,
-    )
-    await record_cache_event(
-        deps,
-        state,
-        node_name="parse_intent",
-        namespace="intent",
-        cache_key=cache_key,
-        hit=True,
-    )
-    events = await store.list_turn("s-cache", "t1")
-    assert [event.event_type for event in events] == ["cache_miss", "cache_hit"]
-    assert events[0].payload == {"namespace": "intent", "cache_key": cache_key}
-    assert "用户文本" not in str(events[0].model_dump(mode="json"))
-
-    class Trace:
-        def __init__(self) -> None:
-            self.events = []
-
-        async def emit(self, event: object) -> None:
-            self.events.append(event)
-
-    trace = Trace()
-    no_store_deps = SimpleNamespace(event_store=None, trace=trace, metrics=deps.metrics)
-    await record_cache_event(
-        no_store_deps,
-        state,
-        node_name="parse_intent",
-        namespace="intent",
-        cache_key=cache_key,
-        hit=True,
-    )
-    assert len(trace.events) == 1
-    assert trace.events[0].cache_hit is True
-
-
-@pytest.mark.asyncio
 async def test_native_sqlite_checkpointer_setup(tmp_path: Path) -> None:
     settings = Settings(
         checkpoint_backend="sqlite",
@@ -573,37 +514,3 @@ async def test_native_sqlite_checkpointer_redacts_persisted_request(tmp_path: Pa
     assert stored_request.text is None
     assert stored_request.image is not None
     assert stored_request.image.uri.startswith("https://redacted.invalid/image/")
-
-
-@pytest.mark.asyncio
-async def test_timed_node_projects_model_call_metadata() -> None:
-    @timed("parse_intent")
-    async def node(state: dict[str, object]) -> dict[str, object]:
-        record_model_call(
-            ModelCallRecord(
-                node="parse_intent",
-                prompt_version="v1",
-                model="text-model",
-                duration_ms=4.0,
-                input_hash="i" * 64,
-                output_hash="o" * 64,
-                success=True,
-                token_usage={"total_tokens": 8},
-            )
-        )
-        return {}
-
-    events = (
-        await node(
-            {
-                "session_id": "s1",
-                "request_id": "r1",
-                "turn_id": "t1",
-                "trace_id": "tr1",
-                "node_events": [],
-            }
-        )
-    )["node_events"]
-    assert events[0]["model"] == "text-model"
-    assert events[0]["prompt_version"] == "v1"
-    assert events[0]["token_usage"] == {"total_tokens": 8}

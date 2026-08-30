@@ -7,7 +7,7 @@
 - ``retrieval_dataset.jsonl``：查询 + 硬过滤 + 相关 SPU/SKU 集合。
 - ``same_item_pairs.jsonl``：Offer 对 + 同 SPU/SKU 标签 + 冲突原因。
 - ``ranking_dataset.jsonl``：查询 + 候选组 + 人工偏好顺序。
-- ``workflow_dataset.jsonl``：完整多轮轨迹 + 期望结果。
+- ``end_to_end_dataset.jsonl``：完整多轮轨迹 + 期望结果。
 - ``memory_dataset.jsonl``：owner 隔离、显式 directive、覆盖与 forget 轨迹。
 - ``multi_agent_dataset.jsonl``：子图输入/输出、汇合状态与最终业务结果。
 - ``interrupt_dataset.jsonl``：四类 interrupt 的恢复节点与副作用基线。
@@ -189,7 +189,7 @@ class RankingSample(BaseModel):
     meta: EvalSampleMeta | None = None
 
 
-class WorkflowRecorded(BaseModel):
+class EndToEndRecorded(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: str | None = None
@@ -205,7 +205,7 @@ class WorkflowRecorded(BaseModel):
     latency_ms: list[float] | None = None
 
 
-class WorkflowSample(BaseModel):
+class EndToEndSample(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
@@ -216,7 +216,7 @@ class WorkflowSample(BaseModel):
     expected_final_constraints: dict[str, Any] | None = None
     expected_clarification: bool = False
     expected_correction_success: bool = True
-    recorded: WorkflowRecorded | None = None
+    recorded: EndToEndRecorded | None = None
     meta: EvalSampleMeta | None = None
 
 
@@ -230,7 +230,7 @@ DATASET_FILES: dict[str, tuple[str, type[BaseModel]]] = {
     "retrieval": ("retrieval_dataset.jsonl", RetrievalSample),
     "same_item": ("same_item_pairs.jsonl", SameItemSample),
     "ranking": ("ranking_dataset.jsonl", RankingSample),
-    "workflow": ("workflow_dataset.jsonl", WorkflowSample),
+    "end_to_end": ("end_to_end_dataset.jsonl", EndToEndSample),
     "memory": ("memory_dataset.jsonl", MemorySample),
     "multi_agent": ("multi_agent_dataset.jsonl", MultiAgentSample),
     "interrupt": ("interrupt_dataset.jsonl", InterruptSample),
@@ -866,9 +866,9 @@ def evaluate_ranking(
     ]
 
 
-def evaluate_workflow(samples: list[WorkflowSample], source: str) -> list[MetricResult]:
+def evaluate_end_to_end(samples: list[EndToEndSample], source: str) -> list[MetricResult]:
     """§22.2 端到端：任务成功率、澄清合适度、修正成功率、VLM 避免率、降级率等。"""
-    measured: list[tuple[WorkflowSample, WorkflowRecorded]] = []
+    measured: list[tuple[EndToEndSample, EndToEndRecorded]] = []
     for s in samples:
         rec = s.recorded
         if rec is not None and rec.status is not None:
@@ -991,7 +991,7 @@ def _constraints_match(actual: dict[str, Any] | None, expected: dict[str, Any] |
     return True
 
 
-def workflow_state_exact(sample: WorkflowSample, rec: WorkflowRecorded) -> bool:
+def end_to_end_state_exact(sample: EndToEndSample, rec: EndToEndRecorded) -> bool:
     """§7.4 provisional state_exact：比较最终状态、Gold SKU 集合、澄清状态与有效约束。
 
     种子数据（无 expected_sku_ids）保持旧语义：只比较运行时 group_id 集合。
@@ -1041,7 +1041,7 @@ def compute_report(
         evaluate_ranking(cast(list[RankingSample], datasets.get("ranking", [])), taxonomy, source)
     )
     metrics.extend(
-        evaluate_workflow(cast(list[WorkflowSample], datasets.get("workflow", [])), source)
+        evaluate_end_to_end(cast(list[EndToEndSample], datasets.get("end_to_end", [])), source)
     )
 
     infos: dict[str, DatasetInfo] = {}

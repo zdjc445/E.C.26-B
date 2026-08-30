@@ -12,7 +12,7 @@
 | `retrieval_dataset.jsonl` | `RetrievalSample` | SKU/SPU Recall@k、MRR、硬过滤满足率 |
 | `same_item_pairs.jsonl` | `SameItemSample` | 成对同款 P/R/F1、false comparison、SKU 拆分 |
 | `ranking_dataset.jsonl` | `RankingSample` | NDCG、约束满足、Top1 价格正确 |
-| `workflow_dataset.jsonl` | `WorkflowSample` | 任务成功率、澄清、修正免 VLM、状态一致性、延迟 |
+| `end_to_end_dataset.jsonl` | `EndToEndSample` | 任务成功率、澄清、修正免 VLM、状态一致性、延迟 |
 | `memory_dataset.jsonl` | `MemorySample` | owner 隔离、覆盖、显式 directive、forget 后状态夹具 |
 | `multi_agent_dataset.jsonl` | `MultiAgentSample` | 子图输出、汇合状态与最终业务结果夹具 |
 | `interrupt_dataset.jsonl` | `InterruptSample` | 四类 interrupt 恢复节点与副作用基线夹具 |
@@ -48,7 +48,7 @@ provisional 数据集构建工具链，数据位于 `evals/datasets/provisional/
 | retrieval | 150 | 每品类 50（文本/硬过滤/零结果/近型号干扰） |
 | same_item | 600 | 200 同 SKU + 100 同 SPU 不同 SKU + 300 难负例 |
 | ranking | 90 | 每品类 30（价格/评分/官方店/缺失数据） |
-| workflow | 120 | 每品类 40（文本/图片/多轮澄清/修正/降级） |
+| end_to_end | 120 | 每品类 40（文本/图片/多轮澄清/修正/降级） |
 
 > **来源声明**：本环境无法匿名采集淘宝/拼多多，京东仅已知商品 ID 详情页可匿名
 > 访问且搜索/列表被反爬拦截；用户授权**确定性模拟生成器**产出数据集
@@ -96,7 +96,7 @@ uv run shijiajing-benchmark \
 - live 六类路径：recognition 解析本地 asset → data URL → VLM；intent
   重放历史约束合并；retrieval 通过 `offer_labels.jsonl` Gold catalog 映射
   Offer → Gold SPU/SKU；same-item 与生产共用 `default_same_item_matcher` 工厂；
-  ranking 运行生产 GroupRanker 并保存真实解释文本；workflow 记录每轮延迟、
+  ranking 运行生产 GroupRanker 并保存真实解释文本；end_to_end 记录每轮延迟、
   模型/VLM 调用次数、fallback、最终约束与 Gold SKU。
 - live 输出目录写入 `run_manifest.json`（模型、Prompt、taxonomy、索引、参数、
   commit）。
@@ -146,7 +146,7 @@ CLI 语义：
 - 每次评测也会先清除本次 CLI 生成的 `eval_report.*`、`engineering_eval_report.*` 和
   `retrieval_strategy_comparison.*`，随后把本次报告全部写入同目录 staging 后提交；
   当新数据集缺少可选策略数据时，不会继续保留旧的策略对比报告。
-- 缺少真实配置时 recognition/intent/retrieval/workflow 指标保持 `pending`，
+- 缺少真实配置时 recognition/intent/retrieval/end_to_end 指标保持 `pending`，
   报告列出精确缺失配置名（不写伪 recorded）。
 
 ## 3. 指标与阈值

@@ -101,7 +101,7 @@ async def _build_agent_facade(
     # make_deps 已经构造了这些资源，但它们尚未全部 setup。先把所有已构造的
     # owner 注册到退出栈；生产 make_deps 已在构造时登记，这里按对象身份去重，
     # 同时覆盖测试 deps_factory，确保最早的 setup 失败也会回收尚未 setup 的资源。
-    for resource in (base.trace, base.vision, base.retrieval, base.checkpoint):
+    for resource in (base.trace, base.vision, base.retrieval):
         _register_resource_close(stack, resource)
 
     trace = await _setup_resource(base.trace, stack=stack)
@@ -113,17 +113,10 @@ async def _build_agent_facade(
     retrieval = await _setup_resource(base.retrieval, stack=stack)
     assert retrieval is not None
     graph_checkpointer = None
-    checkpoint = base.checkpoint
-    if runtime_settings.graph_persistence_mode == "native":
+    if runtime_settings.checkpoint_dsn:
         graph_checkpointer = await stack.enter_async_context(
             open_graph_checkpointer(runtime_settings)
         )
-        # native graph 之外仍使用 legacy CheckpointPort 持久化 resume fence；
-        # 必须在 runtime 启动阶段完成 setup，不能把 fence DDL 延迟到首个 resume。
-        checkpoint = await _setup_resource(base.checkpoint, stack=stack)
-    else:
-        checkpoint = await _setup_resource(base.checkpoint, stack=stack)
-    assert checkpoint is not None
     request_ledger = await _open_resource(
         stack,
         make_request_ledger(
@@ -173,7 +166,6 @@ async def _build_agent_facade(
         query_rewrite=base.query_rewrite,
         explanation=base.explanation,
         retrieval=retrieval,
-        checkpoint=checkpoint,
         trace=trace,
         metrics=base.metrics,
         graph_checkpointer=graph_checkpointer,

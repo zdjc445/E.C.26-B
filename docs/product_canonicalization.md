@@ -6,8 +6,8 @@
 
 ## 结论
 
-商品归一化实现为独立应用服务，由 Retrieval Agent 和 Workflow 的 `normalize_candidates` 节点
-共同调用。它不是独立自主 Agent：Schema 发现和字段抽取都是受约束的结构化调用，不允许规划、
+商品归一化实现为 Retrieval Agent 调用的独立应用服务。它不是独立自主 Agent：Schema 发现和
+字段抽取都是受约束的结构化调用，不允许规划、
 工具循环或修改全局商品知识。
 
 LLM 只提出 proposal；平台结构化字段、已验证 Schema 和确定性规则拥有最终决定权。同款候选、
@@ -35,8 +35,7 @@ ProductRetrievalPort -> Offer[]
 - `hybrid`：保留可信 Taxonomy 字段，只用动态结果补齐缺失字段。
 - `dynamic`：使用通用规则基线和请求级动态 Schema；模型/缓存失败时每批保守回退。
 
-Workflow 与 Multi-Agent 使用同一个 `canonicalize_offers` 应用服务，避免两条链路出现不同的
-模型采纳策略。
+Retrieval Agent 统一使用 `canonicalize_offers` 应用服务，模型采纳策略只有一个事实来源。
 
 ## 信任边界
 

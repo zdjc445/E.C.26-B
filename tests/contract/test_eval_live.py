@@ -4,7 +4,7 @@
 - asset resolver 校验 SHA-256 后构建 data URL；摘要不符抛错。
 - SameItemMatcher 生产节点与评测使用同一工厂与相同参数。
 - run manifest 包含模型、Prompt、taxonomy 与 commit 标识。
-- workflow 每次运行独立 session（run_id 前缀）。
+- end_to_end 每次运行独立 session（run_id 前缀）。
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from shijiajing_agent.eval_data import (
 )
 from shijiajing_agent.eval_engineering import RetrievalStrategySample
 from shijiajing_agent.evals import (
+    EndToEndSample,
     EvalAssetRef,
     IntentSample,
     RankingSample,
@@ -34,21 +35,20 @@ from shijiajing_agent.evals import (
     RetrievalRecorded,
     RetrievalSample,
     SameItemSample,
-    WorkflowSample,
 )
 from shijiajing_agent.evals_live import (
     CallCounts,
+    live_end_to_end,
     live_intent,
     live_ranking,
     live_recognition,
     live_retrieval,
     live_retrieval_strategy,
     live_same_item,
-    live_workflow,
     write_run_manifest,
 )
 from shijiajing_agent.ports.retrieval import RetrievalResult
-from tests.workflow.conftest import (
+from tests.multi_agent.conftest import (
     FakeExplanation,
     FakeRetrieval,
     candidate,
@@ -360,7 +360,7 @@ class TestLiveRunners:
         assert recorded.explanation_verified is True
 
     @pytest.mark.asyncio
-    async def test_live_workflow_writes_full_recorded(
+    async def test_live_end_to_end_writes_full_recorded(
         self,
         taxonomy: object,
         settings: object,
@@ -382,7 +382,7 @@ class TestLiveRunners:
         from shijiajing_agent.evals_live import load_gold_catalog
 
         catalog = load_gold_catalog(gold_datasets_dir)
-        sample = WorkflowSample(
+        sample = EndToEndSample(
             id="wf-1",
             turns=[
                 {
@@ -399,7 +399,7 @@ class TestLiveRunners:
                 "model": "WH-1000XM5",
             },
         )
-        recorded = await live_workflow(sample, deps, catalog, run_id="run:test")
+        recorded = await live_end_to_end(sample, deps, catalog, run_id="run:test")
         assert recorded.status is not None
         assert recorded.latency_ms is not None and len(recorded.latency_ms) == 1
         assert recorded.model_calls_per_turn is not None

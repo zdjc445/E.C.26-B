@@ -9,7 +9,6 @@ from contextlib import AsyncExitStack
 from typing import Any
 
 from shijiajing_agent.adapters.cache import make_cache_adapter
-from shijiajing_agent.adapters.checkpoint import make_checkpoint
 from shijiajing_agent.adapters.event_store import make_event_store_adapter
 from shijiajing_agent.adapters.langgraph_persistence import open_graph_checkpointer
 from shijiajing_agent.adapters.memory import make_memory_adapter
@@ -23,9 +22,7 @@ from shijiajing_agent.tools.cli_support import configure_utf8_output, public_err
 
 
 def _checked_resource_names(settings: Settings) -> list[str]:
-    names = ["checkpoint_adapter"]
-    if settings.graph_persistence_mode == "native":
-        names.append("native_checkpointer")
+    names = ["multi_agent_checkpointer"]
     if settings.request_ledger_backend != "disabled":
         names.append("request_ledger")
     if settings.memory_backend != "disabled":
@@ -67,9 +64,7 @@ async def run_preflight(
         raise ValueError("--verify-trace 要求 SHIJIAJING_TRACE_BACKEND=opentelemetry")
 
     async with AsyncExitStack() as stack:
-        await open_resource(stack, make_checkpoint(settings))
-        if settings.graph_persistence_mode == "native":
-            await stack.enter_async_context(open_graph_checkpointer(settings))
+        await stack.enter_async_context(open_graph_checkpointer(settings))
         await open_resource(
             stack,
             make_request_ledger(
@@ -122,7 +117,6 @@ async def run_preflight(
             *_checked_resource_names(settings),
             *(["trace_probe"] if verify_trace else []),
         ],
-        "graph_persistence_mode": settings.graph_persistence_mode,
         "checkpoint_backend": settings.checkpoint_backend,
         "request_ledger_backend": settings.request_ledger_backend,
         "memory_enabled": settings.memory_enabled,

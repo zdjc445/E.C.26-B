@@ -1,8 +1,8 @@
 """五个 Specialist Agent 的最小隔离实现。
 
 每个执行器只接受对应的 ``AgentTaskV2.input``，并把已有端口和确定性 domain 算法封装在
-自己的私有 invocation 中。它们从不接收完整 legacy AgentState，也没有更新 Supervisor
-状态的引用。
+自己的私有 invocation 中。它们不接收完整 SupervisorState，也没有更新 Supervisor
+公共状态的引用。
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from shijiajing_agent.contracts import (
     IntentTaskInput,
     IntentTaskOutput,
     MatchPair,
+    MemoryMutation,
     MemoryTaskInput,
     MemoryTaskOutput,
     NodeStatus,
@@ -270,14 +271,12 @@ class RetrievalAgent:
                 self._deps.taxonomy,
                 accept_threshold=(
                     self._deps.settings.dynamic_same_item_accept_threshold
-                    if self._deps.settings.product_canonicalization_mode
-                    in {"dynamic", "hybrid"}
+                    if self._deps.settings.product_canonicalization_mode in {"dynamic", "hybrid"}
                     else self._deps.settings.same_item_accept_threshold
                 ),
                 review_threshold=(
                     self._deps.settings.dynamic_same_item_review_threshold
-                    if self._deps.settings.product_canonicalization_mode
-                    in {"dynamic", "hybrid"}
+                    if self._deps.settings.product_canonicalization_mode in {"dynamic", "hybrid"}
                     else self._deps.settings.same_item_review_threshold
                 ),
                 mode=(
@@ -317,8 +316,7 @@ class RetrievalAgent:
                 clusters = split_clusters
             splitter = SkuSplitter(
                 self._deps.taxonomy,
-                dynamic=self._deps.settings.product_canonicalization_mode
-                in {"dynamic", "hybrid"},
+                dynamic=self._deps.settings.product_canonicalization_mode in {"dynamic", "hybrid"},
             )
             groups: list[SkuGroup] = []
             for cluster in clusters:
@@ -443,7 +441,7 @@ class MemoryAgent:
             if data.operation == "prepare":
                 if not data.session_id or not data.request_id:
                     raise ValueError("memory.prepare 缺少 session_id/request_id")
-                mutations = []
+                mutations: list[MemoryMutation] = []
                 for index, item in enumerate(data.directives):
                     try:
                         mutations.append(

@@ -87,14 +87,10 @@ def test_phase2_verification_script_archives_evidence_and_preserves_failure_stat
 
 def test_phase2_storage_runbooks_match_the_operational_cli_contract() -> None:
     operations = (ROOT / "docs" / "operations_phase2.md").read_text(encoding="utf-8")
-    migration = (ROOT / "docs" / "operations" / "state_migration.md").read_text(encoding="utf-8")
     repair = (ROOT / "docs" / "operations" / "event_repair.md").read_text(encoding="utf-8")
 
-    assert "operations/state_migration.md" in operations
     assert "operations/event_repair.md" in operations
-    assert "shijiajing-migrate-state" in migration
-    assert "checkpoint_migration_audit" in migration
-    assert "--apply" in migration
+    assert "shijiajing-preflight" in operations
     assert "shijiajing-repair-events" in repair
     assert "request_result_committed" in repair
     assert "--dry-run" in repair

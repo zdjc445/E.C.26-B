@@ -6,12 +6,12 @@
 
 生成规则（§8）：
 - recognition 从本地图片资产生成，manifest 标明 image_domain=listing_image。
-- intent / workflow 用户文本为 Agent 生成，scenario_source=agent_generated。
+- intent / end_to_end 用户文本为 Agent 生成，scenario_source=agent_generated。
 - same-item 难负例优先同品类、同品牌、型号相近但身份属性冲突的 Offer。
 - same-SKU 正样本必须跨平台；同 SPU 不同 SKU 样本至少一个 variant attribute 不同。
 - retrieval query 覆盖纯文本、硬品牌/型号、预算、平台、评分与零结果。
 - ranking group 从 Gold SKU 分组构建，价格计算复用生产 SkuSplitter。
-- workflow 的 session_id / request_id 由 dataset_id + sample_id + turn_index 稳定生成。
+- end_to_end 的 session_id / request_id 由 dataset_id + sample_id + turn_index 稳定生成。
 - 生成器不写 recorded（真实或本地运行器负责填充）。
 
 全部为确定性函数：相同输入产出字节一致的 JSONL。
@@ -48,13 +48,13 @@ from shijiajing_agent.eval_data import (
 )
 from shijiajing_agent.eval_engineering import RetrievalStrategySample
 from shijiajing_agent.evals import (
+    EndToEndSample,
     IntentSample,
     RankingSample,
     RecognitionExpected,
     RecognitionSample,
     RetrievalSample,
     SameItemSample,
-    WorkflowSample,
 )
 
 # §4.2 每品类样本数
@@ -64,7 +64,7 @@ _PER_CATEGORY = {
     "retrieval": 50,
     "same_item": 200,  # 每品类 200 对（600 总量按品类均衡拆分见 SAME_ITEM_SPLIT）
     "ranking": 30,
-    "workflow": 40,
+    "end_to_end": 40,
 }
 # §4.1 目标品类
 TARGET_CATEGORIES = ("headphone", "sneaker", "hair_dryer")
@@ -80,7 +80,7 @@ DATASET_FILENAMES = {
     "retrieval": "retrieval_dataset.jsonl",
     "same_item": "same_item_pairs.jsonl",
     "ranking": "ranking_dataset.jsonl",
-    "workflow": "workflow_dataset.jsonl",
+    "end_to_end": "end_to_end_dataset.jsonl",
     "retrieval_strategy": "retrieval_strategy_dataset.jsonl",
 }
 
@@ -616,11 +616,11 @@ def _preferred_order(groups: list[Any], sort_by: SortBy, prefs: list[Preference]
     return [g.group_id for g in sorted(groups, key=key)]
 
 
-def _gen_workflow(idx: GoldIndex, assets_dir: Path, dataset_id: str) -> list[WorkflowSample]:
-    samples: list[WorkflowSample] = []
+def _gen_end_to_end(idx: GoldIndex, assets_dir: Path, dataset_id: str) -> list[EndToEndSample]:
+    samples: list[EndToEndSample] = []
     for category_id in TARGET_CATEGORIES:
         spus = idx.spu_by_cat.get(category_id, [])
-        target = _PER_CATEGORY["workflow"]
+        target = _PER_CATEGORY["end_to_end"]
         noun = _NOUNS[category_id]
         for i in range(target):
             spu = spus[i % len(spus)]
@@ -711,7 +711,7 @@ def _gen_workflow(idx: GoldIndex, assets_dir: Path, dataset_id: str) -> list[Wor
             if scenario == 4:
                 constraints["max_price"] = 100.0
             samples.append(
-                WorkflowSample(
+                EndToEndSample(
                     id=sample_id,
                     turns=turns,
                     expected_status=expected_status,
@@ -751,7 +751,7 @@ def _asset_for_offer(idx: GoldIndex, offer: Offer) -> str:
 def _image_turn(idx: GoldIndex, asset_id: str, assets_dir: Path) -> dict[str, Any]:
     asset = idx.assets.get(asset_id)
     if asset is None:
-        raise ValueError(f"workflow 图片轮缺少资产: {asset_id}")
+        raise ValueError(f"end_to_end 图片轮缺少资产: {asset_id}")
     return ImageRef(
         image_id=asset_id,
         uri=_data_url(asset, assets_dir),
@@ -803,7 +803,7 @@ def generate_datasets(
     retrieval = _gen_retrieval(idx)
     same_item = _gen_same_item(idx)
     ranking = _gen_ranking(idx, taxonomy)
-    workflow = _gen_workflow(idx, assets_dir, dataset_id)
+    end_to_end = _gen_end_to_end(idx, assets_dir, dataset_id)
     retrieval_strategy: list[RetrievalStrategySample] = []
     if retrieval_strategy_path is not None:
         if not retrieval_strategy_path.is_file():
@@ -821,7 +821,7 @@ def generate_datasets(
         "retrieval": retrieval,
         "same_item": same_item,
         "ranking": ranking,
-        "workflow": workflow,
+        "end_to_end": end_to_end,
     }
     if retrieval_strategy:
         datasets["retrieval_strategy"] = retrieval_strategy
@@ -867,7 +867,7 @@ def generate_datasets(
             "可匿名访问，淘宝/拼多多需登录或验证码（计划 §5.2 禁止绕过）。",
             "label_source=agent（生成器按构造标注），无独立人工复核；gate_eligible=false。",
             "image_domain=listing_image：识别图片为 32x32 确定性模拟主图，不冒充用户实拍。",
-            "recognition/intent/retrieval/workflow 指标在缺少真实模型配置时保持 pending；"
+            "recognition/intent/retrieval/end_to_end 指标在缺少真实模型配置时保持 pending；"
             "same_item/ranking 指标为领域代码确定性计算。",
             "live 运行需真实 Ark/Milvus/Checkpoint 配置（计划 §16 清单），本阶段不执行。",
         ],
@@ -923,7 +923,7 @@ def _write_readme(datasets_dir: Path, dataset_id: str, manifest: DatasetManifest
 | retrieval_dataset.jsonl | {manifest.counts_by_file.get("retrieval_dataset.jsonl", 0)} | 检索 |
 | same_item_pairs.jsonl | {manifest.counts_by_file.get("same_item_pairs.jsonl", 0)} | 同款 |
 | ranking_dataset.jsonl | {manifest.counts_by_file.get("ranking_dataset.jsonl", 0)} | 排序 |
-| workflow_dataset.jsonl | {manifest.counts_by_file.get("workflow_dataset.jsonl", 0)} | 工作流 |
+| end_to_end_dataset.jsonl | {manifest.counts_by_file.get("end_to_end_dataset.jsonl", 0)} | 端到端 |
 | retrieval_strategy_dataset.jsonl | {strategy_count} | 策略比较（可选） |
 
 ## 校验与评测

@@ -4,9 +4,9 @@
 - ``recorded`` 只来自真实端口执行或明确标识的本地 baseline；不得从 expected 复制。
 - 使用 evaluation-only 端口包装器计数（model/vlm/retrieval/explanation 调用次数），
   不修改生产响应协议。
-- retrieval 与 workflow 通过外部 Gold catalog（offer_labels.jsonl）把 Offer ID 映射到
+- retrieval 与 end_to_end 通过外部 Gold catalog（offer_labels.jsonl）把 Offer ID 映射到
   Gold SPU/SKU ID，不读取 Offer 内的 Gold 字段。
-- 每个 workflow sample 使用独立 session 并为每次运行增加 run ID，防止旧 Checkpoint 命中。
+- 每个 end_to_end sample 使用独立 session 并为每次运行增加 run ID，防止旧 Checkpoint 命中。
 - live 输出目录写入 ``run_manifest.json``（§10），记录模型、Prompt、taxonomy、索引、
   参数与代码 commit。
 """
@@ -55,6 +55,8 @@ from shijiajing_agent.eval_engineering import (
     retrieval_strategy_sample_from_result,
 )
 from shijiajing_agent.evals import (
+    EndToEndRecorded,
+    EndToEndSample,
     IntentRecorded,
     IntentSample,
     RankingRecorded,
@@ -64,9 +66,7 @@ from shijiajing_agent.evals import (
     RetrievalSample,
     SameItemRecorded,
     SameItemSample,
-    WorkflowRecorded,
-    WorkflowSample,
-    workflow_state_exact,
+    end_to_end_state_exact,
 )
 from shijiajing_agent.facade import AgentDependencies, AgentFacade
 from shijiajing_agent.ports.models import (
@@ -474,15 +474,15 @@ def _response_gold_sku_ids(
     return ids
 
 
-async def live_workflow(
-    sample: WorkflowSample,
+async def live_end_to_end(
+    sample: EndToEndSample,
     deps: AgentDependencies,
     catalog: dict[str, OfferGoldLabel],
     *,
     run_id: str,
     runtime_facade: AgentFacade | None = None,
-) -> WorkflowRecorded:
-    """§10 workflow：执行 facade，记录每轮延迟、模型/VLM 调用、fallback、约束与 Gold SKU。"""
+) -> EndToEndRecorded:
+    """§10 end_to_end：执行 facade，记录每轮延迟、模型/VLM 调用、fallback、约束与 Gold SKU。"""
     counts = CallCounts()
     counted = counted_deps(
         runtime_facade.dependencies if runtime_facade is not None else deps,
@@ -511,7 +511,7 @@ async def live_workflow(
     assert last is not None
     status = last.status.value
     has_correction = any(t.get("correction") for t in sample.turns)
-    recorded = WorkflowRecorded(
+    recorded = EndToEndRecorded(
         status=status,
         clarification=last.status == AgentStatus.CLARIFICATION,
         group_ids=[g.group.group_id for g in last.groups],
@@ -524,7 +524,7 @@ async def live_workflow(
         state_exact=None,
         latency_ms=latencies,
     )
-    recorded = recorded.model_copy(update={"state_exact": workflow_state_exact(sample, recorded)})
+    recorded = recorded.model_copy(update={"state_exact": end_to_end_state_exact(sample, recorded)})
     return recorded
 
 
@@ -665,15 +665,15 @@ async def run_live_paths(
         counts = CallCounts()
         rec.recorded = await live_ranking(rec, deps, counts)
 
-    for sample in datasets.get("workflow") or []:
-        rec = cast(WorkflowSample, sample)
+    for sample in datasets.get("end_to_end") or []:
+        rec = cast(EndToEndSample, sample)
         # 独立 session + 每次运行 run ID 前缀，防止旧 Checkpoint 命中（§10）
         turns = [
             {**raw, "session_id": f"{run_id}:{raw.get('session_id') or f'wf-{rec.id}'}"}
             for raw in rec.turns
         ]
         rec = rec.model_copy(update={"turns": turns})
-        rec.recorded = await live_workflow(
+        rec.recorded = await live_end_to_end(
             rec,
             deps,
             catalog,

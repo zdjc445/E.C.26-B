@@ -138,7 +138,7 @@ class MultiAgentSupervisor:
         request: AgentRequest,
         *,
         context: AgentExecutionContext | None = None,
-        shadow: bool = False,
+        suppress_side_effects: bool = False,
         pause_for_hitl: bool | None = None,
         resume: AgentResume | None = None,
     ) -> SupervisorRunResult:
@@ -320,7 +320,12 @@ class MultiAgentSupervisor:
                         plan=plan,
                         interrupt=interrupt,
                     )
-                if self._should_skip(task, results, state, shadow=shadow):
+                if self._should_skip(
+                    task,
+                    results,
+                    state,
+                    suppress_side_effects=suppress_side_effects,
+                ):
                     result = self._skip_result(task)
                     results = merge_task_results(results, result)
                     task_records[task.task_id] = task_records[task.task_id].model_copy(
@@ -373,10 +378,10 @@ class MultiAgentSupervisor:
                 message="处理失败，请稍后重试。",
                 trace_id=str(state["trace_id"]),
             )
-        if shadow:
+        if suppress_side_effects:
             state["notices"] = [
                 *list(state.get("notices") or []),
-                "multi_agent_shadow：未提交 Memory 副作用",
+                "只读执行：未提交 Memory 副作用",
             ]
             response = response.model_copy(update={"notices": list(state["notices"])})
         usage = state["budget_usage"].model_copy(
@@ -395,7 +400,7 @@ class MultiAgentSupervisor:
         resume: AgentResume,
         context: AgentExecutionContext,
         *,
-        shadow: bool = False,
+        suppress_side_effects: bool = False,
     ) -> AgentTurnResult:
         """从受控 Supervisor checkpoint 继续原 plan，不重新创建整轮请求。"""
         if self._checkpoint is None:
@@ -430,7 +435,7 @@ class MultiAgentSupervisor:
         outcome = await self.run(
             request,
             context=context,
-            shadow=shadow,
+            suppress_side_effects=suppress_side_effects,
             pause_for_hitl=True,
             resume=resume,
         )
@@ -1084,9 +1089,9 @@ class MultiAgentSupervisor:
         results: dict[str, AgentResultV2],
         state: dict[str, Any],
         *,
-        shadow: bool,
+        suppress_side_effects: bool,
     ) -> bool:
-        if task.task_kind is AgentTaskKind.MEMORY_COMMIT and shadow:
+        if task.task_kind is AgentTaskKind.MEMORY_COMMIT and suppress_side_effects:
             return True
         if task.task_kind is AgentTaskKind.MEMORY_COMMIT:
             if not state.get("memory_authorized", False):

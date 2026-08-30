@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -16,8 +15,6 @@ from shijiajing_agent.adapters.memory import SQLiteMemoryAdapter
 from shijiajing_agent.adapters.request_ledger import SQLiteRequestLedgerAdapter
 from shijiajing_agent.contracts import (
     AgentEventRecord,
-    AgentExecutionContext,
-    AgentRequest,
     AgentResponse,
     AgentStatus,
     MemoryApplyMode,
@@ -26,8 +23,6 @@ from shijiajing_agent.contracts import (
     now_iso,
 )
 from shijiajing_agent.domain.memory_policy import build_memory_mutation
-from shijiajing_agent.nodes.memory_nodes import make_commit_memory_node
-from shijiajing_agent.state import new_state
 from shijiajing_agent.tools import repair_events as repair_events_module
 from shijiajing_agent.tools.repair_events import main
 
@@ -145,79 +140,6 @@ async def test_repair_events_rebuilds_request_and_all_memory_events(
         for mutation in mutations
     }
     assert all(event.trace_id == response.trace_id for event in memory_events)
-
-
-@pytest.mark.asyncio
-async def test_repair_events_accepts_live_memory_event(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    ledger_path = tmp_path / "ledger.db"
-    memory_path = tmp_path / "memory.db"
-    event_path = tmp_path / "events.db"
-    response = _response()
-
-    ledger = SQLiteRequestLedgerAdapter(str(ledger_path))
-    await ledger.setup()
-    await ledger.save_response(response.session_id, response.request_id, response)
-    await ledger.close()
-
-    memory = SQLiteMemoryAdapter(str(memory_path))
-    await memory.setup()
-    mutation = build_memory_mutation(
-        "owner-1",
-        response.session_id,
-        response.request_id,
-        0,
-        MemoryDirective(
-            operation=MemoryOperation.UPSERT,
-            memory_key="max_price",
-            value=1000,
-            apply_mode=MemoryApplyMode.CONSTRAINT_DEFAULT,
-        ),
-    )
-    event_store = SQLiteEventStoreAdapter(str(event_path))
-    await event_store.setup()
-    state = new_state(
-        schema_version="1.1",
-        session_id=response.session_id,
-        request_id=response.request_id,
-        turn_id=response.turn_id,
-        trace_id=response.trace_id,
-        current_request=AgentRequest(
-            session_id=response.session_id,
-            request_id=response.request_id,
-            text="记住预算",
-        ),
-    )
-    state["execution_context"] = AgentExecutionContext(
-        memory_enabled=True,
-        memory_owner_id="owner-1",
-    )
-    state["pending_memory_mutations"] = [mutation]
-    deps = SimpleNamespace(
-        memory=memory,
-        event_store=event_store,
-        metrics=SimpleNamespace(inc=lambda *args, **kwargs: None),
-    )
-    await make_commit_memory_node(deps)(state)
-    await event_store.close()
-    await memory.close()
-
-    assert (
-        main(
-            [
-                "--dsn",
-                str(event_path),
-                "--ledger-dsn",
-                str(ledger_path),
-                "--memory-dsn",
-                str(memory_path),
-                "--dry-run",
-            ]
-        )
-        == 0
-    )
-    assert "可补建 1 条一致性事件" in capsys.readouterr().out
 
 
 @pytest.mark.asyncio

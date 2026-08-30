@@ -15,7 +15,6 @@ from shijiajing_agent.tools.preflight import _public_error_message, run_prefligh
 @pytest.mark.asyncio
 async def test_preflight_checks_native_sqlite_resources(tmp_path) -> None:
     settings = Settings(
-        graph_persistence_mode="native",
         checkpoint_backend="sqlite",
         checkpoint_dsn=str(tmp_path / "checkpoint.db"),
         request_ledger_backend="sqlite",
@@ -48,8 +47,7 @@ async def test_preflight_checks_native_sqlite_resources(tmp_path) -> None:
         "timeout_seconds": 30.0,
     }
     assert result["checked_resources"] == [
-        "checkpoint_adapter",
-        "native_checkpointer",
+        "multi_agent_checkpointer",
         "request_ledger",
         "trace",
     ]

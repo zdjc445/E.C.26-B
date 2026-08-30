@@ -22,10 +22,10 @@ from shijiajing_agent.multi_agent.planner import (
     plan_hash,
 )
 from shijiajing_agent.multi_agent.planner_contracts import PlanningOutcome
-from shijiajing_agent.multi_agent.shadow import (
-    SHADOW_REPORT_SCHEMA_VERSION,
+from shijiajing_agent.multi_agent.planner_shadow import (
+    PLANNER_SHADOW_REPORT_SCHEMA_VERSION,
     build_planner_shadow_evidence,
-    validate_shadow_report_payload,
+    validate_planner_shadow_report_payload,
 )
 from shijiajing_agent.tools.cli_support import configure_utf8_output, public_error_message
 
@@ -65,9 +65,7 @@ def _load_cases(path: Path, *, max_cases: int | None = None) -> list[tuple[str, 
         else:
             subgraph_input = payload.get("subgraph_input")
             nested = (
-                cast(dict[str, Any], subgraph_input)
-                if isinstance(subgraph_input, dict)
-                else {}
+                cast(dict[str, Any], subgraph_input) if isinstance(subgraph_input, dict) else {}
             )
             text = payload.get("text") or nested.get("text")
             selected_option_id = payload.get("selected_option_id") or nested.get(
@@ -179,9 +177,9 @@ async def build_planner_shadow_report(
         report_cases.append(
             {
                 "case_id": case_id,
-                "equivalent": not differences,
-                "legacy_signature": baseline_signature,
-                "multi_agent_signature": returned_signature,
+                "baseline_signature": baseline_signature,
+                "executed_signature": returned_signature,
+                "execution_plan_preserved": not differences,
                 "differences": differences,
                 "side_effects_blocked": True,
                 "planner_outcome": _outcome_evidence(outcome),
@@ -195,19 +193,19 @@ async def build_planner_shadow_report(
         model_version=settings.supervisor_model or "unknown",
         invariant_violation_count=invariant_violations,
     )
-    equivalent_count = sum(1 for case in report_cases if case["equivalent"])
+    preserved_count = sum(1 for case in report_cases if case["execution_plan_preserved"])
     payload: dict[str, Any] = {
-        "schema_version": SHADOW_REPORT_SCHEMA_VERSION,
-        "mode": "multi_agent_shadow",
+        "schema_version": PLANNER_SHADOW_REPORT_SCHEMA_VERSION,
+        "mode": "planner_shadow",
         "case_count": len(report_cases),
-        "equivalent_count": equivalent_count,
-        "equivalent_rate": round(equivalent_count / len(report_cases), 6),
+        "preserved_count": preserved_count,
+        "preserved_rate": round(preserved_count / len(report_cases), 6),
         "side_effects_blocked": True,
-        "gate_passed": equivalent_count == len(report_cases) and invariant_violations == 0,
+        "gate_passed": preserved_count == len(report_cases) and invariant_violations == 0,
         "cases": report_cases,
         "planner": evidence.as_dict(),
     }
-    validation_error = validate_shadow_report_payload(payload)
+    validation_error = validate_planner_shadow_report_payload(payload)
     if validation_error is not None:
         raise RuntimeError(f"Planner shadow 报告自校验失败：{validation_error}")
     return payload

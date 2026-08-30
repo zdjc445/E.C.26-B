@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from langgraph.checkpoint.base import BaseCheckpointSaver
-
 from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import (
     ExecutionPlan,
@@ -51,12 +49,6 @@ class AgentDependenciesPort(Protocol):
     cache: VersionedCachePort | None
     event_store: EventStorePort | None
     supervisor_planner: SupervisorPlannerPort | None
-
-
-class AgentGraphDependenciesPort(AgentDependenciesPort, Protocol):
-    """根图装配额外需要的 LangGraph checkpointer 类型边界。"""
-
-    graph_checkpointer: BaseCheckpointSaver[str] | None
 
 
 class SupervisorPlannerPort(Protocol):
