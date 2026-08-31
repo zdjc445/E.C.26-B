@@ -1,5 +1,26 @@
 # 受控 Multi-Agent 执行
 
+## 配套讲解图一：旧 Workflow 的问题
+
+改造前，识别、意图、检索、解释和记忆节点按预先定义的 Workflow 执行，并围绕同一份
+`AgentState` 读写数据。下图用“识别耳机并比价”展示这种架构的四个主要问题。
+
+![固定 Workflow、共享 AgentState 与整链恢复的问题](assets/01-00-fixed-workflow-problems.png)
+
+讲解重点：执行关系固化在 Workflow 中，所有节点又共享完整 `AgentState`；Retrieval 失败时缺少
+独立的任务结果和恢复边界，已完成节点可能重跑，Memory 等带副作用节点也可能被重复执行。
+
+## 配套讲解图二：用耳机比价串起受控执行
+
+统一例子：用户上传耳机图片并要求比价。下图从 Supervisor 的类型化任务 DAG 展开，
+同时展示依赖派发、任务私有输入、Checkpoint 复用和 Retrieval 失败后的局部重试。
+
+![受控 Multi-Agent 执行、任务 DAG 与故障恢复](assets/01-01-controlled-multi-agent.png)
+
+讲解重点：Recognition 和 Intent 先并行，Retrieval 等待前置结果，Explanation 再依赖
+Retrieval；任务完成后结果写入 Checkpoint。Retrieval 发生可重试故障时，Supervisor 只用新任务
+替换失败节点，已完成的 Recognition 和 Intent 不重跑，Memory Commit 还有 `mutation_id` 写入幂等。
+
 ## 讲解主线
 
 1. **旧流程与问题。** 先说明早期是单 Agent 内的固定执行链，识别、意图、检索、解释等节点围绕
