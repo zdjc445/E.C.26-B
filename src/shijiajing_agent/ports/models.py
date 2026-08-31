@@ -15,7 +15,6 @@ from shijiajing_agent.contracts import (
     ImageRef,
     IntentPatch,
     Offer,
-    ProductCanonicalizationBatch,
     RecognitionResult,
     RetrievalQuery,
     ShoppingConstraints,
@@ -54,17 +53,6 @@ class QueryRewritePort(Protocol):
         constraints: ShoppingConstraints | None,
         recognition: RecognitionResult | None,
     ) -> RetrievalQuery: ...
-
-
-class ProductCanonicalizationPort(Protocol):
-    """将跨来源商品描述抽取成统一字段补丁；最终采用值仍由领域规则校验。"""
-
-    @property
-    def version(self) -> str: ...
-
-    async def canonicalize(
-        self, offers: list[Offer], taxonomy: Taxonomy
-    ) -> ProductCanonicalizationBatch: ...
 
 
 class DynamicSchemaInductionPort(Protocol):

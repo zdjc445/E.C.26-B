@@ -39,7 +39,8 @@ async def test_preflight_checks_native_sqlite_resources(tmp_path) -> None:
         "query_rewrite": 604_800,
         "retrieval": 300,
         "explanation": 86_400,
-        "product_canonicalization": 604_800,
+            "dynamic_schema": 604_800,
+            "dynamic_canonicalization": 604_800,
     }
     assert result["postgres_pool"] == {
         "min_size": 1,

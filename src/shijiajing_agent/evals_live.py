@@ -373,7 +373,7 @@ async def live_same_item(sample: SameItemSample, deps: AgentDependencies) -> Sam
 
     a = Offer.model_validate(sample.offer_a)
     b = Offer.model_validate(sample.offer_b)
-    matcher = default_same_item_matcher(deps.taxonomy)
+    matcher = default_same_item_matcher()
     normalizer = TaxonomyNormalizer(deps.taxonomy)
     result = matcher.judge_pair(normalizer.normalize_offer(a), normalizer.normalize_offer(b))
     verdict = result.verdict

@@ -79,51 +79,36 @@ class RetrievalAgent:
             )
             canonicalization = await canonicalize_offers(
                 [item.offer for item in retrieval.candidates],
-                self._deps.taxonomy,
-                getattr(self._deps, "product_canonicalizer", None),
-                enabled=self._deps.settings.product_canonicalization_enabled,
-                batch_size=self._deps.settings.product_canonicalization_batch_size,
-                min_confidence=self._deps.settings.product_canonicalization_min_confidence,
-                cache=getattr(self._deps, "cache", None),
-                cache_ttl_seconds=self._deps.settings.product_canonicalization_cache_ttl_seconds,
-                metrics=self._deps.metrics,
-                mode=self._deps.settings.product_canonicalization_mode,
-                dynamic_schema_inducer=getattr(self._deps, "dynamic_schema_inducer", None),
-                dynamic_product_canonicalizer=getattr(
-                    self._deps, "dynamic_product_canonicalizer", None
+                getattr(self._deps, "dynamic_schema_inducer", None),
+                getattr(self._deps, "dynamic_product_canonicalizer", None),
+                schema_batch_size=self._deps.settings.dynamic_schema_batch_size,
+                canonicalization_batch_size=(
+                    self._deps.settings.dynamic_canonicalization_batch_size
                 ),
-                dynamic_schema_batch_size=self._deps.settings.dynamic_schema_batch_size,
-                dynamic_concept_min_confidence=(
+                concept_min_confidence=(
                     self._deps.settings.dynamic_schema_concept_min_confidence
                 ),
-                dynamic_role_min_confidence=(
+                role_min_confidence=(
                     self._deps.settings.dynamic_schema_role_min_confidence
                 ),
-                dynamic_role_min_support=self._deps.settings.dynamic_schema_role_min_support,
-                dynamic_field_min_confidence=(
+                role_min_support=self._deps.settings.dynamic_schema_role_min_support,
+                max_concepts=self._deps.settings.dynamic_schema_max_concepts,
+                max_attributes_per_concept=(
+                    self._deps.settings.dynamic_schema_max_attributes_per_concept
+                ),
+                field_min_confidence=(
                     self._deps.settings.dynamic_canonicalization_field_min_confidence
                 ),
+                cache=getattr(self._deps, "cache", None),
+                cache_ttl_seconds=self._deps.settings.dynamic_schema_cache_ttl_seconds,
+                metrics=self._deps.metrics,
             )
             normalized = canonicalization.candidates
             for item, candidate in zip(normalized, retrieval.candidates, strict=True):
                 item.recall_score = candidate.recall_score
             matcher = default_same_item_matcher(
-                self._deps.taxonomy,
-                accept_threshold=(
-                    self._deps.settings.dynamic_same_item_accept_threshold
-                    if self._deps.settings.product_canonicalization_mode in {"dynamic", "hybrid"}
-                    else self._deps.settings.same_item_accept_threshold
-                ),
-                review_threshold=(
-                    self._deps.settings.dynamic_same_item_review_threshold
-                    if self._deps.settings.product_canonicalization_mode in {"dynamic", "hybrid"}
-                    else self._deps.settings.same_item_review_threshold
-                ),
-                mode=(
-                    "taxonomy"
-                    if self._deps.settings.product_canonicalization_mode == "dynamic_shadow"
-                    else self._deps.settings.product_canonicalization_mode
-                ),
+                accept_threshold=self._deps.settings.same_item_accept_threshold,
+                review_threshold=self._deps.settings.same_item_review_threshold,
             )
             pairs = matcher.generate_candidates(normalized)
             review_pairs = [
@@ -154,10 +139,7 @@ class RetrievalAgent:
                     if remaining:
                         split_clusters.append(remaining)
                 clusters = split_clusters
-            splitter = SkuSplitter(
-                self._deps.taxonomy,
-                dynamic=self._deps.settings.product_canonicalization_mode in {"dynamic", "hybrid"},
-            )
+            splitter = SkuSplitter(self._deps.taxonomy)
             groups: list[SkuGroup] = []
             for cluster in clusters:
                 members = [normalized[index] for index in cluster]

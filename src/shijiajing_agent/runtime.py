@@ -174,7 +174,8 @@ async def _build_agent_facade(
         cache=cache,
         event_store=event_store,
         supervisor_planner=getattr(base, "supervisor_planner", None),
-        product_canonicalizer=getattr(base, "product_canonicalizer", None),
+        dynamic_schema_inducer=getattr(base, "dynamic_schema_inducer", None),
+        dynamic_product_canonicalizer=getattr(base, "dynamic_product_canonicalizer", None),
     )
     return AgentFacade(deps)
 

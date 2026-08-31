@@ -1,6 +1,6 @@
-"""SKU 拆分与价格聚合（方案 §14.6–§14.7）。
+"""动态 Schema 下的 SKU 拆分与价格聚合（方案 §14.6–§14.7）。
 
-对每个 SPU，按 taxonomy 声明的 ``variant_attributes`` 生成规范化 ``sku_signature``。
+对每个 SPU，按已验证局部 Schema 的 ``variant`` 字段生成规范化 ``sku_signature``。
 签名包含属性名和标准值，并按属性名排序。缺少关键 SKU 属性时该 Offer 单独成组、
 ``match_confidence`` 降低并附加风险提示。只有相同 SKU 进入同一个比价组。
 
@@ -33,33 +33,28 @@ class PriceAggregation:
 class SkuSplitter:
     """§14.6–14.7 SKU 拆分与价格聚合。"""
 
-    def __init__(self, taxonomy: Taxonomy, *, dynamic: bool = False) -> None:
+    def __init__(self, taxonomy: Taxonomy) -> None:
         self._taxonomy = taxonomy
-        self._dynamic = dynamic
 
     def split_spu(
         self,
         spu_members: list[NormalizedCandidate],
         spu_id: str,
     ) -> list[SkuGroup]:
-        """按 taxonomy variant_attributes 生成规范化 sku_signature 并分组。"""
+        """按动态 variant 字段生成规范化 sku_signature 并分组。"""
         if not spu_members:
             return []
         category_id = spu_members[0].normalized_category_id
-        dynamic_mode = self._dynamic or any(member.dynamic_schema_id for member in spu_members)
-        if dynamic_mode:
-            variant_keys = sorted(
-                {key for member in spu_members for key in member.dynamic_variant_keys}
-            )
-        else:
-            variant_keys = self._taxonomy.variant_attributes(category_id) if category_id else []
+        variant_keys = sorted(
+            {key for member in spu_members for key in member.dynamic_variant_keys}
+        )
         brand = spu_members[0].normalized_brand
         model = spu_members[0].normalized_model
 
         buckets: dict[str, list[NormalizedCandidate]] = {}
         singles: list[NormalizedCandidate] = []
         for m in spu_members:
-            signature = self._sku_signature(m, variant_keys, dynamic_mode=dynamic_mode)
+            signature = self._sku_signature(m, variant_keys)
             if signature is None:
                 singles.append(m)
             else:
@@ -92,11 +87,7 @@ class SkuSplitter:
                     brand=brand,
                     model=model,
                     missing_attrs=[k for k in variant_keys if k not in m.normalized_variant],
-                    risks=[
-                        "动态 Schema 不完整，未与其他报价直接合并"
-                        if dynamic_mode
-                        else "关键销售属性缺失，未与其他报价直接合并"
-                    ],
+                    risks=["动态 Schema 不完整，未与其他报价直接合并"],
                 )
             )
         return groups
@@ -105,15 +96,13 @@ class SkuSplitter:
         self,
         m: NormalizedCandidate,
         variant_keys: list[str],
-        *,
-        dynamic_mode: bool = False,
     ) -> str | None:
         """签名包含属性名和标准值，按属性名排序。缺失关键属性 → None。"""
-        if dynamic_mode and m.offer.sku_key:
+        if m.offer.sku_key:
             return f"__authority_sku_key__={m.offer.sku_key}"
         if not variant_keys:
             # 没有可靠动态 variant schema 时，多个 Offer 不能自动断言为同一精确 SKU。
-            return "" if not dynamic_mode else None
+            return None
         parts: list[str] = []
         for key in sorted(variant_keys):
             if key not in m.normalized_variant:

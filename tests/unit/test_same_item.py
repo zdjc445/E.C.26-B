@@ -10,14 +10,31 @@ from shijiajing_agent.domain.same_item import PairSimilarityProviders, SameItemM
 from tests.unit.conftest import offer
 
 
-def normalize(taxonomy, o: Offer) -> NormalizedCandidate:
-    return TaxonomyNormalizer(taxonomy).normalize_offer(o)
+def normalize(
+    taxonomy,
+    o: Offer,
+    *,
+    category_concept: str | None = None,
+    category_confidence: float = 0.0,
+) -> NormalizedCandidate:
+    candidate = TaxonomyNormalizer(taxonomy).normalize_offer(o)
+    return candidate.model_copy(
+        update={
+            "normalized_category_concept": category_concept,
+            "dynamic_category_confidence": category_confidence,
+        }
+    )
+
+
+def use_raw_title(candidate: NormalizedCandidate) -> NormalizedCandidate:
+    return candidate.model_copy(
+        update={"offer": candidate.offer.model_copy(update={"normalized_title": None})}
+    )
 
 
 @pytest.fixture
 def matcher(taxonomy):
     return SameItemMatcher(
-        taxonomy,
         PairSimilarityProviders(title=lambda a, b: 0.95, image=None),
     )
 
@@ -29,9 +46,9 @@ class TestPairEligibility:
         pairs = matcher.generate_candidates([a, b])
         assert pairs == [(0, 1)]
 
-    def test_different_category_rejected(self, matcher, taxonomy):
-        a = normalize(taxonomy, offer("a1", category_id="headphone"))
-        b = normalize(taxonomy, offer("b1", category_id="sneaker"))
+    def test_high_confidence_dynamic_category_conflict_rejected(self, matcher, taxonomy):
+        a = normalize(taxonomy, offer("a1"), category_concept="headphone", category_confidence=0.95)
+        b = normalize(taxonomy, offer("b1"), category_concept="sneaker", category_confidence=0.95)
         assert matcher.generate_candidates([a, b]) == []
 
     def test_different_brand_rejected(self, matcher, taxonomy):
@@ -41,7 +58,6 @@ class TestPairEligibility:
 
     def test_title_similarity_gates_pair(self, taxonomy):
         m = SameItemMatcher(
-            taxonomy,
             PairSimilarityProviders(title=lambda a, b: 0.5),
         )
         a = normalize(taxonomy, offer("a1", brand="Sony"))
@@ -87,7 +103,6 @@ class TestScoring:
     def test_missing_dimensions_renormalized(self, taxonomy):
         """缺失维度不参与，其余权重重新归一化（§14.4）。"""
         m = SameItemMatcher(
-            taxonomy,
             PairSimilarityProviders(title=lambda a, b: 1.0, image=None),
         )
         a = normalize(taxonomy, offer("a1"))
@@ -108,13 +123,12 @@ class TestCompleteLinkClustering:
             ("a", "c"): 0.1,
         }
         m = SameItemMatcher(
-            taxonomy,
             PairSimilarityProviders(title=lambda x, y: sims.get((x, y), sims.get((y, x), 0.0))),
         )
         offers = [
-            normalize(taxonomy, offer("a", model=None, title="a")),
-            normalize(taxonomy, offer("b", model=None, title="b")),
-            normalize(taxonomy, offer("c", model=None, title="c")),
+            use_raw_title(normalize(taxonomy, offer("a", title="a"))),
+            use_raw_title(normalize(taxonomy, offer("b", title="b"))),
+            use_raw_title(normalize(taxonomy, offer("c", title="c"))),
         ]
         pairs = m.generate_candidates(offers)
         clusters = m.cluster(offers, pairs)
@@ -123,13 +137,12 @@ class TestCompleteLinkClustering:
 
     def test_all_pairs_merge(self, taxonomy):
         m = SameItemMatcher(
-            taxonomy,
             PairSimilarityProviders(title=lambda a, b: 0.99),
         )
         offers = [
-            normalize(taxonomy, offer("a", model=None)),
-            normalize(taxonomy, offer("b", model=None)),
-            normalize(taxonomy, offer("c", model=None)),
+            normalize(taxonomy, offer("a")),
+            normalize(taxonomy, offer("b")),
+            normalize(taxonomy, offer("c")),
         ]
         clusters = m.cluster(offers, m.generate_candidates(offers))
         assert clusters == [[0, 1, 2]]
@@ -137,7 +150,6 @@ class TestCompleteLinkClustering:
     def test_same_item_key_bridges_clusters(self, taxonomy):
         """权威 same_item_key 允许跨标题差异合并。"""
         m = SameItemMatcher(
-            taxonomy,
             PairSimilarityProviders(title=lambda a, b: 0.99),
         )
         offers = [

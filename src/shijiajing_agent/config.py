@@ -33,10 +33,6 @@ _DEFAULTS: dict[str, str] = {
     "RETRIEVAL_TOP_K_PER_CHANNEL": "100",
     "RETRIEVAL_UNION_LIMIT": "200",
     "MATCHING_CANDIDATE_LIMIT": "60",
-    "PRODUCT_CANONICALIZATION_BATCH_SIZE": "20",
-    "PRODUCT_CANONICALIZATION_MIN_CONFIDENCE": "0.75",
-    "PRODUCT_CANONICALIZATION_CACHE_TTL_SECONDS": "604800",
-    "PRODUCT_CANONICALIZATION_MODE": "taxonomy",
     "DYNAMIC_SCHEMA_BATCH_SIZE": "60",
     "DYNAMIC_SCHEMA_CONCEPT_MIN_CONFIDENCE": "0.90",
     "DYNAMIC_SCHEMA_ROLE_MIN_CONFIDENCE": "0.90",
@@ -46,12 +42,10 @@ _DEFAULTS: dict[str, str] = {
     "DYNAMIC_SCHEMA_CACHE_TTL_SECONDS": "604800",
     "DYNAMIC_CANONICALIZATION_BATCH_SIZE": "20",
     "DYNAMIC_CANONICALIZATION_FIELD_MIN_CONFIDENCE": "0.80",
-    "DYNAMIC_SAME_ITEM_ACCEPT_THRESHOLD": "0.88",
-    "DYNAMIC_SAME_ITEM_REVIEW_THRESHOLD": "0.74",
     "BRAND_HARD_FILTER_CONFIDENCE": "0.85",
     "MODEL_HARD_FILTER_CONFIDENCE": "0.90",
-    "SAME_ITEM_ACCEPT_THRESHOLD": "0.82",
-    "SAME_ITEM_REVIEW_THRESHOLD": "0.68",
+    "SAME_ITEM_ACCEPT_THRESHOLD": "0.88",
+    "SAME_ITEM_REVIEW_THRESHOLD": "0.74",
     "RECOGNITION_REVIEW_THRESHOLD": "0.70",
     "MEMORY_RECALL_LIMIT": "20",
     "RECENT_TURNS_LIMIT": "6",
@@ -134,11 +128,6 @@ class Settings:
     retrieval_top_k_per_channel: int = 100
     retrieval_union_limit: int = 200
     matching_candidate_limit: int = 60
-    product_canonicalization_enabled: bool = True
-    product_canonicalization_mode: str = "taxonomy"
-    product_canonicalization_batch_size: int = 20
-    product_canonicalization_min_confidence: float = 0.75
-    product_canonicalization_cache_ttl_seconds: int = 604_800
     dynamic_schema_batch_size: int = 60
     dynamic_schema_concept_min_confidence: float = 0.90
     dynamic_schema_role_min_confidence: float = 0.90
@@ -148,12 +137,10 @@ class Settings:
     dynamic_schema_cache_ttl_seconds: int = 604_800
     dynamic_canonicalization_batch_size: int = 20
     dynamic_canonicalization_field_min_confidence: float = 0.80
-    dynamic_same_item_accept_threshold: float = 0.88
-    dynamic_same_item_review_threshold: float = 0.74
     brand_hard_filter_confidence: float = 0.85
     model_hard_filter_confidence: float = 0.90
-    same_item_accept_threshold: float = 0.82
-    same_item_review_threshold: float = 0.68
+    same_item_accept_threshold: float = 0.88
+    same_item_review_threshold: float = 0.74
     memory_enabled: bool = False
     memory_recall_enabled: bool = True
     memory_commit_enabled: bool = True
@@ -272,13 +259,6 @@ class Settings:
             errors.append("EVENT_STORE_BACKEND")
         if self.retrieval_fusion_strategy not in {"weighted", "rrf"}:
             errors.append(f"RETRIEVAL_FUSION_STRATEGY={self.retrieval_fusion_strategy}")
-        if self.product_canonicalization_mode not in {
-            "taxonomy",
-            "dynamic_shadow",
-            "hybrid",
-            "dynamic",
-        }:
-            errors.append(f"PRODUCT_CANONICALIZATION_MODE={self.product_canonicalization_mode}")
         for name, value in (
             ("VISION_TIMEOUT_SECONDS", self.vision_timeout_seconds),
             ("TEXT_MODEL_TIMEOUT_SECONDS", self.text_model_timeout_seconds),
@@ -295,10 +275,6 @@ class Settings:
             ("QUERY_REWRITE_CACHE_TTL_SECONDS", self.query_rewrite_cache_ttl_seconds),
             ("RETRIEVAL_CACHE_TTL_SECONDS", self.retrieval_cache_ttl_seconds),
             ("EXPLANATION_CACHE_TTL_SECONDS", self.explanation_cache_ttl_seconds),
-            (
-                "PRODUCT_CANONICALIZATION_CACHE_TTL_SECONDS",
-                self.product_canonicalization_cache_ttl_seconds,
-            ),
             ("DYNAMIC_SCHEMA_CACHE_TTL_SECONDS", self.dynamic_schema_cache_ttl_seconds),
         ):
             require_positive(name, value)
@@ -308,18 +284,12 @@ class Settings:
             ("SAME_ITEM_ACCEPT_THRESHOLD", self.same_item_accept_threshold),
             ("SAME_ITEM_REVIEW_THRESHOLD", self.same_item_review_threshold),
             ("RECOGNITION_REVIEW_THRESHOLD", self.recognition_review_threshold),
-            (
-                "PRODUCT_CANONICALIZATION_MIN_CONFIDENCE",
-                self.product_canonicalization_min_confidence,
-            ),
             ("DYNAMIC_SCHEMA_CONCEPT_MIN_CONFIDENCE", self.dynamic_schema_concept_min_confidence),
             ("DYNAMIC_SCHEMA_ROLE_MIN_CONFIDENCE", self.dynamic_schema_role_min_confidence),
             (
                 "DYNAMIC_CANONICALIZATION_FIELD_MIN_CONFIDENCE",
                 self.dynamic_canonicalization_field_min_confidence,
             ),
-            ("DYNAMIC_SAME_ITEM_ACCEPT_THRESHOLD", self.dynamic_same_item_accept_threshold),
-            ("DYNAMIC_SAME_ITEM_REVIEW_THRESHOLD", self.dynamic_same_item_review_threshold),
         ):
             require_finite_unit(name, value)
         for name, value in (
@@ -331,10 +301,6 @@ class Settings:
             ("RETRIEVAL_TOP_K_PER_CHANNEL", self.retrieval_top_k_per_channel),
             ("RETRIEVAL_UNION_LIMIT", self.retrieval_union_limit),
             ("MATCHING_CANDIDATE_LIMIT", self.matching_candidate_limit),
-            (
-                "PRODUCT_CANONICALIZATION_BATCH_SIZE",
-                self.product_canonicalization_batch_size,
-            ),
             ("DYNAMIC_SCHEMA_BATCH_SIZE", self.dynamic_schema_batch_size),
             ("DYNAMIC_SCHEMA_ROLE_MIN_SUPPORT", self.dynamic_schema_role_min_support),
             ("DYNAMIC_SCHEMA_MAX_CONCEPTS", self.dynamic_schema_max_concepts),
@@ -360,8 +326,6 @@ class Settings:
             require_positive(name, value)
         if self.same_item_review_threshold > self.same_item_accept_threshold:
             errors.append("SAME_ITEM_THRESHOLD_ORDER")
-        if self.dynamic_same_item_review_threshold > self.dynamic_same_item_accept_threshold:
-            errors.append("DYNAMIC_SAME_ITEM_THRESHOLD_ORDER")
         if self.postgres_pool_min_size < 1:
             errors.append("POSTGRES_POOL_MIN_SIZE")
         if self.postgres_pool_max_size < self.postgres_pool_min_size:
@@ -466,15 +430,6 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         retrieval_top_k_per_channel=geti("RETRIEVAL_TOP_K_PER_CHANNEL"),
         retrieval_union_limit=geti("RETRIEVAL_UNION_LIMIT"),
         matching_candidate_limit=geti("MATCHING_CANDIDATE_LIMIT"),
-        product_canonicalization_enabled=getb("PRODUCT_CANONICALIZATION_ENABLED", True),
-        product_canonicalization_mode=(
-            get("PRODUCT_CANONICALIZATION_MODE") or _DEFAULTS["PRODUCT_CANONICALIZATION_MODE"]
-        ),
-        product_canonicalization_batch_size=geti("PRODUCT_CANONICALIZATION_BATCH_SIZE"),
-        product_canonicalization_min_confidence=getf("PRODUCT_CANONICALIZATION_MIN_CONFIDENCE"),
-        product_canonicalization_cache_ttl_seconds=geti(
-            "PRODUCT_CANONICALIZATION_CACHE_TTL_SECONDS"
-        ),
         dynamic_schema_batch_size=geti("DYNAMIC_SCHEMA_BATCH_SIZE"),
         dynamic_schema_concept_min_confidence=getf("DYNAMIC_SCHEMA_CONCEPT_MIN_CONFIDENCE"),
         dynamic_schema_role_min_confidence=getf("DYNAMIC_SCHEMA_ROLE_MIN_CONFIDENCE"),
@@ -486,8 +441,6 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         dynamic_canonicalization_field_min_confidence=getf(
             "DYNAMIC_CANONICALIZATION_FIELD_MIN_CONFIDENCE"
         ),
-        dynamic_same_item_accept_threshold=getf("DYNAMIC_SAME_ITEM_ACCEPT_THRESHOLD"),
-        dynamic_same_item_review_threshold=getf("DYNAMIC_SAME_ITEM_REVIEW_THRESHOLD"),
         brand_hard_filter_confidence=getf("BRAND_HARD_FILTER_CONFIDENCE"),
         model_hard_filter_confidence=getf("MODEL_HARD_FILTER_CONFIDENCE"),
         same_item_accept_threshold=getf("SAME_ITEM_ACCEPT_THRESHOLD"),

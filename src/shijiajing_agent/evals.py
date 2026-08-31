@@ -669,7 +669,7 @@ def evaluate_same_item(
     if not n:
         return [_metric(name, None, 0, 0, source) for name in names]
 
-    matcher = default_same_item_matcher(taxonomy)
+    matcher = default_same_item_matcher()
     normalizer = TaxonomyNormalizer(taxonomy)
     splitter = SkuSplitter(taxonomy)
 

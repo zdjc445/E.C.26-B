@@ -27,9 +27,7 @@ from shijiajing_agent.domain.open_world_normalization import (
 )
 from shijiajing_agent.domain.product_canonicalization import (
     canonicalize_offers,
-    dynamic_canonicalize_offers,
 )
-from shijiajing_agent.domain.taxonomy import Taxonomy
 
 
 def _offer(offer_id: str, title: str) -> Offer:
@@ -244,7 +242,7 @@ async def test_dynamic_batch_failure_returns_generic_candidates() -> None:
         _offer("a", "Acme Widget red").model_copy(update={"brand": "Acme"}),
         _offer("b", "Acme Widget blue").model_copy(update={"brand": "Acme"}),
     ]
-    run = await dynamic_canonicalize_offers(offers, _SchemaInducer(), _BrokenCanonicalizer())
+    run = await canonicalize_offers(offers, _SchemaInducer(), _BrokenCanonicalizer())
 
     assert run.fallback_batches == 1
     assert run.candidates[0].normalized_category_concept is None
@@ -256,66 +254,9 @@ async def test_dynamic_schema_and_exact_results_are_cached() -> None:
     canonicalizer = _Canonicalizer()
     cache = InMemoryVersionedCache()
 
-    first = await dynamic_canonicalize_offers(offers, _SchemaInducer(), canonicalizer, cache=cache)
-    second = await dynamic_canonicalize_offers(offers, _SchemaInducer(), canonicalizer, cache=cache)
+    first = await canonicalize_offers(offers, _SchemaInducer(), canonicalizer, cache=cache)
+    second = await canonicalize_offers(offers, _SchemaInducer(), canonicalizer, cache=cache)
 
     assert first.model_calls == 2
     assert second.cache_hits == 2
     assert canonicalizer.calls == 1
-
-
-async def test_dynamic_shadow_keeps_static_output_and_records_field_diffs(
-    taxonomy: Taxonomy,
-) -> None:
-    offers = [_offer("a", "Acme Widget red"), _offer("b", "Acme Widget blue")]
-
-    run = await canonicalize_offers(
-        offers,
-        taxonomy,
-        canonicalizer=None,
-        mode="dynamic_shadow",
-        dynamic_schema_inducer=_SchemaInducer(),
-        dynamic_product_canonicalizer=_Canonicalizer(),
-    )
-
-    assert all(candidate.normalized_category_id is None for candidate in run.candidates)
-    assert all(
-        candidate.normalized_category_concept == "Widget"
-        for candidate in run.shadow_candidates or []
-    )
-    assert run.schema_id is not None
-    assert run.shadow_summary is not None
-    assert run.shadow_summary["changed_candidate_count"] == 2
-    assert run.shadow_summary["category_fill_count"] == 2
-    assert run.shadow_summary["field_difference_count"] == 2
-
-
-async def test_hybrid_preserves_taxonomy_fields_and_fills_dynamic_variant(
-    taxonomy: Taxonomy,
-) -> None:
-    offers = [
-        _offer("a", "Sony Widget red").model_copy(
-            update={"category_id": "headphone", "brand": "Sony", "variant_attributes": {}}
-        ),
-        _offer("b", "Sony Widget blue").model_copy(
-            update={"category_id": "headphone", "brand": "Sony", "variant_attributes": {}}
-        ),
-    ]
-
-    run = await canonicalize_offers(
-        offers,
-        taxonomy,
-        canonicalizer=None,
-        mode="hybrid",
-        dynamic_schema_inducer=_SchemaInducer(),
-        dynamic_product_canonicalizer=_VariantCanonicalizer(),
-    )
-
-    assert [candidate.normalized_category_id for candidate in run.candidates] == [
-        "headphone",
-        "headphone",
-    ]
-    assert all(candidate.normalized_category_concept is None for candidate in run.candidates)
-    assert all(candidate.normalized_brand == "Sony" for candidate in run.candidates)
-    assert run.candidates[0].normalized_variant == {"color": "red"}
-    assert run.candidates[1].normalized_variant == {"color": "blue"}

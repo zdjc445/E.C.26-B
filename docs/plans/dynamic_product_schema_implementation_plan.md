@@ -1,7 +1,7 @@
 # LLM 动态商品 Schema 实施方案
 
-> 文档状态：目标设计（Target Design）；阶段 1 的契约、纯领域校验、通用基线和迁移入口已实现，
-> 阶段 2 已具备字段级 shadow 差异记录、阶段 3 已具备缺失字段补齐入口，但 pair/cluster 评测与生产 DoD 尚未完成。
+> 文档状态：动态主路径已实现，旧商品归一化模式、协议和配置已删除；真实未知品类金标、
+> pair/cluster 评测与生产 DoD 仍需补齐。
 > 当前实现与运行行为见 [`docs/product_canonicalization.md`](../product_canonicalization.md)。
 > 本方案的目标是逐步移除 `data/taxonomy.json` 对商品归一化、同款召回和 SKU 拆分的运行时准入作用。
 
@@ -54,7 +54,7 @@
 - 低置信、角色不一致或证据不足的字段不会成为硬冲突依据；
 - 模型和缓存失败不降低检索可用性，也不产生激进合并；
 - Retrieval Agent 统一复用同一应用服务和采纳策略；
-- 支持 shadow、hybrid、dynamic 分阶段迁移和一键回滚。
+- 运行时只有动态局部 Schema 主路径，失败时按批回退通用规则基线。
 
 ### 3.2 非目标
 
@@ -452,10 +452,10 @@ sha256(canonical_json(verified_schema_without_runtime_timestamps))
 - `open_world_candidate_total{decision}`
 - `open_world_singleton_spu_total`
 - `open_world_singleton_sku_total`
-- `same_item_pair_total{verdict,mode}`
+- `same_item_pair_total{verdict}`
 - `schema_drift_total{concept_fingerprint}`
 
-Trace 中增加 `mode`、`schema_id`、`concept_count`、`accepted_field_count`、
+Trace 中增加 `schema_id`、`concept_count`、`accepted_field_count`、
 `descriptive_only_count` 和降级原因，不写入未经脱敏的完整标题。
 
 ## 14. 代码改造范围
@@ -477,7 +477,7 @@ Trace 中增加 `mode`、`schema_id`、`concept_count`、`accepted_field_count`�
 - 新增 `domain/open_world_normalization.py`
   - `GenericNormalizer`、证据校验和动态补丁采纳；
 - 调整 `domain/product_canonicalization.py`
-  - 统一 `taxonomy/dynamic_shadow/hybrid/dynamic` 四种策略入口；
+  - 只保留动态 Schema 发现、字段归一化和通用基线回退；
 - 调整 `domain/same_item.py`
   - 移除动态模式对静态 category ID 的硬依赖；
   - 增加强身份锚点门禁和高置信 concept 冲突；
@@ -499,19 +499,17 @@ Trace 中增加 `mode`、`schema_id`、`concept_count`、`accepted_field_count`�
 ### 14.4 编排与配置
 
 - `multi_agent/agents/retrieval.py`
-  - 必须调用统一的 `canonicalize_offers` 策略服务；
-  - shadow 结果不能改变当前输出；
+  - 必须调用唯一的 `canonicalize_offers` 动态服务；
 - `ports/dependencies.py`、`deps.py`
   - 注入两个新端口；
 - `config.py`、`.env.example`、`docs/configuration.md`
-  - 增加迁移模式、阈值、批大小和缓存 TTL；
+  - 只保留动态阈值、批大小和缓存 TTL，不提供模式开关；
 - `state.py`
   - 只保存后续恢复确实需要的 verified schema 摘要和 `schema_id`，避免放大 Checkpoint。
 
 建议配置：
 
 ```text
-PRODUCT_CANONICALIZATION_MODE=taxonomy|dynamic_shadow|hybrid|dynamic
 DYNAMIC_SCHEMA_BATCH_SIZE=60
 DYNAMIC_SCHEMA_CONCEPT_MIN_CONFIDENCE=0.90
 DYNAMIC_SCHEMA_ROLE_MIN_CONFIDENCE=0.90
@@ -519,13 +517,13 @@ DYNAMIC_SCHEMA_ROLE_MIN_SUPPORT=2
 DYNAMIC_SCHEMA_CACHE_TTL_SECONDS=604800
 DYNAMIC_CANONICALIZATION_BATCH_SIZE=20
 DYNAMIC_CANONICALIZATION_FIELD_MIN_CONFIDENCE=0.80
-DYNAMIC_SAME_ITEM_ACCEPT_THRESHOLD=0.88
-DYNAMIC_SAME_ITEM_REVIEW_THRESHOLD=0.74
+SAME_ITEM_ACCEPT_THRESHOLD=0.88
+SAME_ITEM_REVIEW_THRESHOLD=0.74
 ```
 
 这些值是实施初值，不是未经评测即可上线的承诺。
 
-## 15. 分阶段迁移
+## 15. 迁移状态
 
 ### 阶段 0：建立真实金标
 
@@ -545,32 +543,14 @@ DYNAMIC_SAME_ITEM_REVIEW_THRESHOLD=0.74
 
 退出条件：纯领域测试无外部依赖、完全可复现，非法模型输出不能越过校验层。
 
-### 阶段 2：`dynamic_shadow`
+### 已完成
 
-- 在 Retrieval Agent 中并行执行动态链路；
-- 不改变候选、SPU、SKU、排序或用户响应；
-- 记录动态结果与当前 taxonomy 结果的字段、pair、cluster 差异；
-- shadow 路径不允许产生业务缓存之外的副作用。
-
-退出条件：获得足够真实差异样本，Schema 漂移和成本可量化。
-
-### 阶段 3：`hybrid`
-
-- 当前 taxonomy 可解析的商品继续使用现有结果；
-- taxonomy miss 或字段缺失商品使用动态结果；
-- 动态字段只能补缺，不覆盖当前可信结构化字段；
-- 自动合并使用动态模式高阈值，其他结果进入 review 或 singleton。
-
-退出条件：未知品类召回提升，且错误跨 SPU/SKU 合并不高于发布门槛。
-
-### 阶段 4：`dynamic`
-
-- 动态 Schema 成为主路径；
-- `taxonomy` 模式保留一个发布周期作为显式回滚；
+- 动态 Schema 已成为唯一商品归一化路径；
 - `data/taxonomy.json` 不再作为请求时准入和属性角色事实源；
-- 观察稳定后删除旧路径及其专用配置。
+- 旧静态归一化、影子比较、合并策略代码和专用配置已经删除；
+- 模型或 Schema 异常时按批回退 `GenericNormalizer`。
 
-退出条件：生产灰度、回滚演练、缓存故障和模型故障演练全部通过。
+剩余退出条件：生产灰度、缓存故障和模型故障演练全部通过。
 
 ## 16. 测试与评测
 
@@ -593,9 +573,7 @@ DYNAMIC_SAME_ITEM_REVIEW_THRESHOLD=0.74
 - Ark 两阶段结构化输出符合 Pydantic 契约；
 - 商品文本 Prompt 注入不能改变输出协议；
 - Retrieval Agent 对相同输入产生稳定的 verified candidates 和 SKU groups；
-- `dynamic_shadow` 不改变对外结果或副作用；
-- `hybrid` 只对 miss/缺失字段启用动态补丁；
-- `dynamic` 故障时检索仍成功并返回保守结果；
+- 动态链路故障时检索仍成功并返回保守结果；
 - Checkpoint 恢复不重复执行已缓存的模型批次。
 
 ### 16.3 离线指标

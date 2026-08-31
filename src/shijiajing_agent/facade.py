@@ -38,7 +38,6 @@ from shijiajing_agent.ports.models import (
     DynamicSchemaInductionPort,
     ExplanationModelPort,
     IntentModelPort,
-    ProductCanonicalizationPort,
     QueryRewritePort,
     VisionModelPort,
 )
@@ -66,7 +65,6 @@ class AgentDependencies:
     cache: VersionedCachePort | None = None
     event_store: EventStorePort | None = None
     supervisor_planner: SupervisorPlannerPort | None = None
-    product_canonicalizer: ProductCanonicalizationPort | None = None
     dynamic_schema_inducer: DynamicSchemaInductionPort | None = None
     dynamic_product_canonicalizer: DynamicProductCanonicalizationPort | None = None
 

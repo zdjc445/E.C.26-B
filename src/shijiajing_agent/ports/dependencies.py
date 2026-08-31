@@ -20,7 +20,6 @@ from shijiajing_agent.ports.models import (
     DynamicSchemaInductionPort,
     ExplanationModelPort,
     IntentModelPort,
-    ProductCanonicalizationPort,
     QueryRewritePort,
     VisionModelPort,
 )
@@ -37,7 +36,6 @@ class AgentDependenciesPort(Protocol):
     vision: VisionModelPort
     intent: IntentModelPort
     query_rewrite: QueryRewritePort
-    product_canonicalizer: ProductCanonicalizationPort | None
     dynamic_schema_inducer: DynamicSchemaInductionPort | None
     dynamic_product_canonicalizer: DynamicProductCanonicalizationPort | None
     explanation: ExplanationModelPort

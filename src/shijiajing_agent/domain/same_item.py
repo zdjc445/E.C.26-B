@@ -18,7 +18,6 @@ from typing import Protocol
 from shijiajing_agent.contracts import NormalizedCandidate, Offer
 from shijiajing_agent.domain.normalization import TaxonomyNormalizer
 from shijiajing_agent.domain.open_world_normalization import open_text_equal
-from shijiajing_agent.domain.taxonomy import Taxonomy
 
 
 class TitleSimilarityFn(Protocol):
@@ -31,8 +30,8 @@ class ImageSimilarityFn(Protocol):
     # 权重（工厂与匹配器共用，保持单一来源）。
 
 
-_SAME_ACCEPT = 0.82
-_SAME_REVIEW = 0.68
+_SAME_ACCEPT = 0.88
+_SAME_REVIEW = 0.74
 
 
 def default_title_similarity(a: str, b: str) -> float:
@@ -63,22 +62,18 @@ def _pair_title_similarity(
 
 
 def default_same_item_matcher(
-    taxonomy: Taxonomy,
     *,
     accept_threshold: float = _SAME_ACCEPT,
     review_threshold: float = _SAME_REVIEW,
-    mode: str = "taxonomy",
 ) -> SameItemMatcher:
     """统一 SameItemMatcher 工厂（§10）：生产节点与评测共用同一工厂与参数。
 
     本阶段不改变评分公式；后续如生产接入图像相似度，只需扩展该工厂。
     """
     return SameItemMatcher(
-        taxonomy,
         PairSimilarityProviders(title=default_title_similarity),
         accept_threshold=accept_threshold,
         review_threshold=review_threshold,
-        mode=mode,
     )
 
 
@@ -115,20 +110,14 @@ _TITLE_PAIR_CANDIDATE_THRESHOLD = 0.85
 class SameItemMatcher:
     def __init__(
         self,
-        taxonomy: Taxonomy,
         providers: PairSimilarityProviders,
         *,
         accept_threshold: float = _SAME_ACCEPT,
         review_threshold: float = _SAME_REVIEW,
-        mode: str = "taxonomy",
     ) -> None:
-        self._taxonomy = taxonomy
         self._providers = providers
         self._accept = accept_threshold
         self._review = review_threshold
-        self._mode = mode
-        self._dynamic = mode in {"dynamic", "dynamic_shadow", "hybrid"}
-        self._normalizer = TaxonomyNormalizer(taxonomy)
 
     # ------------------------------------------------------------------
     def generate_candidates(self, candidates: list[NormalizedCandidate]) -> list[tuple[int, int]]:
@@ -142,17 +131,9 @@ class SameItemMatcher:
         return pairs
 
     def _pair_eligible(self, a: NormalizedCandidate, b: NormalizedCandidate) -> bool:
-        # 静态 Taxonomy 仍然按 category_id 硬隔离；动态模式只有双方概念都高置信时才硬隔离。
+        # 只有双方动态概念都达到高置信时，品类冲突才作为硬隔离条件。
         if (
-            a.normalized_category_id
-            and b.normalized_category_id
-            and a.normalized_category_id != b.normalized_category_id
-            and not self._dynamic
-        ):
-            return False
-        if (
-            self._dynamic
-            and a.normalized_category_concept
+            a.normalized_category_concept
             and b.normalized_category_concept
             and a.normalized_category_concept != b.normalized_category_concept
             and a.dynamic_category_confidence >= 0.90
@@ -172,45 +153,29 @@ class SameItemMatcher:
         # 双方型号均非空但不同 → 否决
         if a.normalized_model and b.normalized_model and a.normalized_model != b.normalized_model:
             return False
-        if self._dynamic:
-            # 动态模式没有可靠品牌+型号锚点时最多进入 review，不能自动合并。
-            if not (
-                a.normalized_brand
-                and b.normalized_brand
-                and a.normalized_model
-                and b.normalized_model
-            ):
-                return False
-            if not open_text_equal(a.normalized_brand, b.normalized_brand):
-                return False
-            if not open_text_equal(a.normalized_model, b.normalized_model):
-                return False
-            return (
-                self._providers.title(_candidate_title(a), _candidate_title(b))
-                >= _TITLE_PAIR_CANDIDATE_THRESHOLD
-            )
-
-        # 品类+品牌一致，标题语义相似度 ≥ 0.85
-        if a.normalized_category_id and a.normalized_category_id == b.normalized_category_id:
-            if a.normalized_brand or b.normalized_brand:
-                if not a.normalized_brand or not b.normalized_brand:
-                    return False
-                sim = self._providers.title(_candidate_title(a), _candidate_title(b))
-                return sim >= _TITLE_PAIR_CANDIDATE_THRESHOLD
+        # 没有可靠品牌+型号锚点时不生成自动聚类候选。
+        if not (
+            a.normalized_brand
+            and b.normalized_brand
+            and a.normalized_model
+            and b.normalized_model
+        ):
             return False
-        return False
+        if not open_text_equal(a.normalized_brand, b.normalized_brand):
+            return False
+        if not open_text_equal(a.normalized_model, b.normalized_model):
+            return False
+        return (
+            self._providers.title(_candidate_title(a), _candidate_title(b))
+            >= _TITLE_PAIR_CANDIDATE_THRESHOLD
+        )
 
     # ------------------------------------------------------------------
     def judge_pair(self, a: NormalizedCandidate, b: NormalizedCandidate) -> PairResult:
         """成对判定：硬冲突否决 → 分数 → 结论。"""
         hard: list[str] = []
-        cat_a, cat_b = a.normalized_category_id, b.normalized_category_id
-        if cat_a and cat_b and cat_a != cat_b:
-            if not self._dynamic:
-                hard.append("category")
         if (
-            self._dynamic
-            and a.normalized_category_concept
+            a.normalized_category_concept
             and b.normalized_category_concept
             and a.normalized_category_concept != b.normalized_category_concept
             and a.dynamic_category_confidence >= 0.90
@@ -279,8 +244,7 @@ class SameItemMatcher:
             verdict = "different"
 
         if (
-            self._dynamic
-            and not same_key
+            not same_key
             and not (
                 a.normalized_brand
                 and b.normalized_brand

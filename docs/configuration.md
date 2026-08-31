@@ -59,7 +59,6 @@ export SHIJIAJING_ARK_API_KEY=...
 | `SHIJIAJING_QUERY_REWRITE_CACHE_TTL_SECONDS` | 604800 | query_rewrite 缓存 TTL |
 | `SHIJIAJING_RETRIEVAL_CACHE_TTL_SECONDS` | 300 | retrieval 缓存 TTL |
 | `SHIJIAJING_EXPLANATION_CACHE_TTL_SECONDS` | 86400 | explanation 缓存 TTL |
-| `SHIJIAJING_PRODUCT_CANONICALIZATION_CACHE_TTL_SECONDS` | 604800 | 商品归一化结构化结果缓存 TTL |
 | `SHIJIAJING_POSTGRES_POOL_MIN_SIZE` | 1 | PostgreSQL 业务适配器连接池最小连接数 |
 | `SHIJIAJING_POSTGRES_POOL_MAX_SIZE` | 4 | PostgreSQL 业务适配器连接池最大连接数 |
 | `SHIJIAJING_POSTGRES_POOL_TIMEOUT_SECONDS` | 30 | PostgreSQL 连接池等待连接超时 |
@@ -68,13 +67,19 @@ export SHIJIAJING_ARK_API_KEY=...
 | `SHIJIAJING_RETRIEVAL_TOP_K_PER_CHANNEL` | 100 | 每通道 Top-K |
 | `SHIJIAJING_RETRIEVAL_UNION_LIMIT` | 200 | 通道合并上限 |
 | `SHIJIAJING_MATCHING_CANDIDATE_LIMIT` | 60 | 同款匹配候选上限 |
-| `SHIJIAJING_PRODUCT_CANONICALIZATION_ENABLED` | `true` | 是否在聚类前调用 LLM 商品归一化组件 |
-| `SHIJIAJING_PRODUCT_CANONICALIZATION_BATCH_SIZE` | 20 | 单次商品归一化模型调用的 Offer 数量 |
-| `SHIJIAJING_PRODUCT_CANONICALIZATION_MIN_CONFIDENCE` | 0.75 | 采纳模型字段的最低证据置信度 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_BATCH_SIZE` | 60 | 单次局部 Schema 发现处理的 Offer 数量 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_CONCEPT_MIN_CONFIDENCE` | 0.90 | 采纳动态品类概念的最低置信度 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_ROLE_MIN_CONFIDENCE` | 0.90 | 采纳身份/规格字段角色的最低置信度 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_ROLE_MIN_SUPPORT` | 2 | 身份/规格字段角色所需的最小跨样本支持数 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_MAX_CONCEPTS` | 16 | 单批最多保留的动态品类概念数 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_MAX_ATTRIBUTES_PER_CONCEPT` | 64 | 每个概念最多保留的属性数 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_CACHE_TTL_SECONDS` | 604800 | 动态 Schema 与归一化结果缓存 TTL |
+| `SHIJIAJING_DYNAMIC_CANONICALIZATION_BATCH_SIZE` | 20 | 单次动态字段归一化处理的 Offer 数量 |
+| `SHIJIAJING_DYNAMIC_CANONICALIZATION_FIELD_MIN_CONFIDENCE` | 0.80 | 采纳动态字段值的最低置信度 |
 | `SHIJIAJING_BRAND_HARD_FILTER_CONFIDENCE` | 0.85 | 品牌硬过滤最低置信 |
 | `SHIJIAJING_MODEL_HARD_FILTER_CONFIDENCE` | 0.90 | 型号硬过滤最低置信 |
-| `SHIJIAJING_SAME_ITEM_ACCEPT_THRESHOLD` | 0.82 | 同款接受阈值 |
-| `SHIJIAJING_SAME_ITEM_REVIEW_THRESHOLD` | 0.68 | 同款人工复核阈值 |
+| `SHIJIAJING_SAME_ITEM_ACCEPT_THRESHOLD` | 0.88 | 同款接受阈值 |
+| `SHIJIAJING_SAME_ITEM_REVIEW_THRESHOLD` | 0.74 | 同款人工复核阈值 |
 
 二期工程化开关：
 
@@ -153,8 +158,8 @@ Supervisor/task Checkpoint 要求 `SHIJIAJING_CHECKPOINT_DSN`；启用 HITL 时�
 且 `SAME_ITEM_REVIEW_THRESHOLD` 不得大于 `SAME_ITEM_ACCEPT_THRESHOLD`。校验失败返回
 精确字段名，启动检查不得静默继续。
 
-六类缓存 TTL 分别对应 `vision`、`intent`、`query_rewrite`、`retrieval`、`explanation` 和
-`product_canonicalization`
+七类缓存 TTL 分别对应 `vision`、`intent`、`query_rewrite`、`retrieval`、`explanation`、
+`dynamic_schema` 和 `dynamic_canonicalization`
 命名空间，并由对应 Agent 或领域服务从 `Settings` 读取。preflight JSON 的
 `cache_ttl_seconds` 显示实际生效值，所有 TTL 必须为至少 `1` 秒。
 
@@ -172,9 +177,9 @@ Supervisor/task Checkpoint 要求 `SHIJIAJING_CHECKPOINT_DSN`；启用 HITL 时�
 - `make_deps(settings)`：抛 `ValueError("缺少必要配置：...")`。
 - 应用层（`AgentFacade`）不产生任何配置默认值——缺失即报错，不做静默降级
   到假数据（样例数据只能通过显式 Fake 端口注入，见 tests/multi_agent/conftest.py）。
-### 商品归一化迁移
+### 动态商品归一化
 
-`PRODUCT_CANONICALIZATION_MODE` 支持 `taxonomy`、`dynamic_shadow`、`hybrid` 和 `dynamic`。
-默认值为 `taxonomy`；动态模式使用请求级局部 Schema，Schema 与模型不可用时保守回退到通用
-规则基线，不阻断检索。动态阈值、批大小与缓存 TTL 分别由 `DYNAMIC_SCHEMA_*` 和
-`DYNAMIC_CANONICALIZATION_*` 配置项控制。动态 Schema 缓存只是性能优化，不是商品事实源。
+商品归一化固定使用请求级局部 Schema，不再提供模式开关。Schema 发现或字段归一化模型不可用时，
+当前批次保守回退到通用规则基线，不阻断检索。阈值、批大小与缓存 TTL 由
+`DYNAMIC_SCHEMA_*` 和 `DYNAMIC_CANONICALIZATION_*` 配置项控制；Schema 缓存只是性能优化，
+不是商品事实源。

@@ -989,24 +989,6 @@ class Offer(BaseModel):
         return v
 
 
-class CanonicalFieldEvidence(BaseModel):
-    """LLM 商品归一化字段的原文证据；系统会再次校验它确实存在于 Offer。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    field_path: str = Field(
-        min_length=1,
-        max_length=160,
-        pattern=(
-            r"^(category_id|brand|model|"
-            r"identity_attributes\.[A-Za-z0-9_:-]+|"
-            r"variant_attributes\.[A-Za-z0-9_:-]+)$"
-        ),
-    )
-    raw_value: str = Field(min_length=1, max_length=256)
-    confidence: float = Field(ge=0.0, le=1.0)
-
-
 _DYNAMIC_KEY_RE = r"^[a-z][a-z0-9_]{0,63}$"
 _DYNAMIC_SOURCE_PATH_RE = (
     r"^(title|category_id|brand|model|"
@@ -1220,58 +1202,6 @@ class DynamicFieldStatus(StrEnum):
     DESCRIPTIVE_ONLY = "descriptive_only"
     REJECTED = "rejected"
     UNRESOLVED = "unresolved"
-
-
-class ProductCanonicalizationItem(BaseModel):
-    """模型提出的商品字段归一化补丁；不是最终可信领域对象。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    offer_id: str = Field(min_length=1, max_length=256)
-    category_id: str | None = Field(default=None, max_length=128)
-    brand: str | None = Field(default=None, max_length=256)
-    model: str | None = Field(default=None, max_length=256)
-    identity_attributes: dict[str, str] = Field(default_factory=dict[str, str])
-    variant_attributes: dict[str, str] = Field(default_factory=dict[str, str])
-    evidence: list[CanonicalFieldEvidence] = Field(
-        default_factory=list[CanonicalFieldEvidence], max_length=64
-    )
-    unresolved_fields: list[str] = Field(default_factory=list[str], max_length=32)
-
-    @model_validator(mode="after")
-    def _bounded_attributes_and_evidence(self) -> ProductCanonicalizationItem:
-        for bucket_name, bucket in (
-            ("identity_attributes", self.identity_attributes),
-            ("variant_attributes", self.variant_attributes),
-        ):
-            if len(bucket) > 32:
-                raise ValueError(f"{bucket_name} 最多 32 个字段")
-            for key, value in bucket.items():
-                if not key or len(key) > 128 or not value or len(value) > 256:
-                    raise ValueError(f"{bucket_name} 包含非法键值")
-        paths = [item.field_path for item in self.evidence]
-        if len(paths) != len(set(paths)):
-            raise ValueError("同一 field_path 只能提供一条证据")
-        if any(not item or len(item) > 160 for item in self.unresolved_fields):
-            raise ValueError("unresolved_fields 包含非法字段名")
-        return self
-
-
-class ProductCanonicalizationBatch(BaseModel):
-    """一次批量商品归一化模型输出。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    items: list[ProductCanonicalizationItem] = Field(
-        default_factory=list[ProductCanonicalizationItem], max_length=100
-    )
-
-    @model_validator(mode="after")
-    def _unique_offer_ids(self) -> ProductCanonicalizationBatch:
-        ids = [item.offer_id for item in self.items]
-        if len(ids) != len(set(ids)):
-            raise ValueError("canonicalization items 的 offer_id 不能重复")
-        return self
 
 
 class RetrievalCandidate(BaseModel):

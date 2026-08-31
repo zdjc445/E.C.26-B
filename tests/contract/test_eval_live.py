@@ -316,9 +316,9 @@ class TestLiveRunners:
         recorded = await live_same_item(sample, deps)
         assert recorded.verdict == "same"
         # 与生产节点同一工厂：阈值一致
-        matcher = default_same_item_matcher(deps.taxonomy)
-        assert matcher._accept == 0.82
-        assert matcher._review == 0.68
+        matcher = default_same_item_matcher()
+        assert matcher._accept == 0.88
+        assert matcher._review == 0.74
 
     @pytest.mark.asyncio
     async def test_live_ranking_saves_real_explanation(
@@ -427,5 +427,5 @@ class TestRunManifest:
         assert data["models"]["vision"] == "v1"
         assert data["taxonomy_version"] == taxonomy.taxonomy_version  # type: ignore[attr-defined]
         assert data["code_commit"]  # 非空（仓库内或 unknown）
-        assert data["params"]["same_item_accept_threshold"] == 0.82
+        assert data["params"]["same_item_accept_threshold"] == 0.88
         assert data["index"]["type"] == "milvus"

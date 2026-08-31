@@ -9,8 +9,14 @@ from shijiajing_agent.domain.sku import SkuSplitter
 from tests.unit.conftest import offer
 
 
-def norm(taxonomy, o):
-    return TaxonomyNormalizer(taxonomy).normalize_offer(o)
+def norm(taxonomy, o, *, variant_keys=("color", "set_type")):
+    candidate = TaxonomyNormalizer(taxonomy).normalize_offer(o)
+    return candidate.model_copy(
+        update={
+            "dynamic_schema_id": "test-schema",
+            "dynamic_variant_keys": list(variant_keys),
+        }
+    )
 
 
 @pytest.fixture
@@ -44,18 +50,18 @@ class TestSkuSplit:
         single = [g for g in groups if g.missing_sku_attributes]
         assert len(single) == 1
         assert single[0].offer_count == 1
-        assert "关键销售属性缺失" in single[0].risks[0]
+        assert "动态 Schema 不完整" in single[0].risks[0]
         # 缺失关键属性降 confidence（×0.9）
         assert single[0].match_confidence < 1.0
 
     def test_no_variant_keys_single_group(self, taxonomy, splitter):
         members = [
-            norm(taxonomy, offer("a1", variant={})),
-            norm(taxonomy, offer("b1", variant={})),
+            norm(taxonomy, offer("a1", variant={}), variant_keys=()),
+            norm(taxonomy, offer("b1", variant={}), variant_keys=()),
         ]
         groups = splitter.split_spu(members, "spu:test")
-        assert len(groups) == 1
-        assert groups[0].offer_count == 2
+        assert len(groups) == 2
+        assert all(group.offer_count == 1 for group in groups)
 
 
 class TestPriceAggregation:

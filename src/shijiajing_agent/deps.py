@@ -12,7 +12,6 @@ from pathlib import Path
 from shijiajing_agent.adapters.ark_models import (
     ArkDynamicProductCanonicalizer,
     ArkDynamicSchemaInducer,
-    ArkProductCanonicalizer,
     build_ark_models,
 )
 from shijiajing_agent.adapters.ark_supervisor_planner import ArkSupervisorPlanner
@@ -88,9 +87,6 @@ def make_deps(
 
     vision, intent, query_rewrite, explanation = build_ark_models(settings, metrics=metrics)
     shared_client = getattr(vision, "client", None)
-    product_canonicalizer = (
-        ArkProductCanonicalizer(shared_client) if shared_client is not None else None
-    )
     dynamic_schema_inducer = (
         ArkDynamicSchemaInducer(shared_client) if shared_client is not None else None
     )
@@ -98,7 +94,7 @@ def make_deps(
         ArkDynamicProductCanonicalizer(shared_client) if shared_client is not None else None
     )
     if resource_registrar is not None:
-        # 四个 Ark Port 共享同一个客户端，只登记 Vision owner。
+        # Ark Port 共享同一个客户端，只登记 Vision owner。
         resource_registrar(vision)
 
     supervisor_planner = None
@@ -123,7 +119,6 @@ def make_deps(
         trace=trace,
         metrics=metrics,
         supervisor_planner=supervisor_planner,
-        product_canonicalizer=product_canonicalizer,
         dynamic_schema_inducer=dynamic_schema_inducer,
         dynamic_product_canonicalizer=dynamic_product_canonicalizer,
     )

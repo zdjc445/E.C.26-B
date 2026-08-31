@@ -137,7 +137,8 @@ async def run_preflight(
             "query_rewrite": settings.query_rewrite_cache_ttl_seconds,
             "retrieval": settings.retrieval_cache_ttl_seconds,
             "explanation": settings.explanation_cache_ttl_seconds,
-            "product_canonicalization": settings.product_canonicalization_cache_ttl_seconds,
+            "dynamic_schema": settings.dynamic_schema_cache_ttl_seconds,
+            "dynamic_canonicalization": settings.dynamic_schema_cache_ttl_seconds,
         },
         "trace_verified": verify_trace,
         "postgres_pool": {
