@@ -23,6 +23,7 @@ from shijiajing_agent.contracts import (
     MemoryOperation,
     NodeStatus,
     RetrievalTaskOutput,
+    SellerType,
     SpecialistAgentName,
     SupervisorPlanningInput,
 )
@@ -33,7 +34,7 @@ from shijiajing_agent.multi_agent.planner import DeterministicPlanner
 from shijiajing_agent.multi_agent.registry import build_registry
 from shijiajing_agent.multi_agent.supervisor import MultiAgentSupervisor
 
-from .conftest import default_recognition, make_image, two_candidate_result
+from .conftest import default_recognition, make_image, two_candidate_result, two_sku_result
 
 
 class _EchoPlanner:
@@ -99,6 +100,60 @@ async def test_multi_agent_text_path_uses_task_results_and_deterministic_retriev
         item.task_kind is AgentTaskKind.RETRIEVE_AND_RANK
         for item in result.state["task_results"].values()
     )
+
+
+@pytest.mark.asyncio
+async def test_retrieval_agent_applies_explicit_price_sort(
+    deps_factory: Any,
+) -> None:
+    deps, fakes = deps_factory()
+    fakes["retrieval"].sequence = [two_sku_result()]
+    result = await MultiAgentSupervisor(deps).run(
+        AgentRequest(
+            session_id="explicit-sort",
+            request_id="price-desc",
+            text="索尼耳机，价格从高到低",
+        )
+    )
+    retrieval_result = next(
+        item
+        for item in result.state["task_results"].values()
+        if item.task_kind is AgentTaskKind.RETRIEVE_AND_RANK
+    )
+    assert isinstance(retrieval_result.output, RetrievalTaskOutput)
+    assert [group.group.min_price for group in retrieval_result.output.ranked_groups] == [
+        1899.0,
+        1799.0,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_retrieval_agent_applies_explicit_store_preference(
+    deps_factory: Any,
+) -> None:
+    deps, fakes = deps_factory()
+    retrieval = two_sku_result()
+    retrieval.candidates[0].offer.seller_type = SellerType.THIRD_PARTY
+    retrieval.candidates[1].offer.seller_type = SellerType.OFFICIAL
+    fakes["retrieval"].sequence = [retrieval]
+    result = await MultiAgentSupervisor(deps).run(
+        AgentRequest(
+            session_id="explicit-preference",
+            request_id="official-store",
+            text="索尼耳机，优先官方店",
+        )
+    )
+    retrieval_result = next(
+        item
+        for item in result.state["task_results"].values()
+        if item.task_kind is AgentTaskKind.RETRIEVE_AND_RANK
+    )
+    assert isinstance(retrieval_result.output, RetrievalTaskOutput)
+    trust_by_offer = {
+        ranked.group.offers[0].offer_id: ranked.seller_trust
+        for ranked in retrieval_result.output.ranked_groups
+    }
+    assert trust_by_offer == {"o-black": 0.35, "o-white": 1.0}
 
 
 @pytest.mark.asyncio

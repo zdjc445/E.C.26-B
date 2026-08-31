@@ -63,6 +63,26 @@ class TestSkuSplit:
         assert len(groups) == 2
         assert all(group.offer_count == 1 for group in groups)
 
+    def test_match_confidence_uses_weakest_same_item_pair_not_recall_score(
+        self, taxonomy, splitter
+    ):
+        members = [
+            norm(taxonomy, offer("a1")).model_copy(update={"recall_score": 0.10}),
+            norm(taxonomy, offer("b1")).model_copy(update={"recall_score": 0.20}),
+            norm(taxonomy, offer("c1")).model_copy(update={"recall_score": 0.30}),
+        ]
+        groups = splitter.split_spu(
+            members,
+            "spu:test",
+            pair_confidences={
+                ("a1", "b1"): 0.96,
+                ("a1", "c1"): 0.91,
+                ("b1", "c1"): 0.94,
+            },
+        )
+        assert len(groups) == 1
+        assert groups[0].match_confidence == pytest.approx(0.91)
+
 
 class TestPriceAggregation:
     def test_payable_price_formula(self, taxonomy, splitter):

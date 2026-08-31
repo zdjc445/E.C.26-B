@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from time import perf_counter
-from typing import TypedDict
+from typing import TypedDict, cast
 
 from shijiajing_agent.contracts import (
     AgentResultV2,
@@ -13,12 +13,14 @@ from shijiajing_agent.contracts import (
     MatchPair,
     NodeStatus,
     NormalizedCandidate,
+    Preference,
     RankedGroup,
     RetrievalCandidate,
     RetrievalQuery,
     RetrievalTaskInput,
     RetrievalTaskOutput,
     SkuGroup,
+    SortBy,
     SpecialistAgentName,
 )
 from shijiajing_agent.domain.filters import HardFilterBuilder
@@ -85,12 +87,8 @@ class RetrievalAgent:
                 canonicalization_batch_size=(
                     self._deps.settings.dynamic_canonicalization_batch_size
                 ),
-                concept_min_confidence=(
-                    self._deps.settings.dynamic_schema_concept_min_confidence
-                ),
-                role_min_confidence=(
-                    self._deps.settings.dynamic_schema_role_min_confidence
-                ),
+                concept_min_confidence=(self._deps.settings.dynamic_schema_concept_min_confidence),
+                role_min_confidence=(self._deps.settings.dynamic_schema_role_min_confidence),
                 role_min_support=self._deps.settings.dynamic_schema_role_min_support,
                 max_concepts=self._deps.settings.dynamic_schema_max_concepts,
                 max_attributes_per_concept=(
@@ -111,6 +109,9 @@ class RetrievalAgent:
                 review_threshold=self._deps.settings.same_item_review_threshold,
             )
             pairs = matcher.generate_candidates(normalized)
+            judged_pairs = [
+                matcher.judge_pair(normalized[left], normalized[right]) for left, right in pairs
+            ]
             review_pairs = [
                 MatchPair(
                     offer_a_id=pair.a_id,
@@ -123,10 +124,12 @@ class RetrievalAgent:
                     hard_conflicts=pair.hard_conflicts,
                     verdict="review",
                 )
-                for left, right in pairs
-                if (pair := matcher.judge_pair(normalized[left], normalized[right])).verdict
-                == "review"
+                for pair in judged_pairs
+                if pair.verdict == "review"
             ]
+            pair_confidences: dict[tuple[str, str], float] = {
+                _pair_key(pair.a_id, pair.b_id): pair.score for pair in judged_pairs
+            }
             clusters = matcher.cluster(normalized, pairs)
             if data.same_item_review_action == "split" and data.same_item_review_offer_ids:
                 review_ids = set(data.same_item_review_offer_ids)
@@ -143,10 +146,20 @@ class RetrievalAgent:
             groups: list[SkuGroup] = []
             for cluster in clusters:
                 members = [normalized[index] for index in cluster]
-                groups.extend(splitter.split_spu(members, spu_id_for(members)))
+                groups.extend(
+                    splitter.split_spu(
+                        members,
+                        spu_id_for(members),
+                        pair_confidences=pair_confidences,
+                    )
+                )
+            sort_by = _constraint_sort_by(data.constraints.sort_by.value)
+            preferences = _constraint_preferences(data.constraints.preferences.value)
             ranking = GroupRanker(preference_weights=self._deps.settings.preference_weights).rank(
                 groups,
                 data.constraints,
+                sort_by=sort_by,
+                preferences=preferences,
                 memory_priors=data.ranking_context.memory_priors,
                 memory_negative_terms=data.ranking_context.memory_negative_terms,
             )
@@ -177,6 +190,38 @@ class RetrievalAgent:
                 ),
                 usage=task_usage(start),
             )
+
+
+def _constraint_sort_by(raw: object) -> SortBy:
+    """把约束中的宽类型值收敛成排序枚举；非法值安全回退综合推荐。"""
+
+    if isinstance(raw, SortBy):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return SortBy(raw)
+        except ValueError:
+            pass
+    return SortBy.RECOMMENDED
+
+
+def _constraint_preferences(raw: object) -> list[Preference]:
+    """把用户显式偏好收敛成去重后的 Preference 列表。"""
+
+    values = cast(list[object], raw) if isinstance(raw, list) else []
+    preferences: list[Preference] = []
+    for value in values:
+        try:
+            preference = value if isinstance(value, Preference) else Preference(str(value))
+        except ValueError:
+            continue
+        if preference not in preferences:
+            preferences.append(preference)
+    return preferences
+
+
+def _pair_key(left: str, right: str) -> tuple[str, str]:
+    return (left, right) if left <= right else (right, left)
 
 
 __all__ = ["RetrievalAgent", "RetrievalAgentState"]

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC
 
@@ -40,8 +41,10 @@ class SkuSplitter:
         self,
         spu_members: list[NormalizedCandidate],
         spu_id: str,
+        *,
+        pair_confidences: Mapping[tuple[str, str], float] | None = None,
     ) -> list[SkuGroup]:
-        """按动态 variant 字段生成规范化 sku_signature 并分组。"""
+        """按动态 variant 字段分组，并用同款 pair 分数计算组置信度。"""
         if not spu_members:
             return []
         category_id = spu_members[0].normalized_category_id
@@ -73,6 +76,7 @@ class SkuSplitter:
                     model=model,
                     missing_attrs=[],
                     risks=[],
+                    pair_confidences=pair_confidences,
                 )
             )
         # 缺少关键 SKU 属性的 Offer 单独成组（§14.6）
@@ -88,6 +92,7 @@ class SkuSplitter:
                     model=model,
                     missing_attrs=[k for k in variant_keys if k not in m.normalized_variant],
                     risks=["动态 Schema 不完整，未与其他报价直接合并"],
+                    pair_confidences=pair_confidences,
                 )
             )
         return groups
@@ -133,10 +138,11 @@ class SkuSplitter:
         model: str | None,
         missing_attrs: list[str],
         risks: list[str],
+        pair_confidences: Mapping[tuple[str, str], float] | None,
     ) -> SkuGroup:
         offers = self._dedup_offers([m.offer for m in members])
         agg = self._aggregate_prices(offers)
-        confidence = self._cluster_confidence(members)
+        confidence = self._cluster_confidence(members, pair_confidences)
         if missing_attrs:
             confidence *= 0.9
         sku_suffix = hashlib.sha256((signature or "single").encode()).hexdigest()[:10]
@@ -165,10 +171,31 @@ class SkuSplitter:
         )
 
     @staticmethod
-    def _cluster_confidence(members: list[NormalizedCandidate]) -> float:
+    def _cluster_confidence(
+        members: list[NormalizedCandidate],
+        pair_confidences: Mapping[tuple[str, str], float] | None,
+    ) -> float:
+        """complete-link 组取最弱同款 pair；单成员组不存在错合并风险，取 1。"""
+
         if not members:
             return 0.0
-        return max(0.0, min(1.0, sum(m.recall_score for m in members) / len(members)))
+        if len(members) == 1:
+            return 1.0
+        if not pair_confidences:
+            return 0.0
+        scores: list[float] = []
+        for left_index, left in enumerate(members):
+            for right in members[left_index + 1 :]:
+                key = (
+                    (left.offer_id, right.offer_id)
+                    if left.offer_id <= right.offer_id
+                    else (right.offer_id, left.offer_id)
+                )
+                score = pair_confidences.get(key)
+                if score is None:
+                    return 0.0
+                scores.append(score)
+        return max(0.0, min(1.0, min(scores, default=0.0)))
 
     @staticmethod
     def _dedup_offers(offers: list[Offer]) -> list[Offer]:
