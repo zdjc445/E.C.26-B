@@ -1,0 +1,395 @@
+{
+  "demo_info": {
+    "is_mock": true,
+    "purpose": "离线持久 Schema、平台元数据归一化与第二阶段入库的展示样例",
+    "implementation_status": "目标方案，不是当前运行时代码契约",
+    "source_format": "平台风格简化结构，不是官方完整响应；全部商品、ID、SKU 关系及角色判断均为模拟",
+    "omitted": [
+      "完整发布验证记录",
+      "模型置信度与阈值细节",
+      "价格库存",
+      "向量与索引写入"
+    ],
+    "references": [
+      {
+        "label": "淘宝类目属性字段定义",
+        "url": "https://developer.alibaba.com/doc2/apiDetail.htm?apiId=121"
+      },
+      {
+        "label": "Amazon 变体关系概念",
+        "url": "https://developer-docs.amazon/sp-api/docs/building-listings-management-workflows-guide#configure-variation-families"
+      }
+    ]
+  },
+  "source_schemas": [
+    {
+      "source_schema_id": "demo_taobao_keyboard_v1",
+      "platform": "taobao",
+      "category_id": "demo_tb_mechanical_keyboard",
+      "category_name": "机械键盘",
+      "raw_schema": {
+        "item_props": [
+          {
+            "pid": "demo_tb_switch",
+            "name": "轴体",
+            "is_sale_prop": true,
+            "is_key_prop": false
+          },
+          {
+            "pid": "demo_tb_connection",
+            "name": "连接方式",
+            "is_sale_prop": false
+          }
+        ]
+      }
+    },
+    {
+      "source_schema_id": "demo_amazon_keyboard_v1",
+      "platform": "amazon",
+      "category_id": "demo_amazon_keyboard",
+      "category_name": "keyboard",
+      "raw_schema": {
+        "properties": {
+          "switch_type": {
+            "type": "string"
+          },
+          "connection": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "discovery_samples": [
+    {
+      "offer_id": "demo_offer_A",
+      "platform": "taobao",
+      "source_schema_id": "demo_taobao_keyboard_v1",
+      "title": "Keychron K2 84键 青轴",
+      "attributes": {
+        "轴体": "青轴",
+        "连接方式": "蓝牙/有线"
+      }
+    },
+    {
+      "offer_id": "demo_offer_B",
+      "platform": "amazon",
+      "source_schema_id": "demo_amazon_keyboard_v1",
+      "title": "K2 84 Keys Brown Switch",
+      "attributes": {
+        "switch_type": "茶轴",
+        "connection": "dual mode"
+      }
+    }
+  ],
+  "sku_family_observation": {
+    "observation_id": "demo_amazon_family_1",
+    "platform": "amazon",
+    "data_kind": "由模拟商品家族数据计算的观察结果，不是官方 API 字段",
+    "sku_samples": [
+      {
+        "sku_id": "demo_amazon_brown",
+        "attributes": {
+          "switch_type": "茶轴"
+        }
+      },
+      {
+        "sku_id": "demo_amazon_red",
+        "attributes": {
+          "switch_type": "红轴"
+        }
+      }
+    ],
+    "observed_variant_axes": [
+      "switch_type"
+    ]
+  },
+  "platform_metadata_mapping": {
+    "mapping_id": "demo_taobao_metadata_v1",
+    "platform": "taobao",
+    "source_api": "taobao.itemprops.get",
+    "rules": [
+      {
+        "source_key": "is_sale_prop",
+        "normalized_key": "sales_attribute",
+        "transform": "preserve_boolean"
+      },
+      {
+        "source_key": "is_key_prop",
+        "normalized_key": "key_attribute",
+        "transform": "preserve_boolean"
+      }
+    ],
+    "missing_value": null,
+    "note": "缺失保留 null；元数据改名不直接等于 role 判定。"
+  },
+  "stage1_proposal": {
+    "proposal_id": "demo_proposal_1",
+    "status": "DRAFT",
+    "local_concept_id": "keyboard_1",
+    "label": "mechanical_keyboard",
+    "attributes": [
+      {
+        "canonical_key": "switch_type",
+        "aliases": [
+          "轴体",
+          "switch_type"
+        ],
+        "value_kind": "string",
+        "proposed_role": "variant",
+        "role_evidence_refs": [
+          "demo_taobao_keyboard_v1#raw_schema.item_props[0].is_sale_prop",
+          "demo_amazon_family_1#sku_samples"
+        ]
+      },
+      {
+        "canonical_key": "connection_mode",
+        "aliases": [
+          "连接方式",
+          "connection"
+        ],
+        "value_kind": "string",
+        "proposed_role": "descriptive",
+        "role_reason": "identity/variant 证据不足，保守存储；不表示所有键盘均为描述属性"
+      }
+    ]
+  },
+  "supplemental_alias_sample": {
+    "offer_id": "demo_offer_D",
+    "window_id": "demo_later_alias_window",
+    "platform": "taobao",
+    "title": "示例机械键盘 红轴",
+    "attributes": {
+      "轴选择": "红轴",
+      "连接技术": "Bluetooth / Wired"
+    },
+    "source_attribute_ids": {
+      "轴选择": "demo_tb_switch",
+      "连接技术": "demo_tb_connection"
+    },
+    "note": "模拟后续采集样本；通过相同来源属性 ID 和样本内容验证别名，D 先于 C 出现。"
+  },
+  "registry_record": {
+    "concept_id": "mechanical_keyboard",
+    "schema_version": "demo_v3",
+    "status": "ACTIVE",
+    "publication_note": "演示假设：已完成额外窗口验证和审核。A/B/D 仅展示结构，不足以证明发布质量。",
+    "alias_evidence_refs": [
+      "demo_offer_D"
+    ],
+    "attributes": {
+      "switch_type": {
+        "value_kind": "string",
+        "aliases": [
+          "轴体",
+          "switch_type",
+          "轴选择"
+        ],
+        "role": "variant",
+        "role_rule_id": "demo_sales_axis_rule_v1"
+      },
+      "connection_mode": {
+        "value_kind": "string",
+        "aliases": [
+          "连接方式",
+          "connection",
+          "连接技术"
+        ],
+        "role": "descriptive",
+        "role_rule_id": "demo_conservative_storage_v1"
+      }
+    },
+    "source_bindings": [
+      {
+        "source_schema_id": "demo_taobao_keyboard_v1",
+        "platform": "taobao",
+        "category_id": "demo_tb_mechanical_keyboard",
+        "applicability": "机械键盘本体；仍需检查标题与字段冲突",
+        "field_mappings": [
+          {
+            "source_attribute_id": "demo_tb_switch",
+            "source_field": "轴体",
+            "canonical_key": "switch_type",
+            "source_metadata": {
+              "is_sale_prop": true,
+              "is_key_prop": false
+            },
+            "normalized_metadata": {
+              "sales_attribute": true,
+              "key_attribute": false
+            },
+            "metadata_mapping_id": "demo_taobao_metadata_v1"
+          },
+          {
+            "source_attribute_id": "demo_tb_connection",
+            "source_field": "连接方式",
+            "canonical_key": "connection_mode",
+            "source_metadata": {
+              "is_sale_prop": false
+            },
+            "normalized_metadata": {
+              "sales_attribute": false,
+              "key_attribute": null
+            },
+            "metadata_mapping_id": "demo_taobao_metadata_v1"
+          }
+        ]
+      },
+      {
+        "source_schema_id": "demo_amazon_keyboard_v1",
+        "platform": "amazon",
+        "category_id": "demo_amazon_keyboard",
+        "applicability": "keyboard 类目中的机械键盘本体子集；category 不是一对一结论",
+        "field_mappings": [
+          {
+            "source_field": "switch_type",
+            "canonical_key": "switch_type",
+            "source_metadata": {},
+            "normalized_metadata": {
+              "sales_attribute": null,
+              "key_attribute": null
+            },
+            "observation_ref": "demo_amazon_family_1"
+          },
+          {
+            "source_field": "connection",
+            "canonical_key": "connection_mode",
+            "source_metadata": {},
+            "normalized_metadata": {
+              "sales_attribute": null,
+              "key_attribute": null
+            }
+          }
+        ]
+      }
+    ],
+    "role_rules": [
+      {
+        "rule_id": "demo_sales_axis_rule_v1",
+        "role": "variant",
+        "condition": "平台销售属性或有效 SKU 维度证据，经适用范围验证且无身份冲突",
+        "evidence_refs": [
+          "demo_proposal_1",
+          "demo_amazon_family_1"
+        ]
+      },
+      {
+        "rule_id": "demo_conservative_storage_v1",
+        "role": "descriptive",
+        "condition": "有字段原文，但 identity/variant 角色证据不足",
+        "note": "不能把 is_sale_prop=false 直接映射为 descriptive；该字段仍可作检索或冲突提示。"
+      }
+    ]
+  },
+  "stage2_request": {
+    "batch_id": "demo_batch_1",
+    "offers": [
+      {
+        "offer_id": "demo_offer_C",
+        "platform": "taobao",
+        "category_id": "demo_tb_peripheral",
+        "category_name": "电脑外设",
+        "title": "Keychron K2 红轴 双模",
+        "attributes": {
+          "轴选择": "红轴",
+          "连接技术": "Bluetooth / Wired"
+        }
+      }
+    ],
+    "candidate_schemas": [
+      {
+        "concept_id": "mechanical_keyboard",
+        "schema_version": "demo_v3",
+        "status": "ACTIVE",
+        "attributes": {
+          "switch_type": {
+            "value_kind": "string",
+            "aliases": [
+              "轴体",
+              "switch_type",
+              "轴选择"
+            ],
+            "role": "variant",
+            "role_rule_id": "demo_sales_axis_rule_v1"
+          },
+          "connection_mode": {
+            "value_kind": "string",
+            "aliases": [
+              "连接方式",
+              "connection",
+              "连接技术"
+            ],
+            "role": "descriptive",
+            "role_rule_id": "demo_conservative_storage_v1"
+          }
+        }
+      }
+    ],
+    "candidate_refs_by_offer": {
+      "demo_offer_C": [
+        "mechanical_keyboard@demo_v3"
+      ]
+    },
+    "retrieval_note": "C 的 category 无精确绑定，按标题和字段别名补召回；多平台来源映射去重后，本例只有一个统一 Schema 候选。",
+    "allowed_decisions": [
+      "MATCH",
+      "NO_MATCH"
+    ]
+  },
+  "stage2_model_response": {
+    "batch_id": "demo_batch_1",
+    "results": [
+      {
+        "offer_id": "demo_offer_C",
+        "decision": "MATCH",
+        "selected_schema": "mechanical_keyboard@demo_v3",
+        "fields": [
+          {
+            "canonical_key": "switch_type",
+            "value": "红轴",
+            "evidence": {
+              "offer_id": "demo_offer_C",
+              "field_path": "attributes.轴选择",
+              "raw_value": "红轴"
+            }
+          },
+          {
+            "canonical_key": "connection_mode",
+            "value": "蓝牙/有线",
+            "evidence": {
+              "offer_id": "demo_offer_C",
+              "field_path": "attributes.连接技术",
+              "raw_value": "Bluetooth / Wired"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "normalized_offer": {
+    "offer_id": "demo_offer_C",
+    "concept_id": "mechanical_keyboard",
+    "schema_version": "demo_v3",
+    "normalized_identity": {},
+    "normalized_variant": {
+      "switch_type": "红轴"
+    },
+    "normalized_descriptive": {
+      "connection_mode": "蓝牙/有线"
+    },
+    "field_evidence": {
+      "switch_type": {
+        "offer_id": "demo_offer_C",
+        "field_path": "attributes.轴选择",
+        "raw_value": "红轴"
+      },
+      "connection_mode": {
+        "offer_id": "demo_offer_C",
+        "field_path": "attributes.连接技术",
+        "raw_value": "Bluetooth / Wired"
+      }
+    },
+    "comparison_status": "NOT_EVALUATED",
+    "note": "仅展示动态字段；品牌型号处理、SPU/SKU 判定和索引字段不在本样例中。"
+  }
+}

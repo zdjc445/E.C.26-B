@@ -34,5 +34,6 @@ evals/reports/*.tmp
 识价镜_Agent_技术面试演示/
 
 # ===== 系统文件 =====
+.DS_Store
 Thumbs.db
 Desktop.ini
