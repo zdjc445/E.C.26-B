@@ -399,6 +399,26 @@ sku_variation_rate = 该属性在 SKU 间变化的商品数 / 多 SKU 商品数
 platform_support = 支持该语义属性的平台数 / 当前接入平台数
 ```
 
+###### 使用贝叶斯平滑降低小样本误判
+
+原始比例没有体现样本量。例如 `9/10` 和 `900/1000` 都等于 `0.90`，但后者明显更稳定。因此对
+`offer_coverage`、`type_consistency` 和 `sku_variation_rate` 使用贝叶斯平滑：
+
+```text
+smoothed_rate = (success_count + alpha) / (sample_count + alpha + beta)
+```
+
+冷启动时可以先使用 `alpha=1、beta=1`：
+
+```text
+9 / 10       → (9 + 1) / (10 + 2) = 0.833
+900 / 1000   → (900 + 1) / (1000 + 2) = 0.899
+```
+
+小样本结果会被适当拉回，避免少量样本偶然取得高比例就直接进入 Schema。数据积累后，可以根据历史同类
+候选字段的平均通过率确定 `alpha` 和 `beta`。系统同时保存原始成功数、样本数和平滑结果；样本数低于最低
+门槛时仍然返回 `WAIT_MORE_SAMPLES`，不能只依赖平滑分数发布。
+
 例如，将更多机械键盘样本加入候选池后，`C001` 和 `C002` 合并结果的统计信息可能是：
 
 ```jsonc
@@ -409,10 +429,15 @@ platform_support = 支持该语义属性的平台数 / 当前接入平台数
     "sample_offer_count": 200, // 当前批次机械键盘 Offer 总数
     "present_offer_count": 178, // 其中178条出现了轴体字段
     "offer_coverage": 0.89,
+    "coverage_smoothed": 0.886, // Beta(1,1) 平滑：(178+1)/(200+2)
+    "observed_value_count": 300,
+    "type_valid_value_count": 294,
     "type_consistency": 0.98,
+    "type_consistency_smoothed": 0.977, // (294+1)/(300+2)
     "multi_sku_product_count": 80,
     "varies_between_skus_count": 72,
     "sku_variation_rate": 0.90,
+    "sku_variation_rate_smoothed": 0.890, // (72+1)/(80+2)
     "supported_platform_count": 2
   },
   "role_evidence": {
@@ -428,11 +453,11 @@ platform_support = 支持该语义属性的平台数 / 当前接入平台数
 
 ```text
 candidate_score =
-    offer_coverage       × 0.30
-  + type_consistency     × 0.20
-  + role_evidence_score  × 0.30
-  + platform_support     × 0.10
-  + retrieval_value      × 0.10
+    coverage_smoothed          × 0.30
+  + type_consistency_smoothed  × 0.20
+  + role_evidence_score        × 0.30
+  + platform_support           × 0.10
+  + retrieval_value            × 0.10
 ```
 
 统计节点输出三种结果：
@@ -444,28 +469,48 @@ candidate_score =
 | `REJECT` | 属于噪声、技术字段、重复字段或无法可靠归一化，不进入 Schema |
 
 
-##### 5. 结合平台信号和统计结果确认字段 role
+##### 5. 确认字段 role
 
-只对上一步判定为 `ACCEPT_AS_CANDIDATE` 的字段确认 role。优先使用电商平台原始结构提供的信号，
-LLM 负责合并同义字段并提出 `proposed_role`，规则服务核验原始路径和统计数据后给出最终 role：
+只对上一步判定为 `ACCEPT_AS_CANDIDATE` 的字段确认 role。LLM 负责提出 `proposed_role`，平台信号和
+统计结果分别提供两类证据，最终由规则服务输出 `final_role`。
 
-| role | 平台信号与统计条件 | 处理方式 |
-|---|---|---|
-| `variant` | 淘宝 `is_sale_prop=true`，或字段位于 `skus.sku[].properties`、拼多多 `sku_list[].spec[]`；并且在同一商品的不同 SKU 间实际发生变化 | 用于同一 SPU 内区分 SKU |
-| `identity` | 淘宝 `is_key_prop=true` 或字段属于商品级属性；同一商品的各 SKU 取值稳定，并且能区分不同商品 | 与品牌等字段组合，用于判断 SPU |
-| `descriptive` | 不决定 SKU，也不足以区分 SPU，但对检索、过滤或展示有价值 | 只参与软检索与展示 |
+###### 5.1 平台信号提供 role 候选
 
-平台标记不能脱离实际数据直接使用。例如，只有 `is_sale_prop=true`、但字段没有进入 SKU 组合或在
-不同 SKU 间从不变化时，不能确认成 `variant`。价格、库存、运费和促销即使随 SKU 变化，也属于
-交易信息，不参与 role 判断。
+平台适配器从原始 Schema 和 SKU 结构中提取信号，但这些信号只能生成候选，不能直接确定 role：
 
-规则服务可以按以下顺序确认：
+| 平台信号 | role 候选 |
+|---|---|
+| 淘宝 `is_sale_prop=true`，或字段位于 `skus.sku[].properties`、拼多多 `sku_list[].spec[]` | `variant` 候选 |
+| 淘宝 `is_key_prop=true`，或字段属于商品级关键属性 | `identity` 候选 |
+| 普通商品属性，不参与 SKU 组合 | `descriptive` 候选 |
 
-1. 校验 `source_candidate_ids`、原始路径和平台标记确实存在。
-2. 排除价格、库存、运费、促销等交易字段。
-3. 满足“SKU 结构证据 + SKU 间变化”时确认 `variant`。
-4. 满足“SKU 间稳定 + 跨商品有区分度 + 关键属性或身份语义”时确认 `identity`。
-5. 只具有检索价值时确认 `descriptive`；证据冲突或不足时返回 `WAIT_MORE_SAMPLES`，不写入正式 Schema。
+例如 `is_sale_prop=true` 只能说明平台把它当作销售属性；如果它没有进入 SKU 组合，就不能仅凭这个标记
+确认成 `variant`。价格、库存、运费和促销属于交易信息，不参与 role 判断。
+
+###### 5.2 统计结果验证 role 候选
+
+规则服务再使用多条同品类 Offer 的统计结果验证平台候选：
+
+| 统计结果 | role 判断 |
+|---|---|
+| 字段在同一商品的不同 SKU 间经常变化，即 `sku_variation_rate` 较高 | 支持 `variant` |
+| 字段在同一商品的 SKU 间稳定，并且自身或与其他字段组合后能区分不同商品 | 支持 `identity` |
+| 不决定 SPU 或 SKU，但加入后能改善检索、过滤或展示 | 支持 `descriptive` |
+
+统计指标使用前面的贝叶斯平滑结果，具体阈值通过验证集确定。证据冲突或样本不足时返回
+`WAIT_MORE_SAMPLES`，不确认 role。
+
+###### 5.3 合并两类证据
+
+```text
+LLM proposed_role
++ 平台原始结构信号
++ 多商品统计结果
+→ 规则服务确认 final_role
+```
+
+例如同时满足“位于 SKU 规格结构”和“SKU 间经常变化”时确认 `variant`；同时满足“平台关键属性”、
+“SKU 内稳定”和“跨商品有区分度”时确认 `identity`；只具有检索价值时确认 `descriptive`。
 
 例如，`C001` 和 `C002` 都来自平台的 SKU 规格结构，并且轴体在同一商品的多个 SKU 间发生变化，
 因此规则服务可以确认 `switch_type` 的 role：
