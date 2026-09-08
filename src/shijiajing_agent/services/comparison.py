@@ -126,9 +126,7 @@ class ComparisonService:
             for pair in judged
             if pair.verdict == "review"
         ]
-        pair_confidences = {
-            _pair_key(pair.a_id, pair.b_id): pair.score for pair in judged
-        }
+        pair_confidences = {_pair_key(pair.a_id, pair.b_id): pair.score for pair in judged}
         clusters = matcher.cluster(normalized, pairs)
         if split_offer_ids:
             split_clusters: list[list[int]] = []

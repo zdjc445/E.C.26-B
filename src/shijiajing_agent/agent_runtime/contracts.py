@@ -12,9 +12,14 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from shijiajing_agent.contracts import (
+    AgentInterrupt,
     AgentRequest,
+    AgentResponse,
     CanonicalUnderstanding,
+    MemoryMutation,
+    RankedGroup,
     RecognitionResult,
+    RetrievalCandidate,
     ShoppingConstraints,
 )
 
@@ -57,6 +62,7 @@ class AgentRuntimeUsage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     decisions: int = Field(default=0, ge=0)
+    model_calls: int = Field(default=0, ge=0)
     tool_calls: int = Field(default=0, ge=0)
     retrieval_calls: int = Field(default=0, ge=0)
     subagent_starts: int = Field(default=0, ge=0)
@@ -67,6 +73,7 @@ class AgentRuntimeUsage(BaseModel):
     def add(self, other: AgentRuntimeUsage) -> AgentRuntimeUsage:
         return AgentRuntimeUsage(
             decisions=self.decisions + other.decisions,
+            model_calls=self.model_calls + other.model_calls,
             tool_calls=self.tool_calls + other.tool_calls,
             retrieval_calls=self.retrieval_calls + other.retrieval_calls,
             subagent_starts=self.subagent_starts + other.subagent_starts,
@@ -351,8 +358,21 @@ class MainRuntimeState(BaseModel):
     conflicts: list[str] = Field(default_factory=list[str], max_length=20)
     seen_fingerprints: list[str] = Field(default_factory=list[str], max_length=100)
     no_progress_count: int = Field(default=0, ge=0)
-    active_interrupt: Any | None = None
-    final_response: Any | None = None
+    ranked_groups: list[RankedGroup] = Field(default_factory=list[RankedGroup], max_length=100)
+    last_candidates: list[RetrievalCandidate] = Field(
+        default_factory=list[RetrievalCandidate], max_length=200
+    )
+    pending_mutations: list[MemoryMutation] = Field(
+        default_factory=list[MemoryMutation], max_length=20
+    )
+    memory_authorized: bool = False
+    active_interrupt: AgentInterrupt | None = None
+    final_response: AgentResponse | None = None
+    pending_response: AgentResponse | None = None
+    resume_history: list[str] = Field(default_factory=list[str], max_length=20)
+    completed_interrupts: list[str] = Field(default_factory=list[str], max_length=20)
+    interrupt_generation: int = Field(default=0, ge=0)
+    last_tool_status: str | None = Field(default=None, max_length=32)
     notices: list[str] = Field(default_factory=list[str], max_length=50)
 
 

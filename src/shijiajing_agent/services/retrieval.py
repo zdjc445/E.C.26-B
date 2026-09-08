@@ -52,6 +52,10 @@ class RetrievalService:
         self._top_k = top_k
         self._union_limit = union_limit
 
+    @property
+    def comparison(self) -> ComparisonService:
+        return self._comparison
+
     async def search_once(
         self,
         query_text: str,
@@ -89,7 +93,7 @@ class RetrievalService:
             query=query,
             candidates=result.candidates,
             retrieval=result,
-            usage=AgentRuntimeUsage(retrieval_calls=1),
+            usage=AgentRuntimeUsage(retrieval_calls=1, model_calls=1),
         )
 
     async def search_and_compare(
@@ -119,7 +123,7 @@ class RetrievalService:
         usage = search.usage.add(
             AgentRuntimeUsage(
                 tool_calls=1,
-                retrieval_calls=comparison.model_calls,
+                model_calls=comparison.model_calls,
             )
         )
         return SearchAndCompareResult(search=search, comparison=comparison, usage=usage)

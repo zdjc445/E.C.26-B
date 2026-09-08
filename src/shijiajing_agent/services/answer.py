@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
-from shijiajing_agent.agent_runtime.contracts import EvidenceQualityReport
+from shijiajing_agent.agent_runtime.contracts import EvidenceQualityReport, EvidenceRecord
 from shijiajing_agent.contracts import RankedGroup, ShoppingConstraints
 from shijiajing_agent.domain.evidence import EvidenceBuilder, FactualConsistencyChecker
 from shijiajing_agent.ports.models import ExplanationModelPort
@@ -32,15 +33,14 @@ class AnswerService:
         self,
         groups: list[RankedGroup],
         constraints: ShoppingConstraints,
-        records: dict[str, object],
+        records: Mapping[str, EvidenceRecord],
         *,
         constraints_version: int,
         notices: list[str] | None = None,
     ) -> AnswerResult:
-        typed_records = {key: value for key, value in records.items() if hasattr(value, "fields")}
         typed_reports = self._evidence.quality_for_groups(
             groups,
-            typed_records,  # type: ignore[arg-type]
+            dict(records),
             constraints_version=constraints_version,
         )
         bundle = EvidenceBuilder().build(groups, constraints, notices=notices)

@@ -647,6 +647,7 @@ class ArkDynamicSchemaInducer:
         )
         return obj  # type: ignore[return-value]
 
+
 class ArkDynamicProductCanonicalizer:
     """按服务端验证后的局部 Schema 生成动态归一化 proposal。"""
 
@@ -701,6 +702,7 @@ class ArkDynamicProductCanonicalizer:
             error_kind=ModelOutputInvalidError,
         )
         return obj  # type: ignore[return-value]
+
 
 class ArkExplanationModel:
     """事实约束的结果解释（§11.5）。纯文本输出，无结构化修复循环。"""

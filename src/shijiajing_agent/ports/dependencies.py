@@ -12,6 +12,7 @@ from shijiajing_agent.contracts import (
     SupervisorReplanningInput,
 )
 from shijiajing_agent.domain.taxonomy import Taxonomy
+from shijiajing_agent.ports.agent_decision import AgentDecisionPort, OfferDetailPort
 from shijiajing_agent.ports.cache import VersionedCachePort
 from shijiajing_agent.ports.event_store import EventStorePort
 from shijiajing_agent.ports.memory import MemoryPort
@@ -47,6 +48,8 @@ class AgentDependenciesPort(Protocol):
     cache: VersionedCachePort | None
     event_store: EventStorePort | None
     supervisor_planner: SupervisorPlannerPort | None
+    agent_decision: AgentDecisionPort | None
+    offer_details: OfferDetailPort | None
 
 
 class SupervisorPlannerPort(Protocol):

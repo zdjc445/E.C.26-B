@@ -60,6 +60,19 @@ _DEFAULTS: dict[str, str] = {
     "SUPERVISOR_PLANNER_TIMEOUT_SECONDS": "8",
     "SUPERVISOR_PLANNER_MAX_REPAIRS": "1",
     "SUPERVISOR_PLANNER_MAX_TOKENS": "1500",
+    "EXECUTION_MODE": "workflow",
+    "RESEARCH_SUBAGENT_ENABLED": "false",
+    "VERIFICATION_SUBAGENT_ENABLED": "false",
+    "MAIN_AGENT_MAX_DECISIONS": "8",
+    "MAIN_AGENT_MAX_TOOL_CALLS": "24",
+    "MAIN_AGENT_MAX_RETRIEVAL_CALLS": "6",
+    "MAIN_AGENT_MAX_MODEL_CALLS": "32",
+    "MAIN_AGENT_MAX_TOKENS": "100000",
+    "MAIN_AGENT_MAX_SUBAGENT_STARTS": "2",
+    "SUBAGENT_MAX_DECISIONS": "4",
+    "SUBAGENT_MAX_TOOL_CALLS": "6",
+    "SUBAGENT_MAX_SECONDS": "30",
+    "SUBAGENT_MAX_TOKENS": "20000",
 }
 
 # 外部资源：缺失时必须启动失败（无默认值）
@@ -101,6 +114,21 @@ class Settings:
     supervisor_planner_timeout_seconds: float = 8.0
     supervisor_planner_max_repairs: int = 1
     supervisor_planner_max_tokens: int = 1500
+    execution_mode: str = "workflow"
+    main_agent_model: str | None = None
+    subagent_model: str | None = None
+    research_subagent_enabled: bool = False
+    verification_subagent_enabled: bool = False
+    main_agent_max_decisions: int = 8
+    main_agent_max_tool_calls: int = 24
+    main_agent_max_retrieval_calls: int = 6
+    main_agent_max_model_calls: int = 32
+    main_agent_max_tokens: int = 100_000
+    main_agent_max_subagent_starts: int = 2
+    subagent_max_decisions: int = 4
+    subagent_max_tool_calls: int = 6
+    subagent_max_seconds: float = 30.0
+    subagent_max_tokens: int = 20_000
     max_agent_tasks: int = 32
     max_supervisor_replans: int = 2
     agent_task_timeout_seconds: float = 30.0
@@ -222,6 +250,16 @@ class Settings:
             errors.append(f"SUPERVISOR_PLANNER_MODE={self.supervisor_planner_mode}")
         if self.supervisor_planner_mode != "off" and not self.supervisor_model:
             errors.append("SUPERVISOR_MODEL")
+        if self.execution_mode not in {"workflow", "main", "main_with_subagents"}:
+            errors.append(f"EXECUTION_MODE={self.execution_mode}")
+        if self.execution_mode in {"main", "main_with_subagents"} and not self.main_agent_model:
+            errors.append("MAIN_AGENT_MODEL")
+        if self.execution_mode != "workflow" and self.supervisor_planner_mode != "off":
+            errors.append("EXECUTION_MODE_SUPERVISOR_PLANNER_CONFLICT")
+        if self.execution_mode != "main_with_subagents" and self.research_subagent_enabled:
+            errors.append("RESEARCH_SUBAGENT_ENABLED_REQUIRES_MAIN_WITH_SUBAGENTS")
+        if self.execution_mode != "main_with_subagents" and self.verification_subagent_enabled:
+            errors.append("VERIFICATION_SUBAGENT_ENABLED_REQUIRES_MAIN_WITH_SUBAGENTS")
         if self.checkpoint_backend not in {"sqlite", "postgres"}:
             errors.append(f"CHECKPOINT_BACKEND={self.checkpoint_backend}")
         if self.checkpoint_backend in {"sqlite", "postgres"} and not self.checkpoint_dsn:
@@ -322,8 +360,18 @@ class Settings:
             ("MAX_SUPERVISOR_REPLANS", self.max_supervisor_replans),
             ("SUPERVISOR_PLANNER_MAX_REPAIRS", self.supervisor_planner_max_repairs),
             ("SUPERVISOR_PLANNER_MAX_TOKENS", self.supervisor_planner_max_tokens),
+            ("MAIN_AGENT_MAX_DECISIONS", self.main_agent_max_decisions),
+            ("MAIN_AGENT_MAX_TOOL_CALLS", self.main_agent_max_tool_calls),
+            ("MAIN_AGENT_MAX_RETRIEVAL_CALLS", self.main_agent_max_retrieval_calls),
+            ("MAIN_AGENT_MAX_MODEL_CALLS", self.main_agent_max_model_calls),
+            ("MAIN_AGENT_MAX_TOKENS", self.main_agent_max_tokens),
+            ("MAIN_AGENT_MAX_SUBAGENT_STARTS", self.main_agent_max_subagent_starts),
+            ("SUBAGENT_MAX_DECISIONS", self.subagent_max_decisions),
+            ("SUBAGENT_MAX_TOOL_CALLS", self.subagent_max_tool_calls),
+            ("SUBAGENT_MAX_TOKENS", self.subagent_max_tokens),
         ):
             require_positive(name, value)
+        require_finite_positive("SUBAGENT_MAX_SECONDS", self.subagent_max_seconds)
         if self.same_item_review_threshold > self.same_item_accept_threshold:
             errors.append("SAME_ITEM_THRESHOLD_ORDER")
         if self.postgres_pool_min_size < 1:
@@ -343,6 +391,11 @@ class Settings:
     @property
     def snapshot_path(self) -> Path | None:
         return Path(self.local_product_snapshot_path) if self.local_product_snapshot_path else None
+
+    @property
+    def subagent_model_effective(self) -> str | None:
+        """未显式配置时继承主 Agent 模型；报告层可记录该实际选择。"""
+        return self.subagent_model or self.main_agent_model
 
 
 def _to_attr(env_suffix: str) -> str:
@@ -404,6 +457,21 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         supervisor_planner_timeout_seconds=getf("SUPERVISOR_PLANNER_TIMEOUT_SECONDS"),
         supervisor_planner_max_repairs=geti("SUPERVISOR_PLANNER_MAX_REPAIRS"),
         supervisor_planner_max_tokens=geti("SUPERVISOR_PLANNER_MAX_TOKENS"),
+        execution_mode=get("EXECUTION_MODE") or "workflow",
+        main_agent_model=get("MAIN_AGENT_MODEL"),
+        subagent_model=get("SUBAGENT_MODEL"),
+        research_subagent_enabled=getb("RESEARCH_SUBAGENT_ENABLED", False),
+        verification_subagent_enabled=getb("VERIFICATION_SUBAGENT_ENABLED", False),
+        main_agent_max_decisions=geti("MAIN_AGENT_MAX_DECISIONS"),
+        main_agent_max_tool_calls=geti("MAIN_AGENT_MAX_TOOL_CALLS"),
+        main_agent_max_retrieval_calls=geti("MAIN_AGENT_MAX_RETRIEVAL_CALLS"),
+        main_agent_max_model_calls=geti("MAIN_AGENT_MAX_MODEL_CALLS"),
+        main_agent_max_tokens=geti("MAIN_AGENT_MAX_TOKENS"),
+        main_agent_max_subagent_starts=geti("MAIN_AGENT_MAX_SUBAGENT_STARTS"),
+        subagent_max_decisions=geti("SUBAGENT_MAX_DECISIONS"),
+        subagent_max_tool_calls=geti("SUBAGENT_MAX_TOOL_CALLS"),
+        subagent_max_seconds=getf("SUBAGENT_MAX_SECONDS"),
+        subagent_max_tokens=geti("SUBAGENT_MAX_TOKENS"),
         max_agent_tasks=geti("MAX_AGENT_TASKS"),
         max_supervisor_replans=geti("MAX_SUPERVISOR_REPLANS"),
         agent_task_timeout_seconds=getf("AGENT_TASK_TIMEOUT_SECONDS"),

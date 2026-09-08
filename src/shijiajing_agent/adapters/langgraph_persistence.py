@@ -86,8 +86,37 @@ _CONTRACT_NAMES = (
     "AgentEvent",
     "AgentEventRecord",
 )
+_RUNTIME_CONTRACT_NAMES = (
+    # agent-runtime-v1 内部契约；显式 allowlist，禁止 serializer 回退到 pickle。
+    "ActionKind",
+    "ActionStatus",
+    "SubagentRole",
+    "SubagentStatus",
+    "AgentRuntimeUsage",
+    "RuntimeBudget",
+    "SubagentBudget",
+    "SearchAndCompareAction",
+    "InspectEvidenceAction",
+    "DelegateResearchAction",
+    "DelegateVerificationAction",
+    "AskUserAction",
+    "AnswerAction",
+    "FinishNoResultsAction",
+    "DecisionObservation",
+    "DecisionResult",
+    "ActionRecord",
+    "ToolObservation",
+    "VerifiedFact",
+    "SubagentTask",
+    "SubagentResult",
+    "EvidenceRecord",
+    "EvidenceQualityReport",
+    "RuntimeSessionSnapshot",
+    "MainRuntimeState",
+)
 _ALLOWED_MODULES = tuple(
     [("shijiajing_agent.contracts", name) for name in _CONTRACT_NAMES]
+    + [("shijiajing_agent.agent_runtime.contracts", name) for name in _RUNTIME_CONTRACT_NAMES]
     + [
         ("shijiajing_agent.domain.evidence", "EvidenceBundle"),
         ("shijiajing_agent.domain.evidence", "GroupEvidence"),

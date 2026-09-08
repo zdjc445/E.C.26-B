@@ -9,10 +9,16 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from shijiajing_agent.adapters.event_store import stable_event_id
+from shijiajing_agent.agent_runtime.checkpoint import (
+    AgentRuntimeCheckpointPort,
+    LangGraphAgentRuntimeCheckpoint,
+)
+from shijiajing_agent.agent_runtime.runtime import MainAgentRuntime
 from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import (
     AgentEventRecord,
@@ -29,6 +35,7 @@ from shijiajing_agent.domain.taxonomy import Taxonomy
 from shijiajing_agent.errors import ErrorCode, RequestLedgerUnavailableError, SessionConflictError
 from shijiajing_agent.multi_agent.checkpoint import LangGraphMultiAgentCheckpoint
 from shijiajing_agent.multi_agent.supervisor import MultiAgentSupervisor
+from shijiajing_agent.ports.agent_decision import AgentDecisionPort, OfferDetailPort
 from shijiajing_agent.ports.cache import VersionedCachePort
 from shijiajing_agent.ports.dependencies import SupervisorPlannerPort
 from shijiajing_agent.ports.event_store import EventStorePort
@@ -65,6 +72,9 @@ class AgentDependencies:
     cache: VersionedCachePort | None = None
     event_store: EventStorePort | None = None
     supervisor_planner: SupervisorPlannerPort | None = None
+    agent_decision: AgentDecisionPort | None = None
+    agent_checkpoint: AgentRuntimeCheckpointPort | None = None
+    offer_details: OfferDetailPort | None = None
     dynamic_schema_inducer: DynamicSchemaInductionPort | None = None
     dynamic_product_canonicalizer: DynamicProductCanonicalizationPort | None = None
 
@@ -75,6 +85,7 @@ class AgentFacade:
     def __init__(self, deps: AgentDependencies) -> None:
         self._deps = deps
         self._locks: dict[str, asyncio.Lock] = {}
+        self._main_runtime: MainAgentRuntime | None = None
 
     @property
     def dependencies(self) -> AgentDependencies:
@@ -91,10 +102,8 @@ class AgentFacade:
                 if cached is not None:
                     return cached
                 async with asyncio.timeout(self._deps.settings.turn_timeout_seconds):
-                    outcome = await self._supervisor().run(
-                        request,
-                        context=AgentExecutionContext(),
-                        pause_for_hitl=False,
+                    outcome = await self._run_engine(
+                        request, context=AgentExecutionContext(), pause_for_hitl=False
                     )
                 await self._ledger_save(request, outcome.response)
                 return outcome.response
@@ -123,12 +132,16 @@ class AgentFacade:
                     "启用记忆时必须提供可信 memory_owner_id。",
                 )
             )
-        if self._deps.settings.hitl_enabled and self._deps.graph_checkpointer is None:
+        if (
+            self._deps.settings.hitl_enabled
+            and self._deps.graph_checkpointer is None
+            and self._deps.agent_checkpoint is None
+        ):
             return AgentTurnResult(
                 response=self._failed(
                     request,
                     ErrorCode.INVALID_REQUEST,
-                    "Multi-Agent HITL resume 需要持久化 Checkpoint。",
+                    "HITL resume 需要持久化 Checkpoint。",
                 )
             )
         try:
@@ -137,11 +150,7 @@ class AgentFacade:
                 if cached is not None:
                     return AgentTurnResult(response=cached)
                 async with asyncio.timeout(self._deps.settings.turn_timeout_seconds):
-                    outcome = await self._supervisor().run(
-                        request,
-                        context=context,
-                        pause_for_hitl=True,
-                    )
+                    outcome = await self._run_engine(request, context=context, pause_for_hitl=True)
                 if outcome.interrupt is not None:
                     return AgentTurnResult(interrupt=outcome.interrupt)
                 await self._ledger_save(request, outcome.response)
@@ -171,7 +180,11 @@ class AgentFacade:
     ) -> AgentTurnResult:
         """从 Supervisor Checkpoint 恢复一次 HITL 中断。"""
         request = AgentRequest(session_id=session_id, request_id="resume", text="resume")
-        if self._deps.graph_checkpointer is None:
+        if (
+            self._deps.graph_checkpointer is None
+            and self._deps.agent_checkpoint is None
+            and self._is_main_mode
+        ):
             return AgentTurnResult(
                 response=self._failed(
                     request,
@@ -182,7 +195,10 @@ class AgentFacade:
         try:
             async with self._session_lock(session_id):
                 async with asyncio.timeout(self._deps.settings.turn_timeout_seconds):
-                    outcome = await self._supervisor().resume(session_id, resume, context)
+                    if self._is_main_mode:
+                        outcome = await self._main().resume(session_id, resume, context)
+                    else:
+                        outcome = await self._supervisor().resume(session_id, resume, context)
                 if outcome.response is not None:
                     completed_request = AgentRequest(
                         session_id=outcome.response.session_id,
@@ -219,6 +235,41 @@ class AgentFacade:
             planner_port=self._deps.supervisor_planner,
             checkpoint=checkpoint,
         )
+
+    @property
+    def _is_main_mode(self) -> bool:
+        return self._deps.settings.execution_mode in {"main", "main_with_subagents"}
+
+    async def _run_engine(
+        self,
+        request: AgentRequest,
+        *,
+        context: AgentExecutionContext,
+        pause_for_hitl: bool,
+    ) -> Any:
+        if self._is_main_mode:
+            return await self._main().run(
+                request,
+                context=context,
+                pause_for_hitl=pause_for_hitl,
+            )
+        return await self._supervisor().run(
+            request,
+            context=context,
+            pause_for_hitl=pause_for_hitl,
+        )
+
+    def _main(self) -> MainAgentRuntime:
+        if self._main_runtime is None:
+            checkpoint = self._deps.agent_checkpoint
+            if checkpoint is None and self._deps.graph_checkpointer is not None:
+                checkpoint = LangGraphAgentRuntimeCheckpoint(self._deps.graph_checkpointer)
+            self._main_runtime = MainAgentRuntime(
+                self._deps,
+                decision_port=self._deps.agent_decision,
+                checkpoint=checkpoint,
+            )
+        return self._main_runtime
 
     async def _ledger_get(self, session_id: str, request_id: str) -> AgentResponse | None:
         if self._deps.request_ledger is None:

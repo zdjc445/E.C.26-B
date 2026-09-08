@@ -155,10 +155,7 @@ class SameItemMatcher:
             return False
         # 没有可靠品牌+型号锚点时不生成自动聚类候选。
         if not (
-            a.normalized_brand
-            and b.normalized_brand
-            and a.normalized_model
-            and b.normalized_model
+            a.normalized_brand and b.normalized_brand and a.normalized_model and b.normalized_model
         ):
             return False
         if not open_text_equal(a.normalized_brand, b.normalized_brand):

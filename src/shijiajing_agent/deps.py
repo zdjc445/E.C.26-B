@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from shijiajing_agent.adapters.ark_agent_decision import ArkAgentDecision
 from shijiajing_agent.adapters.ark_models import (
     ArkDynamicProductCanonicalizer,
     ArkDynamicSchemaInducer,
@@ -104,6 +105,15 @@ def make_deps(
             raise ValueError("Supervisor Planner 无法取得共享 ArkModelClient")
         supervisor_planner = ArkSupervisorPlanner(client, taxonomy, settings)
 
+    agent_decision = None
+    if settings.execution_mode != "workflow":
+        client = getattr(vision, "client", None)
+        if client is None:
+            raise ValueError("Main Agent 无法取得共享 ArkModelClient")
+        if not settings.main_agent_model:
+            raise ValueError("主 Agent 配置缺失：SHIJIAJING_MAIN_AGENT_MODEL")
+        agent_decision = ArkAgentDecision(client, settings.main_agent_model)
+
     retrieval = make_retrieval(settings, metrics=metrics)
     if resource_registrar is not None:
         resource_registrar(retrieval)
@@ -119,6 +129,7 @@ def make_deps(
         trace=trace,
         metrics=metrics,
         supervisor_planner=supervisor_planner,
+        agent_decision=agent_decision,
         dynamic_schema_inducer=dynamic_schema_inducer,
         dynamic_product_canonicalizer=dynamic_product_canonicalizer,
     )
