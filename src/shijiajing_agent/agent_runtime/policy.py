@@ -194,6 +194,7 @@ def observation_for(
         recognition=state.understanding.recognition,
         understanding=state.understanding,
         evidence_summary=summary,
+        retrieval_assessment=state.retrieval_assessment,
         gaps=list(state.gaps),
         conflicts=list(state.conflicts),
         available_actions=list(actions),

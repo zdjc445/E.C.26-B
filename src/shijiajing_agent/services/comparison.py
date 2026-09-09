@@ -3,20 +3,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field as dc_field
 from typing import Any, cast
 
 from shijiajing_agent.contracts import (
+    Availability,
     MatchPair,
     NormalizedCandidate,
     Preference,
+    PriceBasis,
     RankedGroup,
     RetrievalCandidate,
     ShoppingConstraints,
     SkuGroup,
     SortBy,
 )
+from shijiajing_agent.domain.filters import HardFilterBuilder, offer_matches_hard_filters
 from shijiajing_agent.domain.product_canonicalization import canonicalize_offers
 from shijiajing_agent.domain.ranking import GroupRanker
+from shijiajing_agent.domain.requirements import (
+    build_semantic_requirements,
+    qualify_candidate,
+)
 from shijiajing_agent.domain.same_item import default_same_item_matcher
 from shijiajing_agent.domain.sku import SkuSplitter, spu_id_for
 from shijiajing_agent.domain.taxonomy import Taxonomy
@@ -26,6 +34,11 @@ from shijiajing_agent.ports.models import (
     DynamicSchemaInductionPort,
 )
 from shijiajing_agent.ports.observability import MetricsPort
+from shijiajing_agent.rag_contracts import (
+    CandidateAssessment,
+    RequirementMatch,
+    RequirementState,
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +49,9 @@ class ComparisonResult:
     model_calls: int = 0
     fallback_used: bool = False
     notices: list[str] | None = None
+    requirement_matches: list[RequirementMatch] = dc_field(default_factory=list[RequirementMatch])
+    excluded_offer_ids: list[str] = dc_field(default_factory=list[str])
+    assessment: CandidateAssessment | None = None
 
 
 class ComparisonService:
@@ -105,12 +121,31 @@ class ComparisonService:
         normalized = canonicalization.candidates
         for item, candidate in zip(normalized, candidates, strict=True):
             item.recall_score = candidate.recall_score
+        requirements = build_semantic_requirements(constraints)
+        hard_filters = HardFilterBuilder().build(constraints)
+        qualified: list[NormalizedCandidate] = []
+        requirement_matches: list[RequirementMatch] = []
+        excluded_offer_ids: list[str] = []
+        for item in normalized:
+            qualification = qualify_candidate(item, requirements)
+            requirement_matches.extend(qualification.matches)
+            if (
+                qualification.eligible
+                and item.offer.availability is not Availability.UNAVAILABLE
+                and offer_matches_hard_filters(item.offer, hard_filters)
+            ):
+                qualified.append(item)
+            else:
+                excluded_offer_ids.append(item.offer_id)
+        notices = list(canonicalization.notices or [])
+        if excluded_offer_ids:
+            notices.append(f"{len(excluded_offer_ids)} 条候选未通过当前硬要求资格校验")
         matcher = default_same_item_matcher(
             accept_threshold=self._accept_threshold,
             review_threshold=self._review_threshold,
         )
-        pairs = matcher.generate_candidates(normalized)
-        judged = [matcher.judge_pair(normalized[left], normalized[right]) for left, right in pairs]
+        pairs = matcher.generate_candidates(qualified)
+        judged = [matcher.judge_pair(qualified[left], qualified[right]) for left, right in pairs]
         review_pairs = [
             MatchPair(
                 offer_a_id=pair.a_id,
@@ -127,21 +162,22 @@ class ComparisonService:
             if pair.verdict == "review"
         ]
         pair_confidences = {_pair_key(pair.a_id, pair.b_id): pair.score for pair in judged}
-        clusters = matcher.cluster(normalized, pairs)
+        clusters = matcher.cluster(qualified, pairs)
         if split_offer_ids:
             split_clusters: list[list[int]] = []
             for cluster in clusters:
                 remaining = [
-                    index for index in cluster if normalized[index].offer_id not in split_offer_ids
+                    index for index in cluster if qualified[index].offer_id not in split_offer_ids
                 ]
                 split_clusters.extend([[index] for index in cluster if index not in remaining])
                 if remaining:
                     split_clusters.append(remaining)
             clusters = split_clusters
+        clusters = _split_price_incompatible_clusters(qualified, clusters)
         splitter = SkuSplitter(self._taxonomy)
         groups: list[SkuGroup] = []
         for cluster in clusters:
-            members = [normalized[index] for index in cluster]
+            members = [qualified[index] for index in cluster]
             groups.extend(
                 splitter.split_spu(members, spu_id_for(members), pair_confidences=pair_confidences)
             )
@@ -162,8 +198,88 @@ class ComparisonService:
             review_pairs=review_pairs,
             model_calls=canonicalization.model_calls,
             fallback_used=canonicalization.fallback_batches > 0,
-            notices=canonicalization.notices,
+            notices=notices,
+            requirement_matches=requirement_matches,
+            excluded_offer_ids=excluded_offer_ids,
+            assessment=_build_assessment(candidates, requirement_matches, len(groups)),
         )
+
+
+def _build_assessment(
+    candidates: list[RetrievalCandidate],
+    matches: list[RequirementMatch],
+    comparable_groups: int,
+) -> CandidateAssessment:
+    counts: dict[str, dict[RequirementState, int]] = {}
+    for match in matches:
+        per_state = counts.setdefault(match.requirement_id, {})
+        per_state[match.state] = per_state.get(match.state, 0) + 1
+    platforms = {candidate.offer.platform for candidate in candidates}
+    unknown = sum(match.state is RequirementState.UNKNOWN for match in matches)
+    return CandidateAssessment(
+        total_hits=len(candidates),
+        unique_offers=len({candidate.offer.offer_id for candidate in candidates}),
+        selected_window=len(candidates),
+        requirement_counts=counts,
+        comparable_groups=comparable_groups,
+        platform_count=len(platforms),
+        unassessed=unknown,
+        gaps=["requirement_unknown"] if unknown else [],
+    )
+
+
+def _split_price_incompatible_clusters(
+    candidates: list[NormalizedCandidate], clusters: list[list[int]]
+) -> list[list[int]]:
+    """同款判断不能跨币种或混合明确不同的报价基准。"""
+    result: list[list[int]] = []
+    for cluster in clusters:
+        by_currency: dict[str, list[int]] = {}
+        for index in cluster:
+            by_currency.setdefault(candidates[index].offer.currency, []).append(index)
+        for currency_cluster in by_currency.values():
+            known_basis = {
+                candidates[index].offer.price_basis
+                for index in currency_cluster
+                if candidates[index].offer.price_basis is not PriceBasis.UNKNOWN
+            }
+            if len(known_basis) <= 1:
+                if known_basis and any(
+                    candidates[index].offer.price_basis is PriceBasis.UNKNOWN
+                    for index in currency_cluster
+                ):
+                    result.extend(
+                        [
+                            [index]
+                            for index in currency_cluster
+                            if candidates[index].offer.price_basis is PriceBasis.UNKNOWN
+                        ]
+                    )
+                    result.append(
+                        [
+                            index
+                            for index in currency_cluster
+                            if candidates[index].offer.price_basis is not PriceBasis.UNKNOWN
+                        ]
+                    )
+                else:
+                    result.append(currency_cluster)
+                continue
+            for basis in sorted(known_basis, key=lambda value: value.value):
+                result.append(
+                    [
+                        index
+                        for index in currency_cluster
+                        if candidates[index].offer.price_basis is basis
+                    ]
+                )
+            unknown = [
+                index
+                for index in currency_cluster
+                if candidates[index].offer.price_basis is PriceBasis.UNKNOWN
+            ]
+            result.extend([[index] for index in unknown])
+    return [cluster for cluster in result if cluster]
 
 
 def _constraint_sort_by(raw: object) -> SortBy:

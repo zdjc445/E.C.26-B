@@ -64,6 +64,17 @@ def source_value(offer: Offer, source_path: str) -> str | None:
         return offer.variant_attributes.get(key)
     if prefix == "descriptive_attributes":
         return offer.descriptive_attributes.get(key)
+    if prefix == "raw_attributes":
+        attribute_id, _, field = key.partition(".")
+        attribute = next(
+            (item for item in offer.raw_attributes if item.attribute_id == attribute_id), None
+        )
+        if attribute is None:
+            return None
+        if field == "raw_key":
+            return attribute.raw_key
+        if field == "raw_value":
+            return attribute.raw_value
     return None
 
 

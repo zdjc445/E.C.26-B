@@ -313,6 +313,16 @@ def _cache_offer_payload(offer: Offer) -> dict[str, Any]:
         "offer_id": offer.offer_id,
         "platform": offer.platform,
         "source_product_id": offer.source_product_id,
+        "source_sku_id": offer.source_sku_id,
+        "source_offer_id": offer.source_offer_id,
+        "record_kind": offer.record_kind.value,
+        "raw_category_path": offer.raw_category_path,
+        "raw_attributes": [item.model_dump(mode="json") for item in offer.raw_attributes],
+        "provenance": offer.provenance.value,
+        "source_revision": offer.source_revision,
+        "source_content_hash": offer.source_content_hash,
+        "availability": offer.availability.value,
+        "price_basis": offer.price_basis.value,
         "source_updated_at": offer.source_updated_at,
         "title": offer.title,
         "category_id": offer.category_id,
@@ -321,6 +331,11 @@ def _cache_offer_payload(offer: Offer) -> dict[str, Any]:
         "identity_attributes": offer.identity_attributes,
         "variant_attributes": offer.variant_attributes,
         "descriptive_attributes": offer.descriptive_attributes,
+        "price": offer.price,
+        "original_price": offer.original_price,
+        "shipping_fee": offer.shipping_fee,
+        "coupon_amount": offer.coupon_amount,
+        "currency": offer.currency,
     }
 
 

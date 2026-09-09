@@ -186,6 +186,7 @@ class DecisionObservation(BaseModel):
     evidence_summary: list[dict[str, Any]] = Field(
         default_factory=list[dict[str, Any]], max_length=10
     )
+    retrieval_assessment: dict[str, Any] | None = None
     gaps: list[str] = Field(default_factory=list[str], max_length=20)
     conflicts: list[str] = Field(default_factory=list[str], max_length=20)
     available_actions: list[ActionKind] = Field(min_length=1, max_length=7)
@@ -459,6 +460,7 @@ class MainRuntimeState(BaseModel):
     seen_fingerprints: list[str] = Field(default_factory=list[str], max_length=100)
     no_progress_count: int = Field(default=0, ge=0)
     ranked_groups: list[RankedGroup] = Field(default_factory=list[RankedGroup], max_length=100)
+    retrieval_assessment: dict[str, Any] | None = None
     last_candidates: list[RetrievalCandidate] = Field(
         default_factory=list[RetrievalCandidate], max_length=200
     )

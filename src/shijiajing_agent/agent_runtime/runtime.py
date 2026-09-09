@@ -461,6 +461,7 @@ class MainAgentRuntime:
         if reset_results:
             state.ranked_groups = []
             state.last_candidates = []
+            state.retrieval_assessment = None
             state.evidence = {}
             state.evidence_version = 0
         recognition_outcome = await self._recognition.run(
@@ -571,7 +572,14 @@ class MainAgentRuntime:
                 state.no_progress_count += 1
             state.last_candidates = result.search.candidates
             state.ranked_groups = result.comparison.ranked_groups
+            state.retrieval_assessment = (
+                result.comparison.assessment.model_dump(mode="json")
+                if result.comparison.assessment is not None
+                else None
+            )
             state.gaps = [] if state.ranked_groups else ["no_qualified_candidates"]
+            if result.comparison.assessment is not None:
+                state.gaps.extend(result.comparison.assessment.gaps)
             if result.comparison.review_pairs:
                 state.gaps.append("same_item_uncertain")
             state.conflicts = [risk for group in state.ranked_groups for risk in group.group.risks]
@@ -789,8 +797,15 @@ class MainAgentRuntime:
             raise ActionRejectedError("子结果引用了未注册的 evidence_id")
         state.last_candidates = list(merged.values())
         state.ranked_groups = compared.ranked_groups
+        state.retrieval_assessment = (
+            compared.assessment.model_dump(mode="json")
+            if compared.assessment is not None
+            else state.retrieval_assessment
+        )
         state.subagent_results.append(result)
         state.gaps = list(result.unresolved_fields)
+        if compared.assessment is not None:
+            state.gaps.extend(compared.assessment.gaps)
         if not state.gaps and not state.ranked_groups:
             state.gaps = ["no_qualified_candidates"]
         state.conflicts = [risk for group in state.ranked_groups for risk in group.group.risks]
@@ -858,12 +873,19 @@ class MainAgentRuntime:
             raise ActionRejectedError("核验模型建议与确定性硬约束判定冲突")
         state.last_candidates = list(merged.values())
         state.ranked_groups = compared.ranked_groups
+        state.retrieval_assessment = (
+            compared.assessment.model_dump(mode="json")
+            if compared.assessment is not None
+            else state.retrieval_assessment
+        )
         state.subagent_results.append(result.model_copy(update={"recommendation": recommendation}))
         state.gaps = (
             []
             if recommendation == "comparable"
             else list(result.unresolved_fields) or [recommendation]
         )
+        if compared.assessment is not None:
+            state.gaps.extend(compared.assessment.gaps)
         state.conflicts = [risk for group in state.ranked_groups for risk in group.group.risks]
         status = "success" if recommendation == "comparable" else "fallback"
         return ToolObservation(
@@ -1058,6 +1080,11 @@ class MainAgentRuntime:
                         split_offer_ids=ids,
                     )
                     state.ranked_groups = compared.ranked_groups
+                    state.retrieval_assessment = (
+                        compared.assessment.model_dump(mode="json")
+                        if compared.assessment is not None
+                        else state.retrieval_assessment
+                    )
                     records = self._evidence.register(state.ranked_groups)
                     state.evidence.update({item.evidence_id: item for item in records})
                     state.evidence_version += 1
