@@ -41,6 +41,10 @@ def session_namespace(session_id: str) -> str:
     return f"agent-runtime-v1/{session_id}/session"
 
 
+def subagent_namespace(session_id: str, request_id: str, task_id: str) -> str:
+    return f"agent-runtime-v1/{session_id}/{request_id}/subagents/{task_id}"
+
+
 class InMemoryAgentRuntimeCheckpoint:
     """契约测试用实现；保存前也经过持久化脱敏。"""
 
@@ -221,4 +225,5 @@ __all__ = [
     "LangGraphAgentRuntimeCheckpoint",
     "request_namespace",
     "session_namespace",
+    "subagent_namespace",
 ]

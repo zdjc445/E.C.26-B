@@ -233,3 +233,42 @@ uv run shijiajing-build-eval freeze \
 目录约定：`evals/private/provisional_v1/`（本地原始证据，已加入
 `.gitignore`，禁止提交）与 `evals/datasets/provisional/v1/`（脱敏后提交，
 含 manifest.json、README.md 与全部数据文件 SHA-256）。
+
+## 7. 三引擎对照：Workflow / Main / Main + Subagent
+
+主 Agent 改造的离线对照报告必须把执行引擎、模型/Prompt、taxonomy、索引、候选池和总预算
+写入同一份 manifest，并按简单问题与复杂问题分层。推荐报告结构如下；它是测量结果容器，
+不是把当前 seed 数据或夹具通过误写成线上收益：
+
+```json
+{
+  "schema_version": "execution-mode-comparison-v1",
+  "dataset_id": "<frozen-or-provisional-id>",
+  "groups": {
+    "workflow": {"execution_mode": "workflow", "cases": 0},
+    "main": {"execution_mode": "main", "cases": 0},
+    "main_with_subagents": {"execution_mode": "main_with_subagents", "cases": 0}
+  },
+  "metrics": {
+    "hard_constraint_violation_rate": {"workflow": null, "main": null, "main_with_subagents": null},
+    "evidence_completeness_rate": {"workflow": null, "main": null, "main_with_subagents": null},
+    "task_completion_rate": {"workflow": null, "main": null, "main_with_subagents": null},
+    "p50_latency_ms": {"workflow": null, "main": null, "main_with_subagents": null},
+    "p95_latency_ms": {"workflow": null, "main": null, "main_with_subagents": null},
+    "model_calls": {"workflow": null, "main": null, "main_with_subagents": null},
+    "delegation_rate_simple": {"workflow": 0, "main": 0, "main_with_subagents": null},
+    "new_evidence_rate_complex": {"workflow": null, "main": null, "main_with_subagents": null}
+  },
+  "pending_reasons": ["需要真实模型/数据运行"]
+}
+```
+
+运行时可用 `execution_mode=workflow` 作为 A 组，`main` 作为 B 组，
+`main_with_subagents` 作为 C 组；每个新会话在比较时单独创建，不能把一次请求的 Request Ledger
+结果跨组复用。简单明确型号的验收要求是 B/C 委派数为 0；C 只有在复杂样例中产生新增有效
+证据且硬约束违规率、证据完整率和资源代价达到预设门槛时才具备灰度候选资格。当前仓库没有
+真实线上对照数据，报告中的空值应保持 `pending`，不能被 CI 通过状态替代。
+
+恢复验收至少应覆盖：旧 Workflow checkpoint 恢复、新 runtime checkpoint 恢复、完成 interrupt
+后 active marker 清理、相同 request 重放、不同 interrupt payload 冲突、以及 Memory mutation
+重复 resume 的幂等。快照或 fixture 不具备实时来源时，优惠资格只能报告为证据不足。

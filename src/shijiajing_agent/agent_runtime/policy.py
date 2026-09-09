@@ -16,6 +16,7 @@ from shijiajing_agent.agent_runtime.contracts import (
     MainRuntimeState,
     SearchAndCompareAction,
 )
+from shijiajing_agent.contracts import AgentStatus
 from shijiajing_agent.ports.agent_decision import OfferDetailPort
 
 
@@ -131,6 +132,21 @@ class ActionGuard:
                 raise ActionRejectedError("已有合格结果时不能声明 no_results")
 
 
+class FallbackPolicy:
+    """预算、模型或动作失败后的确定性响应选择，不重新切回旧引擎。"""
+
+    @staticmethod
+    def response_status(state: MainRuntimeState) -> tuple[AgentStatus, str]:
+        constraints = state.understanding.constraints
+        if constraints is None or not constraints.category_id.value:
+            return AgentStatus.CLARIFICATION, "请补充商品品类后继续比价。"
+        if state.ranked_groups:
+            return AgentStatus.SUCCESS, "使用已验证结果返回确定性降级答复。"
+        if state.last_tool_status == "failed":
+            return AgentStatus.FAILED, "检索服务不可用，请稍后重试。"
+        return AgentStatus.NO_RESULTS, "当前条件下没有符合要求的比价结果。"
+
+
 def allowed_actions_for(
     state: MainRuntimeState,
     *,
@@ -191,6 +207,7 @@ __all__ = [
     "ActionRejectedError",
     "DelegationDecision",
     "DelegationPolicy",
+    "FallbackPolicy",
     "allowed_actions_for",
     "observation_for",
 ]

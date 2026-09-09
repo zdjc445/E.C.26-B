@@ -1,9 +1,19 @@
 # 识价镜：主 Agent + 按需 subagent 改造设计与实施交接
 
-状态：待实施；本文件不代表功能已经实现。  
+状态：P2–P4 已实施，P5 文档与对照报告结构已补齐；真实模型/生产详情源评测仍待外部资源。
 设计日期：2026-09-09。  
 代码基线：`6143b452cb2e42e822bb7f3ecf14415538afaee1`。  
 目标仓库：`/Users/zsc/Projects/E.C.26-B`。
+
+实施批次：
+
+- `c27f723 feat: add main agent execution mode`：P2 主 Agent、预算、Checkpoint、HITL 与跨轮摘要。
+- `ed17e8d feat: add on-demand research subagent`：P3 复杂检索 subagent 与父子预算/证据归并。
+- `2e358c3 feat: add optional verification subagent`：P4 可选详情核验及硬冲突/证据不足保护。
+- 当前批次：P5 架构、配置、契约、评测说明和三引擎对照报告结构。
+
+当前未宣称：真实线上质量收益、实时价格或优惠资格核验；没有 `OfferDetailPort` 时 Verification
+保持关闭，正式 frozen 对照数据仍需按本文件第 14 节准备。
 
 ## 1. 决策与交付目标
 

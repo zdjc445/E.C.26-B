@@ -1,8 +1,8 @@
 # 识价镜 Agent（shijiajing-agent）
 
 图片/文本输入 → 商品识别 → 意图理解 → 混合召回 → 同款匹配 → SKU 拆分 →
-比价排序 → 多轮筛选修正 的**可恢复层级式 Multi-Agent**（LangGraph）。Supervisor
-通过类型化任务 DAG 调度五类 Specialist Agent。
+比价排序 → 多轮筛选修正 的**可恢复 Agent runtime**（LangGraph）。默认保留
+Workflow；可选的 Main Agent 先调用共享工具，复杂检索或详情核验缺口才按需委派 subagent。
 
 工程只实现 Agent 逻辑，不包含 Web API 与客户端（方案 §3.2 非目标）。
 
@@ -28,6 +28,7 @@ cp .env.example .env      # 然后按注释填写
 | 检索 | `SHIJIAJING_MILVUS_URI` `SHIJIAJING_MILVUS_TOKEN` `SHIJIAJING_MILVUS_COLLECTION`（或 `SHIJIAJING_LOCAL_PRODUCT_SNAPSHOT_PATH` 本地词法降级） |
 | 持久化 | `SHIJIAJING_CHECKPOINT_BACKEND` `SHIJIAJING_CHECKPOINT_DSN` `SHIJIAJING_REQUEST_LEDGER_BACKEND` `SHIJIAJING_REQUEST_LEDGER_DSN` |
 | 编排控制 | `SHIJIAJING_SUPERVISOR_PLANNER_MODE`（`off` / `shadow` / `active_replan` / `active`）`SHIJIAJING_SUPERVISOR_MODEL` `SHIJIAJING_MAX_AGENT_TASKS` `SHIJIAJING_MAX_SUPERVISOR_REPLANS` |
+| 主 Agent / subagent | `SHIJIAJING_EXECUTION_MODE`（默认 `workflow`）`SHIJIAJING_MAIN_AGENT_MODEL` `SHIJIAJING_SUBAGENT_MODEL` `SHIJIAJING_RESEARCH_SUBAGENT_ENABLED` `SHIJIAJING_VERIFICATION_SUBAGENT_ENABLED` |
 | 二期能力 | `SHIJIAJING_MEMORY_*` `SHIJIAJING_HITL_ENABLED` `SHIJIAJING_CACHE_*` `SHIJIAJING_RETRIEVAL_FUSION_STRATEGY` `SHIJIAJING_RETRIEVAL_RERANK_ENABLED` `SHIJIAJING_EVENT_STORE_*` |
 | 可观测 | `SHIJIAJING_TRACE_BACKEND` `SHIJIAJING_TRACE_DSN` |
 | 数据 | `SHIJIAJING_TAXONOMY_PATH` `SHIJIAJING_LOCAL_PRODUCT_SNAPSHOT_PATH` |
@@ -49,6 +50,11 @@ uv run python -m examples.image_example --image photo.jpg --text "预算2000以�
 
 # 用户修正：第一轮图片识别，第二轮修正品牌/型号，修正后不再调用 VLM
 uv run python -m examples.correction_example --image photo.jpg --brand Sony --model WH-1000XM5
+
+# 新路径（迁移/评测时显式开启；默认仍是 workflow）
+export SHIJIAJING_EXECUTION_MODE=main
+export SHIJIAJING_MAIN_AGENT_MODEL="$SHIJIAJING_ARK_TEXT_MODEL"
+# 复杂检索路径：另设 EXECUTION_MODE=main_with_subagents 并开启 research 开关
 ```
 
 示例脚本与生产 CLI 共用 `shijiajing_agent.asyncio_compat`；Windows 下会使用
@@ -103,6 +109,8 @@ uv run --env-file .env shijiajing-planner-shadow \
 ```
 
 - 分层：contracts（Pydantic）→ domain（纯领域）→ multi_agent（编排与 Agent）→ adapters（外部能力）
+- 新路径：`AgentFacade` 按 `EXECUTION_MODE` 选择旧 Workflow 或 `MainAgentRuntime`；主 Agent
+  的动作、预算、HITL、证据和恢复由确定性 runtime 控制。
 - 全部外部能力通过 Protocol 端口注入（VLM/意图/改写/解释/检索/Checkpoint/Trace/指标）
 - 幂等（request_id）、乐观版本冲突重放、同会话并发控制
 - 详细：[docs/architecture.md](docs/architecture.md)、[docs/multi_agent.md](docs/multi_agent.md)
@@ -115,7 +123,7 @@ uv run --env-file .env shijiajing-planner-shadow \
 | [docs/contracts.md](docs/contracts.md) | 数据契约、硬过滤语义、Checkpoint 序列化 |
 | [docs/memory.md](docs/memory.md) | 三层上下文、显式记忆写入、scope/apply mode、HITL、持久化与验收设计 |
 | [docs/multi_agent.md](docs/multi_agent.md) | Supervisor、Specialist Agent、并行汇合与确定性边界 |
-| [主 Agent + 按需 subagent 改造设计](docs/plans/main_agent_on_demand_subagents_design.md) | 待实施：职责、工具与委派契约、改造步骤、兼容回滚及验收清单 |
+| [主 Agent + 按需 subagent 改造设计](docs/plans/main_agent_on_demand_subagents_design.md) | 设计、阶段实施记录、兼容回滚及验收清单 |
 | [docs/product_canonicalization.md](docs/product_canonicalization.md) | 当前商品归一化、动态 Schema 四种迁移模式、证据校验、SPU/SKU 确定性处理 |
 | [docs/plans/dynamic_product_schema_implementation_plan.md](docs/plans/dynamic_product_schema_implementation_plan.md) | 无静态 Taxonomy 的 LLM 动态局部 Schema 目标架构、迁移与验收方案 |
 | [docs/configuration.md](docs/configuration.md) | 全部配置项与缺失行为 |

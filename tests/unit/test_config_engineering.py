@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from shijiajing_agent.config import Settings, load_settings
@@ -45,6 +47,18 @@ def test_unknown_environment_is_rejected() -> None:
 
 def test_checkpoint_dsn_is_required() -> None:
     assert Settings().validate_engineering().count("CHECKPOINT_DSN") == 1
+
+
+def test_main_agent_mode_requires_explicit_model_and_allows_zero_subagent_starts() -> None:
+    settings = Settings(
+        execution_mode="main",
+        checkpoint_dsn="checkpoint.db",
+        main_agent_max_subagent_starts=0,
+    )
+    assert "MAIN_AGENT_MODEL" in settings.validate_engineering()
+    assert "MAIN_AGENT_MODEL" in settings.validate(require_real_adapters=True)
+    configured = replace(settings, main_agent_model="main-v1")
+    assert configured.validate_engineering() == []
 
 
 def test_production_requires_persistent_event_store() -> None:

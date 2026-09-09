@@ -170,6 +170,40 @@ Supervisor/task Checkpoint 要求 `SHIJIAJING_CHECKPOINT_DSN`；启用 HITL 时�
 偏好权重表（价格/店铺/评分/销量/发货）默认内置，见
 `Settings.preference_weights`；可按环境扩展并在 trace 中透出。
 
+## 3.1 主 Agent 与按需 subagent
+
+迁移期间默认仍为旧 Workflow：
+
+| 环境变量 | 默认 | 说明 |
+|---|---|---|
+| `SHIJIAJING_EXECUTION_MODE` | `workflow` | `workflow` / `main` / `main_with_subagents` |
+| `SHIJIAJING_MAIN_AGENT_MODEL` | 空 | `main` 与 `main_with_subagents` 必填；不自动猜模型 |
+| `SHIJIAJING_SUBAGENT_MODEL` | 空 | 未填写时继承 `MAIN_AGENT_MODEL`，运行报告应记录实际模型 |
+| `SHIJIAJING_RESEARCH_SUBAGENT_ENABLED` | `false` | 仅 `main_with_subagents` 可启用复杂检索委派 |
+| `SHIJIAJING_VERIFICATION_SUBAGENT_ENABLED` | `false` | 仅有 `OfferDetailPort` 时开放；无详情能力保持关闭 |
+| `SHIJIAJING_MAIN_AGENT_MAX_DECISIONS` | `8` | 主 Agent 决策上限，包含修正调用 |
+| `SHIJIAJING_MAIN_AGENT_MAX_TOOL_CALLS` | `24` | 全局工具派发上限 |
+| `SHIJIAJING_MAIN_AGENT_MAX_RETRIEVAL_CALLS` | `6` | 全局真实检索上限 |
+| `SHIJIAJING_MAIN_AGENT_MAX_MODEL_CALLS` | `32` | 主/工具/子任务生成模型调用总上限 |
+| `SHIJIAJING_MAIN_AGENT_MAX_TOKENS` | `100000` | 主/工具/子任务 token 总上限 |
+| `SHIJIAJING_MAIN_AGENT_MAX_SUBAGENT_STARTS` | `2` | 单轮最多启动数；V1 同时只执行一个 |
+| `SHIJIAJING_SUBAGENT_MAX_DECISIONS` | `4` | 单个 subagent 决策上限 |
+| `SHIJIAJING_SUBAGENT_MAX_TOOL_CALLS` | `6` | 单个 subagent 工具上限 |
+| `SHIJIAJING_SUBAGENT_MAX_SECONDS` | `30` | 单个 subagent 时限，且受父轮剩余时限约束 |
+| `SHIJIAJING_SUBAGENT_MAX_TOKENS` | `20000` | 单个 subagent token 上限，且受父预算约束 |
+
+新模式不能与 `SUPERVISOR_PLANNER_MODE != off` 同时启用；Planner 只属于旧 Workflow。
+`main` 是关闭委派的单 Agent 对照路径，`main_with_subagents` 才会把委派动作加入主 Agent
+动作目录。`SUBAGENT_MODEL` 未配置不代表额外获得预算或额外 Agent。
+
+Verification 的开关是“配置意图”，实际能力还要由 `OfferDetailPort` 装配决定；缺少详情端口
+时 runtime 会从允许动作中移除核验，并在 notices 记录限制，普通检索不受阻断。当前仓库没有
+实时优惠资格数据源，因此不能把离线详情夹具或快照描述为实时价格/优惠核验。
+
+三种模式都使用同一套 `Settings.validate_engineering()`：非法枚举、缺少主模型、Planner 冲突、
+跨模式开关或预算范围会返回精确字段名。新会话按当前配置选择引擎；已开始的 runtime 请求和
+中断按 Checkpoint 中记录的引擎版本恢复，回滚只作用于新会话并保留旧恢复路径。
+
 ## 4. 缺失配置的行为
 
 - 示例与 `shijiajing-eval --live`：`load_settings_or_exit()` 打印

@@ -37,6 +37,7 @@ from shijiajing_agent.agent_runtime.policy import (
     ActionGuard,
     ActionRejectedError,
     DelegationPolicy,
+    FallbackPolicy,
     allowed_actions_for,
     observation_for,
 )
@@ -170,6 +171,7 @@ class MainAgentRuntime:
                 offer_details=offer_details,
             )
         )
+        self._fallback = FallbackPolicy()
         self._local_states: dict[tuple[str, str], MainRuntimeState] = {}
         self._local_sessions: dict[str, RuntimeSessionSnapshot] = {}
 
@@ -345,7 +347,9 @@ class MainAgentRuntime:
                         }
                     )
                 state.usage = state.usage.model_copy(
-                    update={"elapsed_ms": (perf_counter() - started) * 1000}
+                    update={
+                        "elapsed_ms": state.usage.elapsed_ms + (perf_counter() - started) * 1000
+                    }
                 )
             except BudgetExceededError:
                 state.actions[record_index] = record.model_copy(
@@ -480,6 +484,12 @@ class MainAgentRuntime:
             request.text or request.selected_option_id,
             previous_constraints,
             recent_turns=recent_turns,
+        )
+        self._add_usage(
+            state,
+            AgentRuntimeUsage(
+                model_calls=recognition_outcome.model_calls + intent_outcome.model_calls
+            ),
         )
         memories = []
         if (
@@ -964,6 +974,9 @@ class MainAgentRuntime:
             or not state.understanding.constraints.category_id.value
         ):
             response = self._clarification_response(state, ["category_id"])
+        elif not state.ranked_groups:
+            status, message = self._fallback.response_status(state)
+            response = self._base_response(state, status, message)
         else:
             response = await self._answer_response(
                 state,

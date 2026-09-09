@@ -51,3 +51,29 @@ Request Ledger 使用 `(session_id, request_id)` 保存最终响应；同一键�
 
 对外错误使用 `ErrorCode` 和固定可操作消息。模型或外部服务异常可以触发明确的
 `FALLBACK`，但不能把降级结果标记为原服务成功；任务级不可恢复错误使用 `FAILED`。
+
+## 7. Main Agent runtime 契约
+
+新路径不扩展旧 `AgentTaskV2`，而是在 `agent_runtime/contracts.py` 使用独立的严格判别联合：
+
+| 契约 | 运行时责任 |
+|---|---|
+| `DecisionObservation` / `MainAction` | 主 Agent 每轮只提出一个有限动作；不能传入授权令牌、函数名、任意 URL 或新硬条件 |
+| `ActionRecord` / `ToolObservation` | 记录动作 fingerprint、约束/证据版本、状态、结果引用和实际用量 |
+| `SubagentTask` / `SubagentObservation` | 冻结约束、有限 evidence allowlist、允许工具、局部截止时间和父预算投影 |
+| `SubagentResult` | 只能引用运行时登记的 candidate/evidence；`facts` 必须逐字段绑定 evidence |
+| `EvidenceRecord` / `EvidenceQualityReport` | 绑定 offer、来源、数据版本和可在答案中出现的事实 |
+| `RuntimeSessionSnapshot` / `MainRuntimeState` | 分离跨轮会话摘要与单轮可恢复状态 |
+
+所有模型契约 `extra="forbid"`，serializer 只允许显式 allowlist 类型。主 Agent 的 `answer` 仍须
+经过证据质量检查；Verification 的 `comparable/not_comparable/insufficient_evidence` 建议由
+确定性比较服务重新计算，模型不能覆盖型号、容量、币种或优惠适用条件等硬冲突。
+
+### 7.1 版本与引用规则
+
+- 用户更新约束时 `constraints_version` 递增；旧 subagent 结果不能直接归并。
+- `evidence_id` 由受控商品字段和来源内容哈希生成；未知 ID、跨请求 ID 或伪造 facts 均拒绝。
+- `agent-runtime-v1/{session}/{request}/main` 保存主状态，会话摘要在
+  `agent-runtime-v1/{session}/session`；子任务命名空间约定为
+  `agent-runtime-v1/{session}/{request}/subagents/{task_id}`。
+- subagent 没有长期 Memory commit 权限；HITL / Memory 授权由 runtime 绑定实际 mutation 集合。

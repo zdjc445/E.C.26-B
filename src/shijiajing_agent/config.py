@@ -214,6 +214,8 @@ class Settings:
                 missing.append("EMBEDDING_MODEL")
             if self.supervisor_planner_mode != "off" and not self.supervisor_model:
                 missing.append("SUPERVISOR_MODEL")
+            if self.execution_mode in {"main", "main_with_subagents"} and not self.main_agent_model:
+                missing.append("MAIN_AGENT_MODEL")
         return missing
 
     def missing_models(self) -> list[str]:
@@ -365,12 +367,12 @@ class Settings:
             ("MAIN_AGENT_MAX_RETRIEVAL_CALLS", self.main_agent_max_retrieval_calls),
             ("MAIN_AGENT_MAX_MODEL_CALLS", self.main_agent_max_model_calls),
             ("MAIN_AGENT_MAX_TOKENS", self.main_agent_max_tokens),
-            ("MAIN_AGENT_MAX_SUBAGENT_STARTS", self.main_agent_max_subagent_starts),
             ("SUBAGENT_MAX_DECISIONS", self.subagent_max_decisions),
             ("SUBAGENT_MAX_TOOL_CALLS", self.subagent_max_tool_calls),
             ("SUBAGENT_MAX_TOKENS", self.subagent_max_tokens),
         ):
             require_positive(name, value)
+        require_nonnegative("MAIN_AGENT_MAX_SUBAGENT_STARTS", self.main_agent_max_subagent_starts)
         require_finite_positive("SUBAGENT_MAX_SECONDS", self.subagent_max_seconds)
         if self.same_item_review_threshold > self.same_item_accept_threshold:
             errors.append("SAME_ITEM_THRESHOLD_ORDER")
