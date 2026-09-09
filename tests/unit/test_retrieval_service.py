@@ -14,6 +14,7 @@ from shijiajing_agent.contracts import (
     RetrievalQuery,
     ShoppingConstraints,
 )
+from shijiajing_agent.ports.reranker import RerankerStatus, RerankHit, RerankResult
 from shijiajing_agent.ports.retrieval import RetrievalResult, record_retrieval_usage
 from shijiajing_agent.rag_contracts import (
     ChannelKind,
@@ -114,6 +115,50 @@ class MeteredFakeRetrieval(FakeRetrieval):
         return await super().search(query, **kwargs)
 
 
+class CountingReranker:
+    model = "fake-reranker"
+    model_version = "fake-reranker-v1"
+    instruction_version = "product-semantic-v1"
+    summary_version = "offer-summary-v1"
+    tokenizer_version = "fake-tokenizer-v1"
+    cache_identity = "fake-reranker-v1"
+    document_max_tokens = 384
+
+    def __init__(self, *, invalid: bool = False) -> None:
+        self.calls = 0
+        self.invalid = invalid
+
+    async def setup(self) -> None:
+        pass
+
+    async def close(self) -> None:
+        pass
+
+    async def rerank(self, query: str, documents: list[Any], **kwargs: Any) -> RerankResult:
+        del query
+        self.calls += 1
+        candidate_version = kwargs["candidate_version"]
+        if self.invalid:
+            hits = [RerankHit(offer_id=documents[0].offer_id, relevance_score=1.0, rank=1)]
+        else:
+            hits = [
+                RerankHit(
+                    offer_id=document.offer_id,
+                    relevance_score=float(len(documents) - index),
+                    rank=index + 1,
+                )
+                for index, document in enumerate(reversed(documents))
+            ]
+        return RerankResult(
+            status=RerankerStatus.SUCCESS,
+            results=hits,
+            model=self.model,
+            model_version=self.model_version,
+            candidate_version=candidate_version,
+            usage=AgentRuntimeUsage(reranker_requests=1, reranked_documents=len(documents)),
+        )
+
+
 @pytest.mark.asyncio
 async def test_search_once_preserves_plan_versions_and_fuses_variants() -> None:
     retrieval = FakeRetrieval()
@@ -141,6 +186,46 @@ async def test_search_once_preserves_plan_versions_and_fuses_variants() -> None:
     shared = next(item for item in result.candidates if item.offer.offer_id == "shared")
     assert len(shared.query_ids) == 2
     assert result.retrieval.fusion_version == "best-query-channel-rrf-v1"
+
+
+@pytest.mark.asyncio
+async def test_search_once_reranks_once_and_reuses_cache() -> None:
+    reranker = CountingReranker()
+    service = RetrievalService(
+        FakeRewrite(),
+        FakeRetrieval(),
+        comparison=object(),  # type: ignore[arg-type]
+        candidate_window_limit=10,
+        initial_max_queries=3,
+        reranker=reranker,  # type: ignore[arg-type]
+    )
+
+    first = await service.search_once("主查询", ShoppingConstraints())
+    second = await service.search_once("主查询", ShoppingConstraints())
+
+    assert reranker.calls == 1
+    assert first.usage.reranker_requests == 1
+    assert second.usage.reranker_cache_hits == 1
+    assert first.retrieval.rerank_version == "fake-reranker-v1"
+
+
+@pytest.mark.asyncio
+async def test_invalid_reranker_result_falls_back_to_rrf() -> None:
+    reranker = CountingReranker(invalid=True)
+    service = RetrievalService(
+        FakeRewrite(),
+        FakeRetrieval(),
+        comparison=object(),  # type: ignore[arg-type]
+        candidate_window_limit=10,
+        reranker=reranker,  # type: ignore[arg-type]
+    )
+
+    result = await service.search_once("主查询", ShoppingConstraints())
+
+    assert result.retrieval.rerank_result is not None
+    assert result.retrieval.rerank_result.status is RerankerStatus.FAILED
+    assert result.retrieval.rerank_result.fallback_reason == "service_result_validation_failed"
+    assert all(item.rerank_score is None for item in result.candidates)
 
 
 def test_prepared_query_fingerprint_binds_index_manifest() -> None:

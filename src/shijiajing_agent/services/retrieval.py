@@ -479,13 +479,20 @@ class RetrievalService:
             return candidates, None
         pool = list(candidates[: self._union_limit])
         version = candidate_version([item.offer for item in pool])
-        documents = [
-            build_rerank_document(
-                item.offer,
-                max_tokens=getattr(self._reranker, "document_max_tokens", 384),
-            ).document
-            for item in pool
-        ]
+        try:
+            documents = [
+                build_rerank_document(
+                    item.offer,
+                    max_tokens=getattr(self._reranker, "document_max_tokens", 384),
+                ).document
+                for item in pool
+            ]
+        except ValueError:
+            return pool, RerankResult(
+                status=RerankerStatus.FAILED,
+                candidate_version=version,
+                fallback_reason="unsafe_or_empty_summary",
+            )
         query = _build_rerank_query(query_text, constraints)
         cache_key = _rerank_cache_key(
             getattr(self._reranker, "cache_identity", "unknown"),

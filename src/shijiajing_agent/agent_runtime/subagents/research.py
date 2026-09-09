@@ -288,6 +288,7 @@ class ResearchSubagent:
                 soft_terms=soft_terms,
                 constraints_version=task.constraints_version,
                 max_queries=1,
+                rerank=False,
             )
 
     @staticmethod

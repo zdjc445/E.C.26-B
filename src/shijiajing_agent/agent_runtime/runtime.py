@@ -620,6 +620,7 @@ class MainAgentRuntime:
                 pool,
                 constraints,
                 comparison=result.comparison,
+                window_override=result.search.retrieval.selected_candidates,
                 query_fingerprints=[item.fingerprint for item in prepared_queries],
                 query_assumptions=(
                     [assumption for item in prepared_queries for assumption in item.assumptions]
@@ -727,9 +728,36 @@ class MainAgentRuntime:
                 incoming,
                 union_limit=self._settings.retrieval_union_limit,
             )
+            rerank_window: list[RetrievalCandidate] | None = None
+            candidate_set_changed = {item.offer.offer_id for item in merged_pool} != {
+                item.offer.offer_id for item in previous_pool
+            }
+            if candidate_set_changed:
+                reranked_pool, rerank_result = await self._retrieval.rerank_candidates(
+                    state.current_request.text or "",
+                    constraints,
+                    merged_pool,
+                    constraints_version=state.constraints_version,
+                )
+                merged_pool = reranked_pool
+                merged_result.rerank_result = rerank_result
+                merged_result.rerank_version = (
+                    rerank_result.model_version
+                    if rerank_result is not None and rerank_result.status.value == "success"
+                    else None
+                )
+                if rerank_result is not None:
+                    merged_result.usage = merged_result.usage.add(rerank_result.usage)
+                if rerank_result is not None and rerank_result.status.value == "success":
+                    rerank_window = select_candidate_window(
+                        merged_pool,
+                        limit=self._settings.matching_candidate_limit,
+                        use_rerank=True,
+                    ).candidates
             staged = await self._stage_candidate_evaluation(
                 merged_pool,
                 constraints,
+                window_override=rerank_window,
                 query_fingerprints=[item.fingerprint for item in prepared],
                 query_assumptions=[
                     assumption for item in prepared for assumption in item.assumptions
@@ -1113,9 +1141,8 @@ class MainAgentRuntime:
             raise ActionRejectedError("子结果引用了已执行的 query")
         if any(item.offer.offer_id not in result.candidate_ids for item in candidates):
             raise ActionRejectedError("子结果返回了未声明的 candidate_id")
-        merged = {
-            item.offer.offer_id: item for item in (state.recall_pool or state.last_candidates)
-        }
+        previous_pool = list(state.recall_pool or state.last_candidates)
+        merged = {item.offer.offer_id: item for item in previous_pool}
         merged.update({item.offer.offer_id: item for item in candidates})
         if any(item not in merged for item in result.candidate_ids):
             raise ActionRejectedError("子结果引用了不存在的 candidate_id")
@@ -1123,14 +1150,38 @@ class MainAgentRuntime:
         if constraints is None:
             raise ActionRejectedError("缺少当前约束，不能归并 Research 结果")
         merged_pool = list(merged.values())[: self._settings.retrieval_union_limit]
-        window = select_candidate_window(
-            merged_pool, limit=self._settings.matching_candidate_limit
-        ).candidates
+        rerank_usage = AgentRuntimeUsage()
+        window_override: list[RetrievalCandidate] | None = None
+        if {item.offer.offer_id for item in merged_pool} != {
+            item.offer.offer_id for item in previous_pool
+        }:
+            merged_pool, rerank_result = await self._retrieval.rerank_candidates(
+                state.current_request.text or "",
+                constraints,
+                merged_pool,
+                constraints_version=state.constraints_version,
+            )
+            if rerank_result is not None:
+                rerank_usage = rerank_result.usage
+                if rerank_result.status.value == "success":
+                    window_override = select_candidate_window(
+                        merged_pool,
+                        limit=self._settings.matching_candidate_limit,
+                        use_rerank=True,
+                    ).candidates
+        window = (
+            window_override
+            if window_override is not None
+            else select_candidate_window(
+                merged_pool, limit=self._settings.matching_candidate_limit
+            ).candidates
+        )
         compared = await self._retrieval.comparison.compare_candidates(window, constraints)
         staged = await self._stage_candidate_evaluation(
             merged_pool,
             constraints,
             comparison=compared,
+            window_override=window,
             query_fingerprints=result.query_fingerprints,
             stage="research",
         )
@@ -1141,7 +1192,7 @@ class MainAgentRuntime:
             raise ActionRejectedError("子结果引用了未注册的 evidence_id")
         usage = result.usage.model_copy(
             update={"model_calls": result.usage.model_calls + compared.model_calls}
-        )
+        ).add(rerank_usage)
         self._ensure_usage_delta(state, usage)
         records = staged.evidence_records
         new_records = [item for item in records if item.evidence_id not in state.evidence]

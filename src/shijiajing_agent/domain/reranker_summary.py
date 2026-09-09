@@ -143,6 +143,11 @@ def candidate_version(offers: list[Offer]) -> str:
     ).hexdigest()
 
 
+def contains_sensitive_text(value: str) -> bool:
+    """云端发送前的最后一道敏感字段扫描。"""
+    return bool(_SENSITIVE.search(value))
+
+
 def _safe_text(value: str) -> str:
     return _PRICE.sub("", _URL.sub("", value)).replace("\x00", " ").strip()
 
@@ -155,4 +160,5 @@ __all__ = [
     "Utf8TokenCounter",
     "build_rerank_document",
     "candidate_version",
+    "contains_sensitive_text",
 ]

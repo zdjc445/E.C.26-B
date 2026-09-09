@@ -22,6 +22,7 @@ from shijiajing_agent.domain.reranker_summary import (
     INSTRUCTION_VERSION,
     SUMMARY_VERSION,
     Utf8TokenCounter,
+    contains_sensitive_text,
 )
 from shijiajing_agent.ports.reranker import (
     RerankDocument,
@@ -99,20 +100,28 @@ class AliyunRerankerAdapter:
             )
         if len(documents) > self._settings.reranker_max_documents:
             return self._failed(candidate_version, "document_limit_exceeded", started)
+        if contains_sensitive_text(query) or any(
+            contains_sensitive_text(item.text) for item in documents
+        ):
+            return self._failed(candidate_version, "unsafe_input", started, len(documents))
         if any(
             item.token_count > self._settings.reranker_document_max_tokens for item in documents
         ):
-            return self._failed(candidate_version, "document_token_limit_exceeded", started)
+            return self._failed(
+                candidate_version, "document_token_limit_exceeded", started, len(documents)
+            )
         query = self._token_counter.truncate(
             query.strip(), self._settings.reranker_query_max_tokens
         )
         if not query:
-            return self._failed(candidate_version, "empty_query", started)
+            return self._failed(candidate_version, "empty_query", started, len(documents))
         total_input_tokens = self._token_counter.count(query) * len(documents) + sum(
             item.token_count for item in documents
         )
         if total_input_tokens > self._settings.reranker_request_max_tokens:
-            return self._failed(candidate_version, "request_token_limit_exceeded", started)
+            return self._failed(
+                candidate_version, "request_token_limit_exceeded", started, len(documents)
+            )
 
         payload = {
             "model": self.model,
@@ -125,17 +134,17 @@ class AliyunRerankerAdapter:
         attempts = max(1, self._settings.reranker_max_attempts)
         response: httpx.Response | None = None
         request_id = uuid4().hex  # 只用于本次请求追踪，不进入 payload 或结果。
-        del request_id
         for attempt in range(attempts):
             timeout = self._request_timeout(deadline)
             if timeout <= 0:
-                return self._failed(candidate_version, "deadline_exceeded", started)
+                return self._failed(candidate_version, "deadline_exceeded", started, len(documents))
             try:
                 response = await self._client.post(
                     self._base_url,
                     headers={
                         "Authorization": f"Bearer {self._api_key}",
                         "Content-Type": "application/json",
+                        "X-Request-ID": request_id,
                     },
                     json=payload,
                     timeout=timeout,
@@ -147,19 +156,21 @@ class AliyunRerankerAdapter:
             if attempt + 1 < attempts:
                 await asyncio.sleep(0.02 * (2**attempt))
         if response is None:
-            return self._failed(candidate_version, "network_or_timeout", started)
+            return self._failed(candidate_version, "network_or_timeout", started, len(documents))
         if response.status_code >= 400:
-            return self._failed(candidate_version, f"http_{response.status_code}", started)
+            return self._failed(
+                candidate_version, f"http_{response.status_code}", started, len(documents)
+            )
         try:
             body = response.json()
         except ValueError:
-            return self._failed(candidate_version, "invalid_json", started)
+            return self._failed(candidate_version, "invalid_json", started, len(documents))
         try:
             hits, response_model, input_tokens, output_tokens = self._parse_response(
                 body, documents
             )
         except ValueError as exc:
-            return self._failed(candidate_version, str(exc), started)
+            return self._failed(candidate_version, str(exc), started, len(documents))
         total_tokens = input_tokens + output_tokens
         latency_ms = (time.perf_counter() - started) * 1000
         return self._result(
@@ -227,13 +238,16 @@ class AliyunRerankerAdapter:
             total_tokens - input_tokens,
         )
 
-    def _failed(self, candidate_version: str, reason: str, started: float) -> RerankResult:
+    def _failed(
+        self, candidate_version: str, reason: str, started: float, document_count: int = 0
+    ) -> RerankResult:
         return self._result(
             status=RerankerStatus.FAILED,
             candidate_version=candidate_version,
             fallback_reason=reason,
             latency_ms=(time.perf_counter() - started) * 1000,
             truncated_documents=0,
+            reranked_documents=document_count,
         )
 
     def _result(self, **kwargs: Any) -> RerankResult:
@@ -250,9 +264,10 @@ class AliyunRerankerAdapter:
         # 空候选是成功的本地短路，不消耗供应商请求。
         if status is RerankerStatus.SUCCESS and not kwargs.get("results"):
             requests = 0
+        reranked_documents = int(kwargs.get("reranked_documents", len(kwargs.get("results", []))))
         usage = AgentRuntimeUsage(
             reranker_requests=requests,
-            reranked_documents=len(kwargs.get("results", [])),
+            reranked_documents=reranked_documents,
             reranker_input_tokens=input_tokens,
             reranker_output_tokens=output_tokens,
             reranker_total_tokens=total_tokens,
@@ -264,6 +279,7 @@ class AliyunRerankerAdapter:
             reranker_fallbacks=1 if status is not RerankerStatus.SUCCESS else 0,
         )
         payload = dict(kwargs)
+        payload.pop("reranked_documents", None)
         payload.update(
             {
                 "model": kwargs.get("model", self.model),
