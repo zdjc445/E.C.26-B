@@ -4,6 +4,16 @@
 
 本文件供后续 Agent 实施；本次仅修改文档，不修改业务代码、配置、测试或数据库。文中的新增类型、方法、参数及流程均为目标设计，不表示当前已经实现。代码链接的行号以核对基线为准，实施时同时按符号定位。
 
+## 展示图
+
+下图用于快速理解方案；实施细节与边界以正文为准。第一张总览图对候选处理做了视觉简化，正文目标链路在 RRF 融合与动态 Schema 之间包含云端 Reranker 精排。
+
+![RAG 端到端总览](../images/rag/01-rag-end-to-end.png)
+
+![动态 Schema 的红轴语义案例](../images/rag/02-dynamic-schema-red-switch.png)
+
+![主 Agent 按需补召回决策](../images/rag/03-on-demand-supplement-agent.png)
+
 ## 1. 目标、范围与方案优先级
 
 目标是让不同平台的商品按实际可售 SKU／报价进入索引，不要求提前映射到统一商品 Schema；检索后再形成局部语义、验证用户要求，完成同款比较与展示。针对跨语言和异构属性，通过首轮查询扩展与可选补召回提高覆盖，效果由金标评测确认。
@@ -18,6 +28,7 @@
 6. Schema 归一化在**语义约束校验、同款判断、SKU 对齐和排序之前**执行，不只是展示字段改名。
 7. 补召回由主 Agent 按需提出，runtime 校验缺口、查询新颖性、能力、预算和版本；结果够用时可以跳过。
 8. 不建设持续累积的全局品类、属性键、属性值映射表；缓存只能复用经过版本和证据校验的局部结果。
+9. RRF 融合后的最多 200 条候选固定经过云端 Reranker 精排，再结合商品多样性选出最多 60 条进入动态 Schema；精排失败时完整回退到 RRF 顺序。
 
 与其他方案的关系：
 
@@ -26,7 +37,7 @@
 - [动态商品 Schema 方案](dynamic_product_schema_implementation_plan.md)中局部 Schema、字段证据与保守匹配原则继续使用。本文件补充原始 SKU 入库、语义查询、多轮候选一致性与检索后硬约束执行规则；重叠处以本文件为后续目标。
 - 若编排收敛尚未完成，先完成该方案，再接入本方案的 Agent 动作。不把新 RAG 同时接入旧 Workflow、Supervisor 或 Specialist。
 
-范围包含索引数据契约、离线索引脚本、检索适配器、局部 Schema、候选比较服务、主／Research 动作、预算与恢复、必要配置和评测。平台采集器只需遵守输入协议；本任务不承诺接入新的平台、浏览器爬虫或详情服务，也不引入新的向量库、CrossEncoder、NLI 服务或递归 Agent。
+范围包含索引数据契约、离线索引脚本、检索适配器、云端 Reranker、局部 Schema、候选比较服务、主／Research 动作、预算与恢复、必要配置和评测。平台采集器只需遵守输入协议；本任务不承诺接入新的平台、浏览器爬虫或详情服务，也不引入新的向量库、NLI 服务或递归 Agent。本阶段先接云端文本 Reranker，不建设本地模型推理服务，也不做 Reranker 微调。
 
 ## 2. 当前代码与必须修复的差距
 
@@ -45,7 +56,7 @@
 | [comparison.py:81](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/services/comparison.py:81) | 每次比较重新进入归一化、同款、SKU、排序 | 拆出可复用的评估／归一化上下文，增加独立的语义资格校验 |
 | [dynamic_schema.py:49](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/domain/dynamic_schema.py:49) | 证据读取只支持现有字段路径 | 原始属性必须贯通路径验证、模型输入、缓存、证据和序列化 |
 | [config.py:156](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/config.py:156) | 配置有 `matching_candidate_limit=60`，当前生产比较路径未落实该上限 | 将候选窗口上限落实到归一化和两两比较之前 |
-| [retrieval_reranking.py:8](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/domain/retrieval_reranking.py:8) | 规则重排器只接入工程评测，生产适配器没有执行配置中的 rerank | 本轮不新接重排模型，清理误导性生产开关，报告实际执行链 |
+| [retrieval_reranking.py:8](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/domain/retrieval_reranking.py:8) | 规则重排器只接入工程评测，生产适配器没有执行配置中的 rerank | 新增云端 Reranker Port 和生产适配器；旧规则重排器只保留为显式基线，不冒充模型精排 |
 | [policy.py:171](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/policy.py:171) `observation_for` | 摘要缺少开放属性诊断，`remaining_budget` 填入总预算 | 补充覆盖、未知、冲突、截断与真实剩余额度 |
 | [runtime.py:562](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/runtime.py:562) | 普通检索覆盖上次候选；Research 合并重新比较整个并集 | 初次检索和增量补查分开；合并需暂存、验证、原子提交 |
 
@@ -61,8 +72,10 @@ flowchart TD
     U[用户需求和已冻结约束] --> Q[原查询与有界语义扩展]
     Q --> R[首轮多查询混合召回]
     D --> R
-    R --> F[合并命中、融合、选择候选窗口]
-    F --> N[局部 Schema、字段归一化、需求验证]
+    R --> F[合并命中、RRF 融合 Top 200]
+    F --> E[云端 Reranker 精排]
+    E --> C[多样性选择 Top 60]
+    C --> N[局部 Schema、字段归一化、需求验证]
     N --> O[候选诊断与可用比较结果]
     O --> M[主 Agent 决策；runtime 准入]
     M -->|结果足够或无有效补查| Z[基于已验证结果回答]
@@ -71,7 +84,8 @@ flowchart TD
     M -->|需要多步调查| T[ResearchSubagent]
     S --> G[暂存增量、去重与重新融合]
     T --> G
-    G --> V[复用或更新 Schema、重新验证约束与比较]
+    G --> J[重新精排与多样性选择]
+    J --> V[复用或更新 Schema、重新验证约束与比较]
     V --> W[原子提交结果、诊断和预算]
     W --> M
 ```
@@ -158,6 +172,8 @@ source_locator: 原始 payload 中的位置，仅作追溯元数据
 | `QueryPlan` | 原查询和有界 variants、未解决歧义、生成 usage；每个 variant 的需求关联，不允许修改冻结需求 |
 | `ChannelResult` | 查询 ID、通道、按 rank 排列的命中、原始分数、状态 `success/empty/failed/unavailable`、截断信息、实际 usage 和索引身份 |
 | `RetrievalBatchResult` | 有序通道结果、唯一 Offer 集、渠道健康、缓存／降级信息、实际与预留 usage；`retrieved_count` 不能命名成全库总匹配数 |
+| `RerankDocument` | `offer_id`、由白名单字段构建的精简文本、内容哈希、已截断字段；不包含用户身份、完整来源 payload 或联系方式 |
+| `RerankResult` | 输入候选集指纹、模型／指令／摘要版本、逐 Offer 分数与名次、调用状态、Token／延迟／费用、降级原因；不得把分数写成事实置信度 |
 | `RequirementMatch` | Offer ID、需求 ID、`satisfied/conflict/unknown`、证据引用、采纳方式、原因；unknown 与不满足是不同结论 |
 | `NormalizationContext` | 局部 Schema 内容哈希／版本、候选来源哈希、字段采纳与拒绝、归一化缓存引用；不含全局别名字典 |
 | `CandidateAssessment` | 总命中／去重／选入窗口数量、逐需求三态计数、可比较组数、平台和商品集中度、未评估／截断数、缺口、候选查询假设 |
@@ -277,17 +293,59 @@ k = 60；usable channels 内权重等分，权重和为 1
 
 所有通道结果收齐或超时后再融合并截断；分数相同按 `offer_id` 排序。原始相似度、命中通道和 query ID 作为调试信息保留，不做跨查询 min-max 后当作概率，不以未经校准的“0.61 分”等绝对阈值触发补查。
 
-metadata 保留为安全过滤与候选辅助信息，不再把它视为独立召回通道参与该公式。现有价格／店铺等业务排序仍在最终比较层执行。离线规则 reranker 可继续作为明确标识的实验工具，生产路径本次不接入它。
+metadata 保留为安全过滤与候选辅助信息，不再把它视为独立召回通道参与该公式。现有价格／店铺等业务排序仍在最终比较层执行。离线规则 reranker 只作为明确标识的基线；生产候选精排使用下一节的云端模型。
 
-### 7.3 有界候选池与多样性
+### 7.3 云端 Reranker 精排
+
+Reranker 是检索工具内部固定执行的一层，不是 Agent 动作或运行模式。主 Agent 和 Research 都只调用统一检索服务；只要 RRF 候选非空，服务就在多样性选择之前精排。云端调用必然增加网络往返、模型推理时间和费用，因此必须通过第 14 节的上线门槛；它的位置合理不等于默认收益一定大于成本。
+
+第一版生产基线使用阿里云百炼 `qwen3-rerank`，同时离线评测 `qwen3.7-text-rerank`；供应商当前支持的文档数、Token 和请求格式以[百炼文本排序 API](https://help.aliyun.com/zh/model-studio/text-rerank-api)为准，并由适配器在启动与请求前校验。最终模型由本项目 SKU 金标、延迟和费用确定并固定装配，不能依据通用榜单直接宣称某个模型最好。
+
+通过 `RerankerPort` 隔离供应商：
+
+```text
+rerank(query, documents, top_k, deadline)
+→ offer_id + relevance_score + rank
+→ model/version + usage + latency + truncation
+```
+
+第一版实现 `AliyunRerankerAdapter`。接口不得泄漏百炼特有响应到领域层；后续改成本地或其他云服务时新增适配器，不改检索、Schema 或 Agent 契约。`RERANKER_PROVIDER` 是部署依赖选择，不是请求级执行模式，Main Agent 无权切换供应商或跳过精排。
+
+每个候选只精排一次，不对最多 3 条查询扩展分别调用模型。query 由原始用户需求与冻结的语义要求生成；平台、精确价格等可确定过滤条件继续由规则执行，不依赖相关性分数。document 只包含：
+
+```text
+title
+raw_category_path
+brand / model（来源明确时）
+SKU 级 raw_key:raw_value
+少量必要的 product / offer 级属性，并标明 scope
+```
+
+SKU 级字段优先于商品标题和商品级可选项。默认 query 最多 128 Token、单个 document 最多 384 Token；通过与模型 tokenizer 一致的计数器裁剪，不能按字符数猜测 Token。摘要构造顺序、字段优先级和截断方式固定版本。价格、评分、销量和店铺质量不进入相关性文本，避免精排提前替代最终业务排序；用户要求的型号、规格等语义条件必须保留。
+
+`qwen3-rerank` 的 `instruct` 使用版本化、部署固定的英文任务说明，第一版含义为：“根据电商商品需求排序实际 SKU Offer 的语义相关性；区分 SKU 规格、商品级可选项和无关字段中的同形词”。指令不能包含单个品类的固定映射，也不由 Agent 临时改写。API 请求要求返回全部输入候选的分数（`top_n=document_count`），之后再做多样性选择；不能先让云端只返回 60 条，否则同一商品的大量 SKU 可能提前挤掉其他商品。
+
+每个精排阶段最多输入当前 RRF 召回池的 200 条。优先在一次 API 请求中完成，适配器根据供应商的最大文档数、单文档长度和请求总 Token 约束动态收缩各文档摘要。若最小必要摘要仍无法装入一次请求，只能在同一模型版本的分批分数已通过批次一致性评测后分批并全局合并；否则本阶段完整回退 RRF，不能把不同批次内部名次直接拼成全局排名。
+
+发送云端前执行字段白名单和敏感数据扫描：不发送 `owner_id/session_id/request_id`、完整 `source_payload_ref` 内容、卖家联系方式、访问凭证、内部证据路径或无关历史会话。使用随机请求跟踪 ID，日志不记录完整商品正文和 API Key。具体区域、数据保留和服务协议由部署环境确认；未满足项目数据要求时不能上线该供应商。
+
+返回结果必须满足：所有 ID 来自本次候选且唯一、分数为有限数值、模型身份可记录、TopN 与输入对应。未知 ID、重复 ID、缺失候选、响应截断、解析错误或候选集版本变化均视为整次精排失败。不能保留一半云端顺序再拼接另一半 RRF 顺序。
+
+成功时按模型分数降序，分数相同按 RRF 名次、再按 `offer_id` 稳定排序；随后执行第 7.4 节的商品多样性选择得到最多 60 条。分数只表示当前模型估计的 query—Offer 相关性，不是概率，不作为 `satisfied`、同款或价格可比的证据，也不设置未经金标校准的绝对分数门槛。
+
+首轮融合后调用一次；只有补查成功改变有效候选集后，才对新的完整 Top 200 再调用一次，不能只精排增量再与旧名次直接拼接。约束修正产生新版本时重新构建 query 和 cache key。相同约束、候选集、模型与摘要版本可复用缓存。
+
+云端超时、限流、网络、鉴权、配额、模型下线或响应非法时，保留完整 RRF 排名并继续多样性选择与动态 Schema。降级自动发生且写入 `RerankResult`、指标和最终诊断，不清空候选、不让主 Agent 重试供应商。重试最多一次并受请求截止时间和精排调用预算约束；鉴权与确定性请求错误不重试。连续故障触发短时熔断，熔断期间直接使用 RRF，并由运行监控告警。
+
+### 7.4 有界候选池与多样性
 
 区分三个集合，不能混用计数：
 
 1. **命中池**：保存有界查询／通道返回的全部去重命中及引用，纯文本默认最多约 `6 × 2 × 100` 个命中槽位；额外图像通道有独立固定上限。字段 payload 有上限，模型不直接读取全池。
-2. **召回池**：按融合分数与多样性选出的最多 200 条，供候选窗口选择及缺口诊断。
-3. **评估窗口**：最多 60 条，进入动态归一化、需求验证和同款两两比较。已有兼容归一化结果复用；未进入窗口的记录不伪装成已验证。
+2. **召回池**：RRF 融合后的最多 200 条，作为云端精排输入并供缺口诊断。
+3. **评估窗口**：按 Reranker 顺序（降级时按 RRF 顺序）结合多样性选出的最多 60 条，进入动态归一化、需求验证和同款两两比较。已有兼容归一化结果复用；未进入窗口的记录不伪装成已验证。
 
-多样性使用来源事实分桶：平台、卖家／listing、`source_product_id`。先按融合分数对各商品桶轮转取最高候选，再按分数回填剩余额度；每个桶内部保留最相关 SKU 优先，不能把同商品全部折成一条。缺少可靠商品 ID 时每条 Offer 独立成桶，不能把空 ID 聚成大桶。
+多样性使用来源事实分桶：平台、卖家／listing、`source_product_id`。先按当前排序对各商品桶轮转取最高候选，再按顺序回填剩余额度；当前排序优先采用 Reranker，降级时采用 RRF。每个桶内部保留最相关 SKU 优先，不能把同商品全部折成一条。缺少可靠商品 ID 时每条 Offer 独立成桶，不能把空 ID 聚成大桶。
 
 平台覆盖是诊断信号，不强制每个平台占配额。用户明确要求多平台比较时，才将指定平台缺口作为补查目标。选择器必须确定性执行并记录被挤出数量；不根据尚未验证的 `red` 原值宣布某 SKU 已满足红轴要求。
 
@@ -367,7 +425,7 @@ Schema 的属性名别名与属性值等价是两个问题。现有 `DynamicAttr
 - 请求目标：找一个合格商品、比较同款报价，或覆盖用户明确指定的平台；
 - 每阶段查询数量、去重候选数、已评估数、合格数、可比较组数；
 - 每条硬要求的 satisfied／conflict／unknown 数量及少量证据引用；
-- 单平台／同商品集中度、未评估数、各层截断、通道健康与数据版本；
+- 单平台／同商品集中度、未评估数、各层截断、通道健康、Reranker 模型／状态／降级原因与数据版本；
 - 已尝试查询指纹摘要、候选补查假设、假设来自用户语义还是已有候选证据；
 - 剩余查询、模型、Token、时间预算及已消费的补查阶段。
 
@@ -428,13 +486,15 @@ Verification 继续只处理候选字段核验，是否可用取决于实际 `Of
 | `retrieval_calls` | 一个唯一 PreparedQuery 的逻辑执行；父工具和子工具共用，总请求默认 6 |
 | `db_search_attempts` | 实际各通道数据库调用，失败／重试都计入；文本默认物理上限 24，图像需同额度内预留 |
 | `embedding_calls` | 实际向量服务请求；另记 embedding 输入条数和供应商可获得的 Token |
+| `reranker_requests` | 实际云端精排请求，首轮最多一次、候选集变化后的补查最多一次；失败和重试均计入 |
+| `reranked_documents` | 实际提交给 Reranker 的 query—Offer 对数，另记输入 Token、供应商费用与截断统计 |
 | `model_calls` | 主／子决策、查询准备、Schema、字段归一化、回答等真实生成模型尝试；失败／修复也计入 |
 | `tool_calls` | runtime／子 Agent 发起的业务工具动作，不把其内部每个数据库请求再次计成业务工具 |
 | Token／时间 | 全请求实际已用、当前预留和剩余；无法取得准确 Token 时保守估算并标记，不填零冒充实测 |
 
 完整缓存命中不增加数据库、embedding、模型物理计数，但当前请求首次接受该查询仍占一个逻辑查询槽位；重复动作／恢复复用已提交查询不重复扣逻辑额度。不能继续使用 `search_once` 固定返回 `model_calls=1` 的记账方法。
 
-所有费用由实际调用边界唯一记录，服务结果携带汇总引用；父 runtime 只结算一次，不能父子重复累加。embedding 不冒充文本生成 `model_calls`，但其 Token／成本单列，并受总体资源上限约束。
+所有费用由实际调用边界唯一记录，服务结果携带汇总引用；父 runtime 只结算一次，不能父子重复累加。embedding 和 Reranker 不冒充文本生成 `model_calls`，各自的请求数、文档数、Token／成本单列，并受总体资源上限约束。
 
 在并发调用前原子预留查询、数据库尝试、模型／Token 和时间额度。重试必须申请剩余额度，单次网络重试上限沿用现有设置；超时取消后仍可能发生的远端调用按已预留计费范围处理。子任务预算是父预算的子集，不能相加扩大总额度。
 
@@ -450,7 +510,7 @@ Verification 继续只处理候选字段核验，是否可用取决于实际 `Of
 保存 action / attempt / 预算预留
 → 调用查询或子 Agent
 → 暂存响应并验证来源、约束版本、manifest、预算和引用
-→ 按 Offer 身份与来源版本合并；重新融合和选择窗口
+→ 按 Offer 身份与来源版本合并；重新融合、云端精排和选择窗口
 → 复用／更新 Schema，重新验证需求与比较结果
 → 检查回答可用组和证据完整性
 → 以当前状态版本为前提，提交候选、证据、组、诊断、usage 和动作终态
@@ -471,6 +531,10 @@ Verification 继续只处理候选字段核验，是否可用取决于实际 `Of
 | 本地快照版本不同 | 不静默与当前索引结果混合；本轮拒绝该降级并报告版本不兼容 |
 | 图像 provider 未装配 | 能力标记 unavailable，文本照常；不把未执行通道记成成功零命中 |
 | 全通道失败 | `retrieval_unavailable`，保留已有有效结果；不能伪报为全库无商品 |
+| 云端 Reranker 超时／限流／网络故障 | 整批放弃精排，使用完整 RRF 顺序继续；有限重试和费用照实记录 |
+| 云端鉴权／配置错误 | 不重试；启动检查或运行监控精确报错，当前请求回退 RRF |
+| Reranker 返回重复、缺失或未知 ID | 整批响应无效，不做部分拼接；回退 RRF 并记录协议错误 |
+| Reranker 模型下线／版本漂移 | 熔断并回退 RRF；未通过固定金标前不自动切换到另一个模型 |
 | Schema／字段模型失败 | 复用仍有效的已验证结果；其余降为通用基线和 unknown，不能绕过需求门禁 |
 | Research 超时／部分成功 | 已完整返回且校验通过的增量可原子提交；只有半个响应或无可靠引用时不合并 |
 | 补查无新增结果 | 保留首轮候选，返回已用额度和缺口，不清空结果、不无上限重试 |
@@ -481,7 +545,7 @@ Verification 继续只处理候选字段核验，是否可用取决于实际 `Of
 
 继续只由主 runtime checkpoint 保存规范状态。此次新增 RAG 状态导致结构变化，发布新 `agent-runtime-v2` namespace／快照版本，内含 `rag_state_version=1`；与原编排收敛方案中“无结构变化则保留 v1”的条件不冲突。
 
-保存已提交查询指纹、manifest、Offer 内容哈希、Schema／证据引用、动作终态和预算预留。完成结果可复用；执行中崩溃的只读动作按剩余额度有限重跑，恢复不重置历史计数。已完成的子结果不能再次归并。
+保存已提交查询指纹、manifest、Offer 内容哈希、Reranker 输入集指纹／模型／摘要版本／降级状态、Schema／证据引用、动作终态和预算预留。完成结果可复用；执行中崩溃的只读动作按剩余额度有限重跑，恢复不重置历史计数。已完成的子结果不能再次归并。
 
 当前没有子 Agent 逐步骤 checkpoint，本任务也不新增该系统。未返回的子步骤用量不明时保守占用预留额度，并区分“实测消耗”和“未知预留”。旧版本活动会话按第 13 节排空／隔离处理，不伪装成新 RAG 的精确恢复。
 
@@ -498,6 +562,9 @@ Verification 继续只处理候选字段核验，是否可用取决于实际 `Of
 | [adapters/local_retrieval.py:67](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/adapters/local_retrieval.py:67)、[adapters/lexical.py:30](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/adapters/lexical.py:30) | 同源文本、本地通道返回协议、版本匹配、词法算法身份 |
 | [ports/retrieval.py:18](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/ports/retrieval.py:18)、[adapters/milvus_retrieval.py:226](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/adapters/milvus_retrieval.py:226) | 通道 rank 与健康状态、去除融合前联合截断、有界并发和逐通道降级 |
 | [domain/retrieval_fusion.py:70](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/domain/retrieval_fusion.py:70) | 实现固定融合公式；旧工具若保留只供明确标识的历史／离线评测 |
+| 新 `ports/reranker.py` | 定义供应商无关的 `RerankerPort`、deadline、结果和健康检查契约 |
+| 新 `adapters/aliyun_reranker.py` | 百炼鉴权、请求／响应映射、有限重试、错误分类和使用量采集；日志不落正文和密钥 |
+| 新 `services/reranking.py` | 构建白名单摘要、Token 预算、结果校验、缓存、稳定排序和整批 RRF 回退 |
 | 新 `domain/candidate_selection.py` | 商品桶多样性、窗口上限、去重版本和截断统计 |
 | [ports/models.py:47](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/ports/models.py:47)、[adapters/ark_models.py:541](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/adapters/ark_models.py:541)、`prompts/query_rewrite.md` | QueryPlan 生成、严格解析、计量与缓存；原查询保留，variants 不再重复 rewrite |
 | [domain/filters.py:57](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/domain/filters.py:57) | 安全下推与延迟语义需求分离；Milvus、本地和最终资格一致 |
@@ -506,14 +573,14 @@ Verification 继续只处理候选字段核验，是否可用取决于实际 `Of
 | [domain/product_canonicalization.py:53](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/domain/product_canonicalization.py:53) | 请求级上下文、批次共用 Schema、增量复用和兼容性失效 |
 | `prompts/product_schema_induction.md` 及字段归一化 Prompt | 原始作用范围、值语义／上下位关系、unknown、不将来源文本当指令；同步模型 payload 构建 |
 | [services/comparison.py:81](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/services/comparison.py:81) | 归一化、资格、同款／SKU／排序明确分层；返回评估和排除原因 |
-| [services/retrieval.py:59](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/services/retrieval.py:59) | `prepare_queries`、`execute_prepared_query/batch`、首次检索与增量检索共用管道、真实 usage |
+| [services/retrieval.py:59](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/services/retrieval.py:59) | `prepare_queries`、`execute_prepared_query/batch`、首次检索与增量检索共用管道；融合后调用 Reranker，再做多样性选择；记录真实 usage |
 | 新 `services/retrieval_assessment.py` | 将候选／需求／通道事实转成有界评估摘要，不在该服务偷偷调用 Agent |
-| [agent_runtime/contracts.py:29](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/contracts.py:29)、[agent_runtime/contracts.py:434](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/contracts.py:434) | 第八个动作、评估观察、RAG 状态、零剩余额度类型与计数 |
+| [agent_runtime/contracts.py:29](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/contracts.py:29)、[agent_runtime/contracts.py:434](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/contracts.py:434) | 第八个动作、评估观察、RAG 状态、Reranker 请求／文档／Token 用量、零剩余额度类型与计数 |
 | [agent_runtime/policy.py:150](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/policy.py:150)、[agent_runtime/budget.py:20](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/budget.py:20) | 补查准入、阶段共享额度、物理计量和并发预留 |
 | [agent_runtime/runtime.py:562](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/runtime.py:562)、[agent_runtime/runtime.py:769](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/runtime.py:769) | 首轮／补查动作、暂存验证后原子提交、约束修正和重复动作 |
 | [agent_runtime/subagents/research.py:58](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/subagents/research.py:58) | 复用底层查询、不逐 variant 完整比较、父预算、无进展退出、结构化增量 |
 | [agent_runtime/checkpoint.py:18](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/checkpoint.py:18) | 新快照身份、已提交查询／阶段／预留恢复；不增加独立子 checkpoint |
-| `adapters/ark_agent_decision.py`、主／Research Prompt、`deps.py`、`config.py` | 动作 schema、装配、需求及查询服务依赖、配置清理 |
+| `adapters/ark_agent_decision.py`、主／Research Prompt、`deps.py`、`config.py` | 动作 schema、装配、需求及查询服务依赖、云端 Reranker 客户端生命周期与配置清理 |
 | [domain/evidence.py:51](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/domain/evidence.py:51)、[services/answer.py:32](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/services/answer.py:32) | 属性证据贯通、合格与待核实分离、回答只能引用已提交合格组 |
 | `domain/same_item.py`、`domain/sku.py`、[domain/ranking.py:59](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/domain/ranking.py:59) | 适配局部语义和资格结果；保留保守聚类、规格冲突与排序行为 |
 | `services/intent.py`、契约／运行时准入及相关 Prompt | 无 taxonomy ID 但有明确品类原文时允许检索；开放属性、否定、精确型号不丢失 |
@@ -538,11 +605,20 @@ Verification 继续只处理候选字段核验，是否可用取决于实际 `Of
 | `RETRIEVAL_UNION_LIMIT` | 沿用 200，明确表示融合后的召回池上限 |
 | `MATCHING_CANDIDATE_LIMIT` | 沿用 60，真正用于归一化／比较窗口 |
 | `RETRIEVAL_RRF_K` | 沿用 60 |
+| `RERANKER_PROVIDER` | 生产目标固定为 `aliyun_bailian`；这是依赖标识，不是请求级模式 |
+| `RERANKER_BASE_URL`、`RERANKER_API_KEY` | 生产必填外部配置；密钥只从秘密管理／环境读取，不进入日志和 checkpoint |
+| `RERANKER_MODEL` | 第一版基线 `qwen3-rerank`，上线时显式配置并记录服务返回版本；不静默跟随 latest |
+| `RERANKER_TIMEOUT_SECONDS` | 初始 5 秒，必须小于请求剩余截止时间 |
+| `RERANKER_MAX_ATTEMPTS` | 2，只有瞬时网络／限流错误可使用第二次尝试 |
+| `MAIN_AGENT_MAX_RERANKER_REQUESTS` | 初始 4，作为整个父请求的物理调用硬上限；约束版本变化不重置 |
+| `RERANKER_MAX_DOCUMENTS` | 200，与 RRF 召回池上限一致 |
+| `RERANKER_QUERY_MAX_TOKENS`、`RERANKER_DOCUMENT_MAX_TOKENS` | 初始 128／384，且服从供应商请求总 Token 上限 |
+| `RERANKER_CACHE_TTL_SECONDS` | 初始 300；cache key 绑定模型、指令、摘要、约束和候选集版本 |
 | Schema／字段批次、TTL、模型与 Token 预算 | 沿用现有设置并纳入全请求计量 |
 
 每约束版本一次补查阶段、最多一次 Research、连续两次无进展退出，在第一版作为有版本的策略常量，不新增一组布尔开关。将来如确需调整先用评测确认，再决定是否需要对外配置。
 
-移除生产 `RETRIEVAL_FUSION_STRATEGY` 选择器，生产固定本方案融合；移除未执行的 `RETRIEVAL_RERANK_ENABLED/LIMIT` 生产配置。离线实验所需参数改由实验工具显式接收，不能让生产配置声称已启用重排。废弃变量需给出迁移诊断，并清理 `.env.example`、读取／验证逻辑和文档。
+移除生产 `RETRIEVAL_FUSION_STRATEGY` 选择器，生产固定本方案融合。删除现有未执行、语义含糊的 `RETRIEVAL_RERANK_ENABLED/LIMIT`，改为上述真实装配配置；不增加 `enabled` 开关。目标生产部署缺少 Reranker endpoint、model 或 key 时启动检查失败，开发／单测通过显式 Fake 依赖运行。运行中云端故障才按第 7.3 节回退 RRF，不能利用缺配置长期静默跳过精排。离线实验参数由评测工具显式接收。废弃变量需给出迁移诊断，并清理 `.env.example`、读取／验证逻辑和文档。
 
 `TAXONOMY_PATH` 不再是新数据入库、检索和开放需求理解的必需依赖。清理这些路径上的 `TaxonomyNormalizer`、`category_names` 参数和隐式 allowlist；历史迁移工具可以显式读取旧文件，但不能作为新请求失败时自动回退的语义体系。不要借这次任务删除无关历史数据。
 
@@ -552,10 +628,11 @@ Verification 继续只处理候选字段核验，是否可用取决于实际 `Of
 2. **导出来源并验证 SKU。** 有原始平台数据的，按真实 SKU／报价转成新协议；只有旧归一化数据的，标记 `legacy_derived` 来源，不伪造已丢失的原文、SKU 或字段范围。缺关键来源的记录进入待补数据报告。
 3. **生成新快照及 dry-run 报告。** 检查身份唯一、SKU 粒度、价格基准、缺失字段、原始作用范围、文本截断和可索引条数；确认 Dense／Sparse 将使用一致文本。
 4. **创建新版本 collection。** 新字段及文本长度需重建 schema；使用新 collection 名构建，禁止默认通过 `--drop` 覆盖线上 collection。模型／维度变化同时重算全部受影响向量。
-5. **离线和真实抽样验证。** 检查原始字段回读、数量、manifest、红轴跨语言样本、部分故障与费用语义；同时产出同版本本地快照。
-6. **排空旧活动请求后切换。** 一次切换应用版本、collection 与本地快照，清空／失效旧检索及 Schema 缓存，新会话进入新 namespace。切换前的单个请求绑定旧完整 manifest，不在一次查询阶段跨版本混读。
-7. **处理旧会话。** 已完成 Ledger 结果和历史证据保留只读；旧活动主 runtime／Supervisor 会话由旧进程排空或明确结束并要求新会话。新代码不凭缺省值补造查询历史与预算，再宣称恢复成功。
-8. **保留可回滚产物。** 通过回滚整版应用及其匹配索引／快照恢复，隔离新旧活动会话；不在代码中保留旧 RAG 执行模式。保留期后的旧索引删除是另行安排的运维动作，不属于默认改造步骤。
+5. **离线和真实抽样验证。** 检查原始字段回读、数量、manifest、红轴跨语言样本、部分故障与费用语义；同时产出同版本本地快照。固定 RRF 基线，在同一候选集上评测云端 Reranker，不改变线上请求路径做未授权实验。
+6. **准备云端依赖。** 在目标区域创建专用 endpoint／API Key 和最小权限，确认数据保留条款、配额与费用告警；固定模型和指令版本，验证 200 条摘要的 Token、P95 延迟、限流、熔断和 RRF 回退。密钥只通过部署秘密管理注入。
+7. **排空旧活动请求后切换。** 一次切换应用版本、collection、本地快照与固定 Reranker 配置，清空／失效旧检索、精排及 Schema 缓存，新会话进入新 namespace。切换前的单个请求绑定旧完整 manifest，不在一次查询阶段跨版本混读。
+8. **处理旧会话。** 已完成 Ledger 结果和历史证据保留只读；旧活动主 runtime／Supervisor 会话由旧进程排空或明确结束并要求新会话。新代码不凭缺省值补造查询历史与预算，再宣称恢复成功。
+9. **保留可回滚产物。** 通过回滚整版应用及其匹配索引／快照恢复，隔离新旧活动会话；云端不可用时单次请求自动回退 RRF，版本回滚不依赖保留旧 RAG 执行模式。保留期后的旧索引删除是另行安排的运维动作，不属于默认改造步骤。
 
 新代码只把 `record_kind=sku_offer`、身份有效的来源记录纳入可比 Offer 索引。`product_summary` 保存在原始待处理数据中作为后续补数据线索；不扩展出另一套商品概要检索引擎。可售／价格未知状态如实保留，是否可进入确认报价由最终资格规则决定。
 
@@ -578,6 +655,14 @@ Verification 继续只处理候选字段核验，是否可用取决于实际 `Of
 | 前置过滤 | 用户要求红轴仍为硬要求；原品牌／类目跨语言写法不被不安全等值过滤提前删除 |
 | 费用／币种 | SKU 标价、商品起价、未知运费和不同币种不能混入同一确定到手最低价 |
 | 融合顺序 | Sparse 独有的高排名候选不会因 Dense 先插入而在融合前丢失；重复 alias 不重复累加同通道投票 |
+| Reranker 输入 | 每个 Offer 只出现一次；使用原始需求和冻结语义要求，不按查询扩展重复精排；只发送白名单商品摘要 |
+| SKU／商品级语义 | `switch:red` 的当前 SKU 应优先于只在标题列出红轴选项的商品；`case_color:red`、`switch:blue` 等困难负例应降序 |
+| 云端结果校验 | 重复、缺失、未知 Offer ID、非有限分数和候选版本漂移均整批拒绝，不产生部分排序 |
+| 云端故障回退 | 超时、限流、网络失败、熔断时结果与确定性 RRF + 多样性基线一致，候选不会被清空 |
+| 精排调用次数 | 首轮至多一次；补查未改变候选集不再调用，改变后对完整 Top 200 至多再调用一次；父子调用合并计量 |
+| 云端输入安全 | 请求和日志不含用户／会话 ID、完整 payload、卖家联系方式、凭证或内部路径；API Key 不进入 checkpoint |
+| Token 与截断 | 使用同模型 tokenizer；字段优先级稳定，所有 200 条适配总上限；无法安全全局排序时回退 RRF |
+| 精排缓存 | 只有模型、指令、摘要、约束和候选集指纹全部一致才命中；商品或模型版本变化立即失效 |
 | SKU 拥挤 | 同商品大量 SKU 不独占评估窗口；相关具体 SKU 保留；不同卖家报价不按全局 sku_key 去重 |
 | 窗口限制 | 归一化和同款比较输入不超过上限；未评估数真实，按需读取有界且不重复处理兼容结果 |
 | 模型输入超限 | 批次同时受条数和 Token 约束；未读取字段为 unknown，原始证据定位保持有效 |
@@ -594,7 +679,7 @@ Verification 继续只处理候选字段核验，是否可用取决于实际 `Of
 | 恢复和用户修正 | 崩溃后预留不消失，已提交动作不重跑；新约束拒绝旧结果且不重置父预算 |
 | 回答引用 | 只能引用已提交、当前版本且合格的组；unknown 线索价格不影响确认最低价 |
 
-优先扩展现有 `tests/unit/test_retrieval_units.py`、`tests/contract/test_retrieval_adapters.py`、`tests/unit/test_retrieval_fusion.py`、`tests/unit/test_dynamic_product_schema.py`，新增 raw Offer、需求门禁、评估和补查预算测试。主 runtime 测试按前置方案迁到 `tests/agent_runtime/` 后扩展；旧路径 `tests/multi_agent/test_main_agent_runtime.py` 仅用于迁移定位。
+优先扩展现有 `tests/unit/test_retrieval_units.py`、`tests/contract/test_retrieval_adapters.py`、`tests/unit/test_retrieval_fusion.py`、`tests/unit/test_dynamic_product_schema.py`，新增 Reranker Port／云端适配器契约、摘要与 Token 预算、raw Offer、需求门禁、评估和补查预算测试。云端契约测试使用录制后脱敏的固定响应；真实 endpoint 只进入显式 integration／live 测试，离线测试不访问网络。主 runtime 测试按前置方案迁到 `tests/agent_runtime/` 后扩展；旧路径 `tests/multi_agent/test_main_agent_runtime.py` 仅用于迁移定位。
 
 测试应证明真实边界：捕获实际 embedding 文本、数据库 filter、模型调用数与提交次数；不能只断言函数返回成功。Fake 模型可证明数据通路与防护行为，不能证明真实 embedding 已学会跨语言等价。
 
@@ -604,16 +689,17 @@ Verification 继续只处理候选字段核验，是否可用取决于实际 `Of
 
 至少报告：
 
-- 首轮与最终 `Recall@K`，按语言、平台、属性类型分层；分母为固定评测语料中的已标注相关 Offer。
+- RRF Top 200、RRF + 多样性 Top 60、Reranker + 多样性 Top 60 的 `Recall@K` 与 `nDCG@K`，按语言、平台、属性类型分层；分母为固定评测语料中的已标注相关 Offer。
+- 对比 `qwen3-rerank` 与 `qwen3.7-text-rerank` 的红轴／外壳颜色、精确型号、SKU scope 等困难正负例；单独报告正确候选从 Top 60 被挤出的数量。
 - 评估窗口内合格候选的 Precision／Recall，硬要求违规数；unknown 单独统计，不能当成正确负例掩盖缺失。
 - 同款误合并率、SKU 错配率、错误最低价比较数，以及已采纳字段的证据有效率。
 - 补查触发率、有效新增合格候选／新证据率、无进展退出率；按直接工具和 Research 轨迹拆分成本。
-- 逻辑 query、各通道物理调用、模型／embedding 用量、缓存命中、P50/P95 延迟、超时和 partial 比例。
+- 逻辑 query、各通道物理调用、模型／embedding／Reranker 请求与 Token、缓存命中、供应商费用、精排降级率、P50/P95 延迟、超时和 partial 比例。
 - 被窗口截断的相关候选比例、同商品集中度，帮助区分“没召回”和“召回但没评估”。
 
 可使用同一实现离线回放“只看首轮已记录结果”和“包含实际补查结果”计算增益，不为实验在生产增加运行模式。历史旧版本报告可作独立基线；不同语料、模型或索引版本不得直接比较成收益。
 
-确定性必过项为行为矩阵全部通过、无超预算／重复提交、上述负例无错误资格与错误合并。真实 Recall、误判率和延迟发布阈值需要在冻结金标与资源预算上确定，实施 Agent 必须报告数值和样本规模；未跑真实服务标记“待测”，不能凭 Fake 或几个示例宣称上线质量达标。
+确定性必过项为行为矩阵全部通过、无超预算／重复提交、上述负例无错误资格与错误合并。Reranker 上线门槛至少要求：相关商品在 Top 200 内时，Top 60 的硬要求相关候选召回不低于 RRF + 多样性基线；主要排序指标有可复现改善；困难负例不恶化；云端 P95 延迟、费用和降级率满足产品预算。具体数值需要在冻结金标与请求 SLA 上确定，实施 Agent 必须报告数值、置信区间和样本规模；未跑真实服务标记“待测”，不能凭 Fake、厂商榜单或几个示例宣称上线质量达标。
 
 ## 15. 实施阶段、交付物与完成标准
 
@@ -621,7 +707,7 @@ Verification 继续只处理候选字段核验，是否可用取决于实际 `Of
 |---|---|---|
 | P0：前置与基线 | 主／Subagent 唯一架构完成；保存当前相关测试和数据身份 | 后续无需维护旧 Workflow／Supervisor 接入 |
 | P1：原始数据契约与索引 | RawAttribute／SKU Offer、单源文本、manifest、新索引脚本与输入报告 | 无 taxonomy 的原始 SKU 可 dry-run、入库和完整回读；不污染旧库 |
-| P2：查询与召回 | QueryPlan、安全下推、逐通道结果、固定融合、有界窗口与故障策略 | 跨语言 fixture 和通道／融合／身份用例通过；实际 query 与 usage 可核对 |
+| P2：查询、召回与云端精排 | QueryPlan、安全下推、逐通道结果、固定融合、Reranker Port／百炼适配器、有界窗口与故障策略 | 跨语言 fixture、通道／融合／精排／回退／身份用例通过；实际 query、云端输入与 usage 可核对 |
 | P3：语义校验与比较 | raw 证据、局部上下文、值语义、三态资格、缓存复用 | 红轴负例／Cherry／SKU 范围／未知处理通过，比较前门禁有效 |
 | P4：主 Agent 与补查 | 第八个动作、诊断观察、Research 管道、共享阶段预算、原子合并 | 零／直接／多步轨迹、无进展与故障、恢复和用户修正全部有界 |
 | P5：迁移与验收 | 新版本索引与快照、会话切换说明、质量报告、当前文档更新 | 本地检查通过；真实服务已测或明确列出未完成项，未达质量门槛不宣称生产验收完成 |
@@ -647,4 +733,4 @@ uv run pytest -q
 - 测试报告、真实评测报告或明确的待测清单，以及仍影响准确率／成本的限制；
 - 保留本设计的决策背景，另记实施版本和偏差，不将设计状态直接改成“生产验证完成”。
 
-最终完成标准：真实 SKU 原始信息可直接进入新版索引；首轮能执行有界语义扩展；补召回由主 Agent 按需选择且受确定性约束；动态局部 Schema 在比较前执行并验证硬要求；跨平台语义不依赖持续增长的映射表；预算、来源、版本、恢复和质量报告可审查。
+最终完成标准：真实 SKU 原始信息可直接进入新版索引；首轮能执行有界语义扩展；RRF Top 200 经已验证的云端 Reranker 精排和多样性选择进入 Top 60，云端失败可完整回退；补召回由主 Agent 按需选择且受确定性约束；动态局部 Schema 在比较前执行并验证硬要求；跨平台语义不依赖持续增长的映射表；预算、来源、版本、恢复和质量报告可审查。
