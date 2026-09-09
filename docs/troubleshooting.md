@@ -39,7 +39,7 @@
 |---|---|
 | `SessionConflictError` | 同会话并发请求冲突；幂等重放一次后仍冲突，说明确有并发，应用层应串行 |
 | `CheckpointUnavailableError` | `CHECKPOINT_DSN` 不可写（sqlite 目录不存在 / postgres 不可达）；运行 preflight 检查连接和 DDL |
-| HITL 恢复状态丢失 | `start/resume` 必须使用相同 `session_id`，并确认活动 Supervisor namespace 仍存在 |
+| HITL 恢复状态丢失 | `start/resume` 必须使用相同 `session_id`，并确认 `agent-runtime-v2` 的 active marker 与 checkpoint 仍存在 |
 | 数据库文件被多个进程写 | sqlite 适合单实例开发；生产用 postgres 后端 |
 
 ## 5. 修正不生效
@@ -49,7 +49,17 @@
 - 修正轮不携带图片，`text` 可为空；修正只更新显式提供的字段。
 - 验证：正常时 trace 中修正轮 **没有** `recognize_image` 调用（修正后不调 VLM）。
 
-## 6. 输出乱码（Windows 控制台）
+## 6. RAG 身份与预算问题
+
+- `PreparedQuery` 与返回结果的 manifest 不一致：确认应用使用同一份 `IndexManifest`，并清理旧
+  查询/Schema 缓存；不能用旧查询绑定新索引。
+- 物理检索预算耗尽：查看 `db_search_attempts`、`embedding_calls` 和保留量，而不是只看逻辑
+  `retrieval_calls`。失败和重试也会消耗真实尝试额度；应降低初始/补查查询数或检查 provider
+  超时，不要通过重启 runtime 绕过预算。
+- 本地降级结果被误认为向量结果：检查响应的 `fallback_used` 和通道状态；本地 BM25 不会产生
+  dense 命中。
+
+## 7. 输出乱码（Windows 控制台）
 
 Windows 默认 GBK 控制台打印 ✅/中文会报 `UnicodeEncodeError`。CLI 已自动
 reconfigure 为 UTF-8；若重定向或旧终端仍乱码：
@@ -61,7 +71,7 @@ $env:PYTHONIOENCODING="utf-8"
 set PYTHONIOENCODING=utf-8
 ```
 
-## 7. 评测门禁不通过
+## 8. 评测门禁不通过
 
 - 看 `reports/eval_report.md`：区分"未达标"与"未测量（pending）"；阻断指标
   pending 也判不通过。
@@ -69,7 +79,7 @@ set PYTHONIOENCODING=utf-8
 - 种子数据集无法通过 → 检查 `same_item_pairs` 是否与领域判定一致
   （标题相似度/属性冲突决定判定，见 docs/evaluation.md）。
 
-## 8. 观察手段
+## 9. 观察手段
 
 - trace：`SHIJIAJING_TRACE_BACKEND=structlog`，事件含 request_id、节点、耗时、
   降级标记；日志不含密钥与隐藏思维链（方案 §11.3）。
@@ -78,7 +88,7 @@ set PYTHONIOENCODING=utf-8
 - 指标：`PrometheusMetrics` 暴露模型调用/检索降级/修复/延迟计数。
 - 测试：`uv run pytest -q`（离线单测）；`-m integration` 需要真实外部资源。
 
-## 9. 二期存储与回滚
+## 10. 二期存储与回滚
 
 - 持久化检查：`uv run shijiajing-preflight --storage-only --json`。
 - 事件修复：先运行 `uv run shijiajing-repair-events --dry-run`，确认缺失集合后才允许

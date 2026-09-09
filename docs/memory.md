@@ -1,13 +1,13 @@
 # Memory 设计
 
-Memory Agent 管理跨会话、显式授权的用户记忆。它与单轮 `SupervisorState`、会话摘要和模型
+Memory Service 管理跨会话、显式授权的用户记忆。它与单轮 `MainRuntimeState`、会话摘要和模型
 上下文相互独立，不能把请求中的自由 metadata 自动当作用户画像。
 
 ## 1. 三类上下文
 
 | 类型 | 存储位置 | 生命周期 | 用途 |
 |---|---|---|---|
-| 单轮执行状态 | `SupervisorState` | 一个 turn，可由 Checkpoint 恢复 | 计划、任务结果、中断和预算 |
+| 单轮执行状态 | `MainRuntimeState` | 一个 turn，可由 Checkpoint 恢复 | 动作、结果、中断和预算 |
 | 会话摘要 | `recent_turns` | 当前会话的有界窗口 | 多轮指代和近期约束 |
 | 长期记忆 | `MemoryPort` | 跨会话，按 owner 隔离 | 用户明确要求保存的偏好或默认约束 |
 
@@ -18,11 +18,11 @@ Memory Agent 管理跨会话、显式授权的用户记忆。它与单轮 `Super
 ```text
 Intent / Recognition 结果
         ↓
-Supervisor 构造当前品类 MemoryQuery
+MainRuntime 构造当前品类 MemoryQuery
         ↓
-Memory Agent recall(memory_owner_id, query)
+Memory Service recall(memory_owner_id, query)
         ↓
-Supervisor 按 scope、apply_mode 和来源合并
+Runtime 按 scope、apply_mode 和来源合并
 ```
 
 - `memory_owner_id` 必须来自可信调用上下文，不能由用户文本或请求 metadata 指定。
@@ -34,12 +34,12 @@ Supervisor 按 scope、apply_mode 和来源合并
 
 长期记忆遵循 prepare → confirm → commit：
 
-1. Intent Agent 从用户明确表达中生成 `MemoryDirective`。
-2. Memory Agent 将合法 directive 转换为稳定 `MemoryMutation`。
-3. Supervisor 保存待确认 mutation 的 ID 和 payload hash。
+1. Intent Service 从用户明确表达中生成 `MemoryDirective`。
+2. Memory Service 将合法 directive 转换为稳定 `MemoryMutation`。
+3. MainRuntime 保存待确认 mutation 的 ID 和 payload hash。
 4. 需要确认时返回 `MemoryConfirmation` 中断。
-5. 恢复后 Supervisor 为同一 mutation 集合生成授权。
-6. Memory Agent 校验授权 ID、interrupt ID、mutation ID 列表和 payload hash 后提交。
+5. 恢复后 MainRuntime 为同一 mutation 集合生成授权。
+6. Memory Service 校验授权 ID、interrupt ID、mutation ID 列表和 payload hash 后提交。
 
 任何授权字段不一致都返回 `CAPABILITY_DENIED`；失败不能伪装为“已记住”。
 
@@ -55,10 +55,10 @@ Memory 使用 `scope_key` 隔离全局和品类偏好，并通过 `apply_mode` �
 
 ## 5. 任务与状态边界
 
-- Memory Agent 只接收 `MemoryTaskInput`，不接收完整 `SupervisorState`。
-- recall、prepare、commit 分别对应独立的 `AgentTaskKind`。
-- task result 以 `output_hash` 幂等保存；Checkpoint 重放不会重复已完成任务。
-- Supervisor 是 mutation 授权和最终规范状态的唯一写入者。
+- Memory Service 只接收受限的 `MemoryTaskInput`，不接收完整 `MainRuntimeState`。
+- recall、prepare、commit 由 runtime 分别授权；不会通过旧任务 DAG 调度。
+- mutation 以 payload hash 和 mutation ID 保证幂等；Checkpoint 重放不会重复已完成提交。
+- MainRuntime 是 mutation 授权和最终规范状态的唯一写入者。
 - Memory commit 是副作用任务；只读评估必须显式抑制该任务。
 
 ## 6. 配置

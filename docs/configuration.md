@@ -1,219 +1,167 @@
 # 配置说明
 
-所有配置通过环境变量（或 `.env`，见下）注入，前缀统一 `SHIJIAJING_`。
-**外部地址、Token、Collection、模型标识符和数据路径没有代码默认值**（方案 §13）；
-使用真实适配器时缺失会启动失败，并列出精确缺失项。
+所有部署配置通过环境变量（或 `.env`）注入，变量前缀统一为
+`SHIJIAJING_`。算法参数有代码默认值；外部地址、凭据、模型标识和商品数据路径没有
+代码默认值，使用真实装配时缺失会被明确报告。
 
-## 1. 加载方式
+## 1. 加载与启动校验
 
 ```bash
-# 方式一：环境变量
-export SHIJIAJING_ARK_API_KEY=...
-
-# 方式二：.env 文件（键名必须带前缀，如 SHIJIAJING_ARK_API_KEY=...）
-# 示例见仓库根 .env.example，复制后填写即可
+cp .env.example .env
+# 填写 .env 后由 CLI 或部署入口加载
 ```
 
-`shijiajing_agent.config.load_settings()` 读取 `SHIJIAJING_*`；`Settings` 不可变，
-`settings.validate(require_real_adapters=True)` 返回缺失项列表。
-数值环境变量在解析阶段即以完整的 `SHIJIAJING_*` 字段名报告类型错误；解析成功后再由
-`validate_engineering()` 校验有限性、正负范围和跨字段约束。
+`shijiajing_agent.config.load_settings()` 负责读取和类型转换，`Settings` 是不可变配置。
+`make_deps()` 依次执行：
 
-## 2. 外部资源（无默认值，缺失即失败）
+1. `validate(require_real_adapters=True)` 检查外部资源和主 Agent 模型；
+2. `validate_engineering()` 检查枚举、范围、DSN 以及跨字段约束；
+3. 通过后才创建真实模型、检索和持久化适配器。
 
-| 环境变量 | 说明 |
+解析错误会指出完整变量名，例如 `SHIJIAJING_TURN_TIMEOUT_SECONDS` 必须是数字。缺失配置
+会以 `缺少必要配置：...` 失败，退出码为 2；不会静默装配样例数据。
+
+## 2. 外部资源
+
+| 变量 | 说明 |
 |---|---|
-| `SHIJIAJING_ARK_API_KEY` | 模型 Provider（OpenAI 兼容）API Key |
-| `SHIJIAJING_ARK_BASE_URL` | 模型 Provider Base URL |
-| `SHIJIAJING_ARK_VISION_MODEL` | VLM 模型标识符 |
-| `SHIJIAJING_ARK_TEXT_MODEL` | 意图/改写/解释共用文本模型标识符 |
-| `SHIJIAJING_EMBEDDING_MODEL` | Milvus 混合检索使用的文本向量模型标识符；仅本地词法快照路径不需要 |
-| `SHIJIAJING_MILVUS_URI` | Milvus 地址 |
-| `SHIJIAJING_MILVUS_TOKEN` | Milvus Token |
-| `SHIJIAJING_MILVUS_COLLECTION` | Milvus Collection 名 |
-| `SHIJIAJING_CHECKPOINT_BACKEND` | `sqlite` / `postgres` |
-| `SHIJIAJING_CHECKPOINT_DSN` | sqlite 文件路径或 postgres DSN |
-| `SHIJIAJING_TRACE_BACKEND` | `structlog` 或 `opentelemetry` |
-| `SHIJIAJING_TRACE_DSN` | OTLP HTTP endpoint；OpenTelemetry 后端必填 |
-| `SHIJIAJING_TAXONOMY_PATH` | taxonomy.json 路径（缺省用包内置文件） |
-| `SHIJIAJING_LOCAL_PRODUCT_SNAPSHOT_PATH` | 本地商品快照 JSONL（词法降级索引） |
+| `SHIJIAJING_ARK_API_KEY` | Ark/OpenAI-compatible API Key |
+| `SHIJIAJING_ARK_BASE_URL` | 模型服务 Base URL |
+| `SHIJIAJING_ARK_VISION_MODEL` | 图片识别模型 |
+| `SHIJIAJING_ARK_TEXT_MODEL` | 意图、查询改写和解释模型 |
+| `SHIJIAJING_EMBEDDING_MODEL` | Milvus 文本向量模型；仅本地词法快照时可不填 |
+| `SHIJIAJING_MILVUS_URI` / `TOKEN` / `COLLECTION` | Milvus 连接和集合；三项必须同时提供 |
+| `SHIJIAJING_LOCAL_PRODUCT_SNAPSHOT_PATH` | 本地 Offer JSONL；Milvus 不可用时也可作为降级路径 |
+| `SHIJIAJING_CHECKPOINT_BACKEND` / `CHECKPOINT_DSN` | `sqlite` 或 `postgres` 的 runtime checkpoint |
+| `SHIJIAJING_MAIN_AGENT_MODEL` | 主 Agent 模型，真实装配必填 |
+| `SHIJIAJING_SUBAGENT_MODEL` | 子 Agent 模型；为空时沿用主 Agent 模型 |
+| `SHIJIAJING_TRACE_BACKEND` / `TRACE_DSN` | `structlog` 或 `opentelemetry`；后者需要 OTLP endpoint |
+| `SHIJIAJING_TAXONOMY_PATH` | taxonomy 文件；为空时使用包内置版本 |
 
-### 检索配置的组合
+检索配置二选一：Milvus 三项齐全时使用混合检索，本地快照存在时可直接使用词法检索；两者
+均未提供则启动失败。Milvus 路径仍应配置本地快照，作为明确的本地降级来源。
 
-- **Milvus 三件套齐全**（URI + TOKEN + COLLECTION）→ 走 `MilvusHybridRetrievalAdapter`；
-  其本地兜底使用快照（未配置快照时，仅当 Milvus 不可用才报精确错误）。
-- **仅本地快照** → 直接使用 `LocalLexicalRetrievalAdapter`（BM25 词法 + 相同硬过滤语义）。
-- **两者皆无** → 启动报错并列出缺失项（`make_retrieval` 抛 ValueError）。
+## 3. 主/子 Agent 预算与运行参数
 
-## 3. 运行参数（均有方案默认值，可按需覆盖）
+生产只有 `AgentFacade → MainAgentRuntime` 一条执行链。配置只限制资源，不选择 Workflow、
+Planner 或其他执行模式。
 
-| 环境变量 | 默认 | 说明 |
-|---|---|---|
-| `SHIJIAJING_ENV` | `dev` | 精确环境枚举：`dev` / `test` / `prod` |
-| `SHIJIAJING_VISION_TIMEOUT_SECONDS` | 30 | VLM 调用超时 |
-| `SHIJIAJING_TEXT_MODEL_TIMEOUT_SECONDS` | 15 | 文本模型调用超时 |
+| 变量 | 默认值 | 说明 |
+|---|---:|---|
+| `SHIJIAJING_MAIN_AGENT_MAX_DECISIONS` | 8 | 主 Agent 决策轮数 |
+| `SHIJIAJING_MAIN_AGENT_MAX_TOOL_CALLS` | 24 | 工具动作总数 |
+| `SHIJIAJING_MAIN_AGENT_MAX_RETRIEVAL_CALLS` | 6 | 逻辑检索动作数 |
+| `SHIJIAJING_MAIN_AGENT_MAX_MODEL_CALLS` | 32 | 主/工具/子任务模型调用数 |
+| `SHIJIAJING_MAIN_AGENT_MAX_TOKENS` | 100000 | 主请求 token 上限 |
+| `SHIJIAJING_MAIN_AGENT_MAX_SUBAGENT_STARTS` | 2 | 子任务启动数；运行时仍限制单层执行 |
+| `SHIJIAJING_SUBAGENT_MAX_DECISIONS` | 4 | 单个子 Agent 决策轮数 |
+| `SHIJIAJING_SUBAGENT_MAX_TOOL_CALLS` | 6 | 单个子 Agent 工具动作数 |
+| `SHIJIAJING_SUBAGENT_MAX_SECONDS` | 30 | 单个子 Agent 时限 |
+| `SHIJIAJING_SUBAGENT_MAX_TOKENS` | 20000 | 单个子 Agent token 上限 |
+| `SHIJIAJING_TURN_TIMEOUT_SECONDS` | 60 | 单轮总时限 |
+| `SHIJIAJING_VISION_TIMEOUT_SECONDS` | 30 | VLM 超时 |
+| `SHIJIAJING_TEXT_MODEL_TIMEOUT_SECONDS` | 15 | 文本模型超时 |
 | `SHIJIAJING_RETRIEVAL_TIMEOUT_SECONDS` | 3 | 检索超时 |
-| `SHIJIAJING_TURN_TIMEOUT_SECONDS` | 60 | 单轮整体超时 |
-| `SHIJIAJING_VISION_CACHE_TTL_SECONDS` | 2592000 | vision 缓存 TTL |
-| `SHIJIAJING_INTENT_CACHE_TTL_SECONDS` | 604800 | intent 缓存 TTL |
-| `SHIJIAJING_QUERY_REWRITE_CACHE_TTL_SECONDS` | 604800 | query_rewrite 缓存 TTL |
-| `SHIJIAJING_RETRIEVAL_CACHE_TTL_SECONDS` | 300 | retrieval 缓存 TTL |
-| `SHIJIAJING_EXPLANATION_CACHE_TTL_SECONDS` | 86400 | explanation 缓存 TTL |
-| `SHIJIAJING_POSTGRES_POOL_MIN_SIZE` | 1 | PostgreSQL 业务适配器连接池最小连接数 |
-| `SHIJIAJING_POSTGRES_POOL_MAX_SIZE` | 4 | PostgreSQL 业务适配器连接池最大连接数 |
-| `SHIJIAJING_POSTGRES_POOL_TIMEOUT_SECONDS` | 30 | PostgreSQL 连接池等待连接超时 |
-| `SHIJIAJING_MAX_MODEL_REPAIRS` | 2 | 模型结构化输出修复次数 |
-| `SHIJIAJING_MAX_NETWORK_ATTEMPTS` | 2 | 网络重试次数 |
-| `SHIJIAJING_RETRIEVAL_TOP_K_PER_CHANNEL` | 100 | 每通道 Top-K |
+| `SHIJIAJING_MAX_MODEL_REPAIRS` | 2 | 结构化输出修复次数 |
+| `SHIJIAJING_MAX_NETWORK_ATTEMPTS` | 2 | 网络尝试次数 |
+
+运行时还限制物理检索成本。`RETRIEVAL_CALLS` 是逻辑查询数；数据库搜索和 embedding 调用
+分别计量并在动作执行前预留预算：
+
+| 变量 | 默认值 | 说明 |
+|---|---:|---|
+| `SHIJIAJING_RETRIEVAL_INITIAL_MAX_QUERIES` | 3 | 首轮最多查询数 |
+| `SHIJIAJING_RETRIEVAL_SUPPLEMENT_MAX_QUERIES` | 3 | 补充检索最多查询数 |
+| `SHIJIAJING_RETRIEVAL_MAX_DB_SEARCH_ATTEMPTS` | 24 | 物理数据库搜索尝试数 |
+| `SHIJIAJING_RETRIEVAL_QUERY_CONCURRENCY` | 2 | 查询并发上限 |
+| `SHIJIAJING_RETRIEVAL_TOP_K_PER_CHANNEL` | 100 | 每召回通道 Top-K |
 | `SHIJIAJING_RETRIEVAL_UNION_LIMIT` | 200 | 通道合并上限 |
 | `SHIJIAJING_MATCHING_CANDIDATE_LIMIT` | 60 | 同款匹配候选上限 |
-| `SHIJIAJING_DYNAMIC_SCHEMA_BATCH_SIZE` | 60 | 单次局部 Schema 发现处理的 Offer 数量 |
-| `SHIJIAJING_DYNAMIC_SCHEMA_CONCEPT_MIN_CONFIDENCE` | 0.90 | 采纳动态品类概念的最低置信度 |
-| `SHIJIAJING_DYNAMIC_SCHEMA_ROLE_MIN_CONFIDENCE` | 0.90 | 采纳身份/规格字段角色的最低置信度 |
-| `SHIJIAJING_DYNAMIC_SCHEMA_ROLE_MIN_SUPPORT` | 2 | 身份/规格字段角色所需的最小跨样本支持数 |
-| `SHIJIAJING_DYNAMIC_SCHEMA_MAX_CONCEPTS` | 16 | 单批最多保留的动态品类概念数 |
-| `SHIJIAJING_DYNAMIC_SCHEMA_MAX_ATTRIBUTES_PER_CONCEPT` | 64 | 每个概念最多保留的属性数 |
-| `SHIJIAJING_DYNAMIC_SCHEMA_CACHE_TTL_SECONDS` | 604800 | 动态 Schema 与归一化结果缓存 TTL |
-| `SHIJIAJING_DYNAMIC_CANONICALIZATION_BATCH_SIZE` | 20 | 单次动态字段归一化处理的 Offer 数量 |
-| `SHIJIAJING_DYNAMIC_CANONICALIZATION_FIELD_MIN_CONFIDENCE` | 0.80 | 采纳动态字段值的最低置信度 |
-| `SHIJIAJING_BRAND_HARD_FILTER_CONFIDENCE` | 0.85 | 品牌硬过滤最低置信 |
-| `SHIJIAJING_MODEL_HARD_FILTER_CONFIDENCE` | 0.90 | 型号硬过滤最低置信 |
-| `SHIJIAJING_SAME_ITEM_ACCEPT_THRESHOLD` | 0.88 | 同款接受阈值 |
-| `SHIJIAJING_SAME_ITEM_REVIEW_THRESHOLD` | 0.74 | 同款人工复核阈值 |
+| `SHIJIAJING_RETRIEVAL_INDEX_VERSION` | 空 | 结果缓存使用的索引身份；manifest 发布时优先使用其身份 |
+| `SHIJIAJING_RETRIEVAL_RRF_K` | 60 | RRF 计算参数 |
 
-二期工程化开关：
+## 4. 动态 Schema 与商品处理
 
-| 环境变量 | 默认 | 说明 |
+商品归一化固定使用请求级局部动态 Schema；没有模式切换开关。Schema 发现或字段归一化
+失败时，当前批次保守回退到通用规则基线，并在结果中保留降级信息。
+
+| 变量 | 默认值 |
+|---|---:|
+| `SHIJIAJING_DYNAMIC_SCHEMA_BATCH_SIZE` | 60 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_CONCEPT_MIN_CONFIDENCE` | 0.90 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_ROLE_MIN_CONFIDENCE` | 0.90 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_ROLE_MIN_SUPPORT` | 2 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_MAX_CONCEPTS` | 16 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_MAX_ATTRIBUTES_PER_CONCEPT` | 64 |
+| `SHIJIAJING_DYNAMIC_SCHEMA_CACHE_TTL_SECONDS` | 604800 |
+| `SHIJIAJING_DYNAMIC_CANONICALIZATION_BATCH_SIZE` | 20 |
+| `SHIJIAJING_DYNAMIC_CANONICALIZATION_FIELD_MIN_CONFIDENCE` | 0.80 |
+| `SHIJIAJING_BRAND_HARD_FILTER_CONFIDENCE` | 0.85 |
+| `SHIJIAJING_MODEL_HARD_FILTER_CONFIDENCE` | 0.90 |
+| `SHIJIAJING_SAME_ITEM_ACCEPT_THRESHOLD` | 0.88 |
+| `SHIJIAJING_SAME_ITEM_REVIEW_THRESHOLD` | 0.74 |
+
+## 5. 二期存储、HITL 与缓存
+
+| 变量 | 默认值 | 说明 |
 |---|---|---|
 | `SHIJIAJING_REQUEST_LEDGER_BACKEND` | `sqlite`（环境加载） | `disabled` / `sqlite` / `postgres` |
-| `SHIJIAJING_REQUEST_LEDGER_DSN` | 空 | 未填写时复用 `SHIJIAJING_CHECKPOINT_DSN` |
-| `SHIJIAJING_MEMORY_ENABLED` | `false` | 是否启用跨会话显式记忆 |
-| `SHIJIAJING_MEMORY_RECALL_ENABLED` | `true` | 内部灰度开关；是否执行长期记忆 recall |
-| `SHIJIAJING_MEMORY_COMMIT_ENABLED` | `true` | 内部灰度开关；是否准备并提交显式记忆变更 |
+| `SHIJIAJING_REQUEST_LEDGER_DSN` | 空 | 为空时复用 checkpoint DSN |
+| `SHIJIAJING_MEMORY_ENABLED` | `false` | 长期记忆总开关 |
+| `SHIJIAJING_MEMORY_RECALL_ENABLED` | `true` | 是否启用记忆召回 |
+| `SHIJIAJING_MEMORY_COMMIT_ENABLED` | `true` | 是否启用记忆变更准备/提交 |
 | `SHIJIAJING_MEMORY_BACKEND` | `disabled` | `disabled` / `sqlite` / `postgres` |
-| `SHIJIAJING_MEMORY_DSN` | 空 | Memory SQLite 文件或 PostgreSQL DSN |
-| `SHIJIAJING_MEMORY_RECALL_LIMIT` | `20` | 召回并完成 scope 去重后的最大记录数 |
-| `SHIJIAJING_RECENT_TURNS_LIMIT` | `6` | 会话摘要最大轮数 |
-| `SHIJIAJING_RECENT_TURNS_MAX_BYTES` | `65536` | 会话摘要序列化字节上限 |
-| `SHIJIAJING_MEMORY_PURGE_ENABLED` | `false` | 仅受信管理入口可用的物理清除开关 |
-| `SHIJIAJING_MEMORY_MUTATION_LEDGER_RETENTION_DAYS` | `90` | 仅 hash ledger 的保留天数 |
-| `SHIJIAJING_HITL_ENABLED` | `false` | 是否返回 `AgentTurnResult.interrupt` |
-| `SHIJIAJING_RECOGNITION_REVIEW_THRESHOLD` | `0.70` | 低于此识别置信度暂停审核 |
-| `SHIJIAJING_MEMORY_CONFIRMATION_REQUIRED` | `true` | 记忆变更提交前暂停确认 |
+| `SHIJIAJING_MEMORY_DSN` | 空 | Memory 存储 DSN |
+| `SHIJIAJING_MEMORY_RECALL_LIMIT` | 20 | 召回上限 |
+| `SHIJIAJING_RECENT_TURNS_LIMIT` | 6 | 会话摘要轮数上限 |
+| `SHIJIAJING_RECENT_TURNS_MAX_BYTES` | 65536 | 会话摘要字节上限 |
+| `SHIJIAJING_MEMORY_PURGE_ENABLED` | `false` | 受信管理入口的物理清除开关 |
+| `SHIJIAJING_MEMORY_MUTATION_LEDGER_RETENTION_DAYS` | 90 | mutation hash ledger 保留天数 |
+| `SHIJIAJING_HITL_ENABLED` | `false` | 是否允许 start/resume 中断 |
+| `SHIJIAJING_RECOGNITION_REVIEW_THRESHOLD` | 0.70 | 低于此识别置信度建议复核 |
+| `SHIJIAJING_MEMORY_CONFIRMATION_REQUIRED` | `true` | 记忆提交前是否要求确认 |
 | `SHIJIAJING_CACHE_BACKEND` | `disabled` | `disabled` / `memory` / `sqlite` / `postgres` |
-| `SHIJIAJING_CACHE_DSN` | 空 | Cache SQLite 文件或 PostgreSQL DSN |
-| `SHIJIAJING_RETRIEVAL_FUSION_STRATEGY` | `weighted` | `weighted` 或 `rrf` |
-| `SHIJIAJING_RETRIEVAL_RERANK_ENABLED` | `false` | 是否启用确定性二阶段重排 |
-| `SHIJIAJING_RETRIEVAL_INDEX_VERSION` | 空 | 非空时才启用检索结果缓存 |
-| `SHIJIAJING_EVENT_STORE_BACKEND` | `disabled` | `disabled` / `sqlite` / `postgres` |
-| `SHIJIAJING_EVENT_STORE_DSN` | 空 | Event Store SQLite 文件或 PostgreSQL DSN |
+| `SHIJIAJING_CACHE_DSN` | 空 | Cache 存储 DSN |
+| `SHIJIAJING_EVENT_STORE_BACKEND` | `disabled` | 生产环境不能保持 disabled |
+| `SHIJIAJING_EVENT_STORE_DSN` | 空 | Event Store DSN |
 
-Supervisor Planner 配置：
+缓存是 miss-safe 性能层，不是事实来源。版本、约束和 manifest 变化必须形成不同的缓存
+身份；缓存读回后仍要重新校验契约、硬过滤和证据一致性。
 
-| 环境变量 | 默认 | 说明 |
-|---|---|---|
-| `SHIJIAJING_SUPERVISOR_MODEL` | 空 | Planner 专用 Ark 模型标识；不自动复用 `ARK_TEXT_MODEL` |
-| `SHIJIAJING_SUPERVISOR_PLANNER_MODE` | `off` | `off` / `shadow` / `active_replan` / `active`；非 `off` 必须显式配置 Supervisor 模型 |
-| `SHIJIAJING_SUPERVISOR_PLANNER_TIMEOUT_SECONDS` | 8 | Supervisor Planner 单次调用超时 |
-| `SHIJIAJING_SUPERVISOR_PLANNER_MAX_REPAIRS` | 1 | 结构化输出修复最多次数 |
-| `SHIJIAJING_SUPERVISOR_PLANNER_MAX_TOKENS` | 1500 | Planner 单次输出 token 上限 |
-| `SHIJIAJING_MAX_AGENT_TASKS` | 32 | 单计划任务上限 |
-| `SHIJIAJING_MAX_SUPERVISOR_REPLANS` | 2 | 单轮受控 replan 上限 |
-| `SHIJIAJING_AGENT_TASK_TIMEOUT_SECONDS` | 30 | 单 Agent task deadline 默认值 |
+PostgreSQL 业务适配器连接池参数为 `SHIJIAJING_POSTGRES_POOL_MIN_SIZE=1`、
+`SHIJIAJING_POSTGRES_POOL_MAX_SIZE=4`、`SHIJIAJING_POSTGRES_POOL_TIMEOUT_SECONDS=30`。
+生产环境还要求 `SHIJIAJING_ENV=prod` 时启用 Event Store 并提供 DSN。
 
-`shadow` 只校验模型提议并执行确定性计划，`active_replan` 只允许模型参与可恢复失败的
-replan，`active` 允许模型参与 create 与 replan。启用模型 Planner 前必须另外提交包含样本数、
-计划差异、p50/p95 延迟、token、回退和业务不变量的 Planner shadow 报告。
+## 6. TTL 与校验规则
 
-真实 Planner shadow 报告使用独立 CLI 生成；报告仅保存模型、Prompt 版本、token、延迟、回退原因与
-哈希，不保存请求文本、Prompt、任务输入或模型原始响应。输出路径必须不存在，避免覆盖历史证据：
+缓存 TTL 默认值为：vision `2592000`、intent `604800`、query rewrite `604800`、retrieval
+`300`、explanation `86400` 秒。所有 TTL 必须为正数；超时必须是有限正数；计数上限必须为
+正整数（`MAIN_AGENT_MAX_SUBAGENT_STARTS` 可为 0）；置信度和同款阈值必须在 `0..1`，且
+`SAME_ITEM_REVIEW_THRESHOLD` 不得大于 `SAME_ITEM_ACCEPT_THRESHOLD`。
 
-```bash
-uv run --env-file .env shijiajing-planner-shadow \
-  --dataset src/shijiajing_agent/data/eval/multi_agent_dataset.jsonl \
-  --data-version provisional-v1 \
-  --output reports/planner-shadow/planner-shadow.json
+主模型、checkpoint、trace 和检索来源的缺失检查由真实装配入口执行；Fake 端口只应由测试
+或离线示例显式注入。
+
+## 7. 已移除配置
+
+以下变量不再被解析，也不会选择或启动兼容引擎。环境中仍携带它们时，加载器会直接指出
+应删除的变量：
+
+```text
+SHIJIAJING_EXECUTION_MODE
+SHIJIAJING_RESEARCH_SUBAGENT_ENABLED
+SHIJIAJING_VERIFICATION_SUBAGENT_ENABLED
+SHIJIAJING_SUPERVISOR_MODEL
+SHIJIAJING_SUPERVISOR_PLANNER_MODE
+SHIJIAJING_SUPERVISOR_PLANNER_TIMEOUT_SECONDS
+SHIJIAJING_SUPERVISOR_PLANNER_MAX_REPAIRS
+SHIJIAJING_SUPERVISOR_PLANNER_MAX_TOKENS
+SHIJIAJING_MAX_AGENT_TASKS
+SHIJIAJING_MAX_SUPERVISOR_REPLANS
+SHIJIAJING_AGENT_TASK_TIMEOUT_SECONDS
+SHIJIAJING_RETRIEVAL_FUSION_STRATEGY
+SHIJIAJING_RETRIEVAL_RERANK_ENABLED
+SHIJIAJING_RETRIEVAL_RERANK_LIMIT
 ```
 
-逐案例 `planner_outcome.validated=true` 表示候选计划已通过确定性校验；shadow 模式下
-`accepted=false` 与 `fallback_reason=MODEL_PLAN_SHADOWED` 表示候选没有进入业务执行。随后可用
-`shijiajing-release-check --planner-shadow-report <report>` 校验报告结构与业务不变量门禁。
-Supervisor/task Checkpoint 要求 `SHIJIAJING_CHECKPOINT_DSN`；启用 HITL 时必须确保该
-存储可用。Request Ledger 在生产环境应使用持久化后端；
-生产 PostgreSQL 适配器来自 `uv sync --extra postgres`。长期记忆只接受白名单键和值域，
-普通请求的 `metadata` 不会被当作记忆 owner。
-
-`MEMORY_RECALL_ENABLED` 和 `MEMORY_COMMIT_ENABLED` 只来自部署配置，不接受客户端请求覆盖。
-启用 `MEMORY_COMMIT_ENABLED` 时必须同时启用 `MEMORY_RECALL_ENABLED`；两者都不改变
-`AgentExecutionContext.memory_enabled` 的调用方权限校验。
-
-上述 PostgreSQL pool 参数作用于 Request Ledger、Memory、Cache 和 Event Store
-业务适配器；LangGraph Checkpointer 当前由依赖库 `AsyncPostgresSaver` 使用单个
-异步连接，不能通过该三项参数伪装为连接池。连接池最小值必须至少为 1，最大值不能小于
-最小值，等待超时必须是有限正数。
-
-所有运行时数值配置在 `Settings.validate_engineering()` 阶段执行范围校验：超时和连接池
-等待时间必须是有限正数；模型修复次数和网络尝试次数允许为 `0`，但不得为负数；
-检索/匹配/记忆上限以及 RRF 参数必须至少为 `1`；置信度和阈值必须是有限的 `0..1`，
-且 `SAME_ITEM_REVIEW_THRESHOLD` 不得大于 `SAME_ITEM_ACCEPT_THRESHOLD`。校验失败返回
-精确字段名，启动检查不得静默继续。
-
-七类缓存 TTL 分别对应 `vision`、`intent`、`query_rewrite`、`retrieval`、`explanation`、
-`dynamic_schema` 和 `dynamic_canonicalization`
-命名空间，并由对应 Agent 或领域服务从 `Settings` 读取。preflight JSON 的
-`cache_ttl_seconds` 显示实际生效值，所有 TTL 必须为至少 `1` 秒。
-
-`SHIJIAJING_ENV=prod` 时，`SHIJIAJING_EVENT_STORE_BACKEND` 不得为 `disabled`，并且
-`sqlite`/`postgres` backend 必须提供 `SHIJIAJING_EVENT_STORE_DSN`。`dev` 和 `test`
-允许使用 `disabled` 进行本地和单元测试；未知环境值会在工程配置校验中按精确字段报错。
-
-偏好权重表（价格/店铺/评分/销量/发货）默认内置，见
-`Settings.preference_weights`；可按环境扩展并在 trace 中透出。
-
-## 3.1 主 Agent 与按需 subagent
-
-迁移期间默认仍为旧 Workflow：
-
-| 环境变量 | 默认 | 说明 |
-|---|---|---|
-| `SHIJIAJING_EXECUTION_MODE` | `workflow` | `workflow` / `main` / `main_with_subagents` |
-| `SHIJIAJING_MAIN_AGENT_MODEL` | 空 | `main` 与 `main_with_subagents` 必填；不自动猜模型 |
-| `SHIJIAJING_SUBAGENT_MODEL` | 空 | 未填写时继承 `MAIN_AGENT_MODEL`，运行报告应记录实际模型 |
-| `SHIJIAJING_RESEARCH_SUBAGENT_ENABLED` | `false` | 仅 `main_with_subagents` 可启用复杂检索委派 |
-| `SHIJIAJING_VERIFICATION_SUBAGENT_ENABLED` | `false` | 仅有 `OfferDetailPort` 时开放；无详情能力保持关闭 |
-| `SHIJIAJING_MAIN_AGENT_MAX_DECISIONS` | `8` | 主 Agent 决策上限，包含修正调用 |
-| `SHIJIAJING_MAIN_AGENT_MAX_TOOL_CALLS` | `24` | 全局工具派发上限 |
-| `SHIJIAJING_MAIN_AGENT_MAX_RETRIEVAL_CALLS` | `6` | 全局真实检索上限 |
-| `SHIJIAJING_MAIN_AGENT_MAX_MODEL_CALLS` | `32` | 主/工具/子任务生成模型调用总上限 |
-| `SHIJIAJING_MAIN_AGENT_MAX_TOKENS` | `100000` | 主/工具/子任务 token 总上限 |
-| `SHIJIAJING_MAIN_AGENT_MAX_SUBAGENT_STARTS` | `2` | 单轮最多启动数；V1 同时只执行一个 |
-| `SHIJIAJING_SUBAGENT_MAX_DECISIONS` | `4` | 单个 subagent 决策上限 |
-| `SHIJIAJING_SUBAGENT_MAX_TOOL_CALLS` | `6` | 单个 subagent 工具上限 |
-| `SHIJIAJING_SUBAGENT_MAX_SECONDS` | `30` | 单个 subagent 时限，且受父轮剩余时限约束 |
-| `SHIJIAJING_SUBAGENT_MAX_TOKENS` | `20000` | 单个 subagent token 上限，且受父预算约束 |
-
-新模式不能与 `SUPERVISOR_PLANNER_MODE != off` 同时启用；Planner 只属于旧 Workflow。
-`main` 是关闭委派的单 Agent 对照路径，`main_with_subagents` 才会把委派动作加入主 Agent
-动作目录。`SUBAGENT_MODEL` 未配置不代表额外获得预算或额外 Agent。
-
-Verification 的开关是“配置意图”，实际能力还要由 `OfferDetailPort` 装配决定；缺少详情端口
-时 runtime 会从允许动作中移除核验，并在 notices 记录限制，普通检索不受阻断。当前仓库没有
-实时优惠资格数据源，因此不能把离线详情夹具或快照描述为实时价格/优惠核验。
-
-三种模式都使用同一套 `Settings.validate_engineering()`：非法枚举、缺少主模型、Planner 冲突、
-跨模式开关或预算范围会返回精确字段名。新会话按当前配置选择引擎；已开始的 runtime 请求和
-中断按 Checkpoint 中记录的引擎版本恢复，回滚只作用于新会话并保留旧恢复路径。
-
-## 4. 缺失配置的行为
-
-- 示例与 `shijiajing-eval --live`：`load_settings_or_exit()` 打印
-  `缺少必要配置：SHIJIAJING_ARK_API_KEY, ...` 后退出码 2。
-- `make_deps(settings)`：抛 `ValueError("缺少必要配置：...")`。
-- 应用层（`AgentFacade`）不产生任何配置默认值——缺失即报错，不做静默降级
-  到假数据（样例数据只能通过显式 Fake 端口注入，见 tests/multi_agent/conftest.py）。
-### 动态商品归一化
-
-商品归一化固定使用请求级局部 Schema，不再提供模式开关。Schema 发现或字段归一化模型不可用时，
-当前批次保守回退到通用规则基线，不阻断检索。阈值、批大小与缓存 TTL 由
-`DYNAMIC_SCHEMA_*` 和 `DYNAMIC_CANONICALIZATION_*` 配置项控制；Schema 缓存只是性能优化，
-不是商品事实源。
+删除这些变量后，生产、CLI 和实时评测都使用同一条 `AgentFacade → MainAgentRuntime` 路径。

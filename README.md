@@ -1,8 +1,9 @@
 # 识价镜 Agent（shijiajing-agent）
 
 图片/文本输入 → 商品识别 → 意图理解 → 混合召回 → 同款匹配 → SKU 拆分 →
-比价排序 → 多轮筛选修正 的**可恢复 Agent runtime**（LangGraph）。默认保留
-Workflow；可选的 Main Agent 先调用共享工具，复杂检索或详情核验缺口才按需委派 subagent。
+比价排序 → 多轮筛选修正 的**可恢复 Agent runtime**（LangGraph）。生产只有
+`AgentFacade → MainAgentRuntime` 一条执行链；普通请求可以零次委派，复杂检索或详情核验
+缺口才由主 Agent 按需委派 subagent。
 
 工程只实现 Agent 逻辑，不包含 Web API 与客户端（方案 §3.2 非目标）。
 
@@ -27,9 +28,8 @@ cp .env.example .env      # 然后按注释填写
 | 模型 | `SHIJIAJING_ARK_API_KEY` `SHIJIAJING_ARK_BASE_URL` `SHIJIAJING_ARK_VISION_MODEL` `SHIJIAJING_ARK_TEXT_MODEL` `SHIJIAJING_EMBEDDING_MODEL` |
 | 检索 | `SHIJIAJING_MILVUS_URI` `SHIJIAJING_MILVUS_TOKEN` `SHIJIAJING_MILVUS_COLLECTION`（或 `SHIJIAJING_LOCAL_PRODUCT_SNAPSHOT_PATH` 本地词法降级） |
 | 持久化 | `SHIJIAJING_CHECKPOINT_BACKEND` `SHIJIAJING_CHECKPOINT_DSN` `SHIJIAJING_REQUEST_LEDGER_BACKEND` `SHIJIAJING_REQUEST_LEDGER_DSN` |
-| 编排控制 | `SHIJIAJING_SUPERVISOR_PLANNER_MODE`（`off` / `shadow` / `active_replan` / `active`）`SHIJIAJING_SUPERVISOR_MODEL` `SHIJIAJING_MAX_AGENT_TASKS` `SHIJIAJING_MAX_SUPERVISOR_REPLANS` |
-| 主 Agent / subagent | `SHIJIAJING_EXECUTION_MODE`（默认 `workflow`）`SHIJIAJING_MAIN_AGENT_MODEL` `SHIJIAJING_SUBAGENT_MODEL` `SHIJIAJING_RESEARCH_SUBAGENT_ENABLED` `SHIJIAJING_VERIFICATION_SUBAGENT_ENABLED` |
-| 二期能力 | `SHIJIAJING_MEMORY_*` `SHIJIAJING_HITL_ENABLED` `SHIJIAJING_CACHE_*` `SHIJIAJING_RETRIEVAL_FUSION_STRATEGY` `SHIJIAJING_RETRIEVAL_RERANK_ENABLED` `SHIJIAJING_EVENT_STORE_*` |
+| 主 Agent / subagent | `SHIJIAJING_MAIN_AGENT_MODEL` `SHIJIAJING_SUBAGENT_MODEL`；预算由 `MAIN_AGENT_*`、`SUBAGENT_*` 和 `RETRIEVAL_*` 控制，不选择架构 |
+| 二期能力 | `SHIJIAJING_MEMORY_*` `SHIJIAJING_HITL_ENABLED` `SHIJIAJING_CACHE_*` `SHIJIAJING_EVENT_STORE_*` |
 | 可观测 | `SHIJIAJING_TRACE_BACKEND` `SHIJIAJING_TRACE_DSN` |
 | 数据 | `SHIJIAJING_TAXONOMY_PATH` `SHIJIAJING_LOCAL_PRODUCT_SNAPSHOT_PATH` |
 
@@ -51,10 +51,8 @@ uv run python -m examples.image_example --image photo.jpg --text "预算2000以�
 # 用户修正：第一轮图片识别，第二轮修正品牌/型号，修正后不再调用 VLM
 uv run python -m examples.correction_example --image photo.jpg --brand Sony --model WH-1000XM5
 
-# 新路径（迁移/评测时显式开启；默认仍是 workflow）
-export SHIJIAJING_EXECUTION_MODE=main
+# 主 Agent 模型为生产必填；未配置子模型时沿用主模型
 export SHIJIAJING_MAIN_AGENT_MODEL="$SHIJIAJING_ARK_TEXT_MODEL"
-# 复杂检索路径：另设 EXECUTION_MODE=main_with_subagents 并开启 research 开关
 ```
 
 示例脚本与生产 CLI 共用 `shijiajing_agent.asyncio_compat`；Windows 下会使用
@@ -70,12 +68,7 @@ uv run shijiajing-benchmark --source formal --datasets-dir <frozen_dir> \
   --gate-strategy weighted --max-p95-ms <threshold> --report-dir reports/frozen
 uv run shijiajing-eval --frozen            # 门禁通过后写冻结报告
 uv run shijiajing-eval --live --output-datasets-dir <dir>  # 真实数据实时输出副本（目录须不存在）
-# 真实 Ark Planner shadow：只评估候选计划，执行计划保持确定性；报告拒绝覆盖
-uv run --env-file .env shijiajing-planner-shadow \
-  --dataset src/shijiajing_agent/data/eval/multi_agent_dataset.jsonl \
-  --data-version provisional-v1 \
-  --output reports/planner-shadow/planner-shadow.json
-# 人工仲裁完成后，再用 shijiajing-build-eval freeze 晋级为 frozen 数据集
+# 人工仲裁完成后，用 shijiajing-build-eval freeze 晋级为 frozen 数据集
 ```
 
 - 11 项指标与阈值门禁；4 项**阻断指标**未达标（含未测量）即失败。
@@ -101,16 +94,17 @@ uv run --env-file .env shijiajing-planner-shadow \
 ## 架构
 
 ```text
-请求 → Supervisor 生成并校验任务 DAG
-     ├→ Recognition Agent ─┐
-     ├→ Intent Agent ──────┼→ Retrieval Agent → Explanation Agent → Supervisor 汇合响应
-     └→ Memory Agent ──────┘
-     ；Supervisor/task 双层 Checkpoint 支持恢复与 HITL
+请求或恢复 → AgentFacade → 主 Agent 观察/决策
+                         ├→ 检索比较 / 证据读取
+                         ├→ 按需 Research / Verification subagent
+                         └→ 追问 / 回答 / 无结果
+                         ↓
+                   运行时校验 → Checkpoint
 ```
 
-- 分层：contracts（Pydantic）→ domain（纯领域）→ multi_agent（编排与 Agent）→ adapters（外部能力）
-- 新路径：`AgentFacade` 按 `EXECUTION_MODE` 选择旧 Workflow 或 `MainAgentRuntime`；主 Agent
-  的动作、预算、HITL、证据和恢复由确定性 runtime 控制。
+- 分层：contracts（Pydantic）→ domain/services（业务能力）→ agent_runtime（主/子 Agent 运行时）→ adapters（外部能力）
+- `AgentFacade` 始终进入 `MainAgentRuntime`；主 Agent 的动作、预算、HITL、证据和恢复由确定性
+  runtime 控制，subagent 没有主状态或长期记忆写权限。
 - 全部外部能力通过 Protocol 端口注入（VLM/意图/改写/解释/检索/Checkpoint/Trace/指标）
 - 幂等（request_id）、乐观版本冲突重放、同会话并发控制
 - 详细：[docs/architecture.md](docs/architecture.md)、[docs/multi_agent.md](docs/multi_agent.md)
@@ -119,17 +113,18 @@ uv run --env-file .env shijiajing-planner-shadow \
 
 | 文档 | 内容 |
 |---|---|
-| [docs/architecture.md](docs/architecture.md) | 分层、端口、Supervisor 与会话恢复 |
+| [docs/architecture.md](docs/architecture.md) | 分层、端口、主/子 Agent 与会话恢复 |
 | [docs/contracts.md](docs/contracts.md) | 数据契约、硬过滤语义、Checkpoint 序列化 |
 | [docs/memory.md](docs/memory.md) | 三层上下文、显式记忆写入、scope/apply mode、HITL、持久化与验收设计 |
-| [docs/multi_agent.md](docs/multi_agent.md) | Supervisor、Specialist Agent、并行汇合与确定性边界 |
+| [docs/multi_agent.md](docs/multi_agent.md) | 主 Agent 按需委派、动作权限与确定性边界 |
 | [主 Agent + 按需 subagent 改造设计](docs/plans/main_agent_on_demand_subagents_design.md) | 设计、阶段实施记录、兼容回滚及验收清单 |
-| [单一主／子 Agent 架构收敛方案](docs/plans/subagent_only_architecture_design.md) | 待实施：只保留 Main + 按需 Subagent，删除其他编排模式 |
-| [SKU 原始数据与按需补召回 RAG 方案](docs/plans/sku_offer_rag_on_demand_retrieval_design.md) | 待实施：平台 SKU 原始入库、混合召回、检索后动态 Schema、可选补查与完整验收清单 |
+| [单一主／子 Agent 架构收敛方案](docs/plans/subagent_only_architecture_design.md) | 已实施：只保留 Main + 按需 Subagent |
+| [SKU 原始数据与按需补召回 RAG 方案](docs/plans/sku_offer_rag_on_demand_retrieval_design.md) | 原始 Offer、混合召回、动态 Schema、按需补查与验收设计 |
 | [docs/product_canonicalization.md](docs/product_canonicalization.md) | 当前商品归一化、动态 Schema 四种迁移模式、证据校验、SPU/SKU 确定性处理 |
 | [docs/plans/dynamic_product_schema_implementation_plan.md](docs/plans/dynamic_product_schema_implementation_plan.md) | 无静态 Taxonomy 的 LLM 动态局部 Schema 目标架构、迁移与验收方案 |
 | [docs/configuration.md](docs/configuration.md) | 全部配置项与缺失行为 |
 | [docs/milvus_schema.md](docs/milvus_schema.md) | Collection 结构、索引脚本、混合召回、降级 |
+| [docs/operations/rag_migration.md](docs/operations/rag_migration.md) | RAG 索引/快照迁移、切换与验收 |
 | [docs/evaluation.md](docs/evaluation.md) | 数据集、指标阈值、冻结流程、诚实性说明 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 常见故障与处理 |
 | [docs/operations_phase2.md](docs/operations_phase2.md) | 二期备份、迁移、事件修复与回滚 |

@@ -14,13 +14,14 @@
 | `ranking_dataset.jsonl` | `RankingSample` | NDCG、约束满足、Top1 价格正确 |
 | `end_to_end_dataset.jsonl` | `EndToEndSample` | 任务成功率、澄清、修正免 VLM、状态一致性、延迟 |
 | `memory_dataset.jsonl` | `MemorySample` | owner 隔离、覆盖、显式 directive、forget 后状态夹具 |
-| `multi_agent_dataset.jsonl` | `MultiAgentSample` | 子图输出、汇合状态与最终业务结果夹具 |
+| `multi_agent_dataset.jsonl` | `MultiAgentSample` | 主/子 Agent 边界、汇合状态与最终业务结果夹具 |
 | `interrupt_dataset.jsonl` | `InterruptSample` | 四类 interrupt 恢复节点与副作用基线夹具 |
 | `cache_dataset.jsonl` | `CacheSample` | 版本向量、hit/miss、调用次数与结果摘要夹具 |
 | `retrieval_strategy_dataset.jsonl` | `RetrievalStrategySample` | weighted、RRF、weighted+rerank 三组策略对比 |
 
 `memory`、`multi_agent`、`interrupt`、`cache` 四类是工程不变量夹具，不参与商品质量
-指标和发布门禁；它们由严格行模型加载，供专项回归执行器及契约测试使用。
+指标和发布门禁；它们由严格行模型加载，供专项回归执行器及契约测试使用。`multi_agent`
+文件名是历史兼容名称，当前语义是唯一 runtime 中的主/子 Agent 边界，不表示另一套编排引擎。
 `retrieval_strategy` 是独立的策略比较夹具。
 
 `shijiajing-eval --no-gate` 会额外生成 `engineering_eval_report.{json,md}` 和
@@ -234,41 +235,27 @@ uv run shijiajing-build-eval freeze \
 `.gitignore`，禁止提交）与 `evals/datasets/provisional/v1/`（脱敏后提交，
 含 manifest.json、README.md 与全部数据文件 SHA-256）。
 
-## 7. 三引擎对照：Workflow / Main / Main + Subagent
+## 7. 单一 runtime 的专项评测
 
-主 Agent 改造的离线对照报告必须把执行引擎、模型/Prompt、taxonomy、索引、候选池和总预算
-写入同一份 manifest，并按简单问题与复杂问题分层。推荐报告结构如下；它是测量结果容器，
-不是把当前 seed 数据或夹具通过误写成线上收益：
+当前所有生产、CLI 和实时评测都通过同一个 `AgentFacade → MainAgentRuntime`。报告 manifest
+应记录固定的 `engine_version`（当前为 `main-agent-runtime-v2`）、模型/Prompt、taxonomy、
+索引 manifest、候选窗口、预算和实际委派轨迹；`engine_version` 是产物身份，不是运行选择器。
 
-```json
-{
-  "schema_version": "execution-mode-comparison-v1",
-  "dataset_id": "<frozen-or-provisional-id>",
-  "groups": {
-    "workflow": {"execution_mode": "workflow", "cases": 0},
-    "main": {"execution_mode": "main", "cases": 0},
-    "main_with_subagents": {"execution_mode": "main_with_subagents", "cases": 0}
-  },
-  "metrics": {
-    "hard_constraint_violation_rate": {"workflow": null, "main": null, "main_with_subagents": null},
-    "evidence_completeness_rate": {"workflow": null, "main": null, "main_with_subagents": null},
-    "task_completion_rate": {"workflow": null, "main": null, "main_with_subagents": null},
-    "p50_latency_ms": {"workflow": null, "main": null, "main_with_subagents": null},
-    "p95_latency_ms": {"workflow": null, "main": null, "main_with_subagents": null},
-    "model_calls": {"workflow": null, "main": null, "main_with_subagents": null},
-    "delegation_rate_simple": {"workflow": 0, "main": 0, "main_with_subagents": null},
-    "new_evidence_rate_complex": {"workflow": null, "main": null, "main_with_subagents": null}
-  },
-  "pending_reasons": ["需要真实模型/数据运行"]
-}
-```
+建议按以下场景分组，而不是比较不存在的执行模式：
 
-运行时可用 `execution_mode=workflow` 作为 A 组，`main` 作为 B 组，
-`main_with_subagents` 作为 C 组；每个新会话在比较时单独创建，不能把一次请求的 Request Ledger
-结果跨组复用。简单明确型号的验收要求是 B/C 委派数为 0；C 只有在复杂样例中产生新增有效
-证据且硬约束违规率、证据完整率和资源代价达到预设门槛时才具备灰度候选资格。当前仓库没有
-真实线上对照数据，报告中的空值应保持 `pending`，不能被 CI 通过状态替代。
+| 分组 | 重点指标 |
+|---|---|
+| 简单零委派 | 任务完成率、硬约束满足率、委派率应为 0 |
+| 复杂检索 | 新增有效证据率、候选覆盖、父/子模型调用和 token |
+| 详情核验 | 逐字段证据完整率、核验能力缺失时的证据不足语义 |
+| 恢复与异常 | checkpoint 重放、HITL resume、预算耗尽、降级与失败原因 |
 
-恢复验收至少应覆盖：旧 Workflow checkpoint 恢复、新 runtime checkpoint 恢复、完成 interrupt
-后 active marker 清理、相同 request 重放、不同 interrupt payload 冲突、以及 Memory mutation
-重复 resume 的幂等。快照或 fixture 不具备实时来源时，优惠资格只能报告为证据不足。
+真实模型和平台数据尚未具备时，上述指标保持 `pending`；Fake 端口和仓库 seed 只证明契约与
+确定性边界，不能证明线上召回、价格或延迟效果。历史报告可以作为版本对照，但不能把旧
+Workflow 的数字写入当前 runtime 报告。
+
+恢复验收至少覆盖：当前 runtime checkpoint 恢复、已提交查询复用、active marker 清理、
+相同 request 重放、不同 interrupt payload 冲突、Memory mutation 重复 resume 幂等，以及
+未提交只读子任务在剩余预算内的有限重跑。旧 Supervisor/DAG checkpoint 不迁移到当前 runtime；
+无法匹配的恢复请求必须要求新会话。快照或 fixture 不具备实时来源时，优惠资格只能报告为
+证据不足。

@@ -1,199 +1,62 @@
-# 受控 Multi-Agent 执行
+# 主 Agent 与按需 Subagent 执行
 
-## 配套讲解图一：旧 Workflow 的问题
+> 本文讲解当前实现。旧的固定 Workflow、Supervisor 和任务 DAG 仅作为历史背景，不是当前入口。
 
-改造前，识别、意图、检索、解释和记忆节点按预先定义的 Workflow 执行，并围绕同一份
-`AgentState` 读写数据。下图用“识别耳机并比价”展示这种架构的四个主要问题。
-
-![固定 Workflow、共享 AgentState 与整链恢复的问题](assets/01-00-fixed-workflow-problems.png)
-
-讲解重点：执行关系固化在 Workflow 中，所有节点又共享完整 `AgentState`；Retrieval 失败时缺少
-独立的任务结果和恢复边界，已完成节点可能重跑，Memory 等带副作用节点也可能被重复执行。
-
-## 配套讲解图二：用耳机比价串起受控执行
-
-统一例子：用户上传耳机图片并要求比价。下图从 Supervisor 的类型化任务 DAG 展开，
-同时展示依赖派发、任务私有输入、Checkpoint 复用和 Retrieval 失败后的局部重试。
-
-![受控 Multi-Agent 执行、任务 DAG 与故障恢复](assets/01-01-controlled-multi-agent.png)
-
-讲解重点：Recognition 和 Intent 先并行，Retrieval 等待前置结果，Explanation 再依赖
-Retrieval；任务完成后结果写入 Checkpoint。Retrieval 发生可重试故障时，Supervisor 只用新任务
-替换失败节点，已完成的 Recognition 和 Intent 不重跑，Memory Commit 还有 `mutation_id` 写入幂等。
-
-## 讲解主线
-
-1. **旧流程与问题。** 先说明早期是单 Agent 内的固定执行链，识别、意图、检索、解释等节点围绕
-   同一份 `AgentState` 读写；再讲任务依赖固化、状态边界不清晰和任务级恢复困难三个问题。
-2. **Supervisor 与类型化任务 DAG（重点）。** 说明 Supervisor 负责计划校验、就绪任务选择、派发、
-   结果汇合、Checkpoint 和重规划；Planner 将一次请求转换成包含 Agent、任务类型、`depends_on`、
-   预算、幂等键和类型化输入的 `ExecutionPlan`。
-3. **五类专业 Agent。** 简要介绍 Recognition、Intent、Retrieval、Explanation 和 Memory；说明这样
-   拆分是为了按能力、外部依赖、状态边界和副作用边界划分职责，而不是为了增加 Agent 数量。
-4. **仅接收任务私有输入。** Agent 的执行入口接收 `AgentTaskV2`，但业务数据只读取对应的类型化
-   `task.input`，不会获得完整 `SupervisorState`，也不能任意读写其他 Agent 的状态。
-5. **依赖执行与编排选择（重点）。** Planner 用 `depends_on` 声明依赖；Supervisor 每轮只派发所有
-   前置任务均已有终态结果的任务，同层任务并行执行。当前采用确定性规则建图，因为任务空间有限、
-   依赖明确，并且恢复和副作用控制要求计划稳定；LLM Planner 只作为受限扩展能力保留。
-6. **保存任务结果。** 每个 Agent 返回独立的 `AgentResultV2`，Supervisor 按 `task_id` 合并到
-   `task_results`，启用持久化时再写入任务级 Checkpoint。
-7. **恢复后已完成任务不重跑。** 恢复时先加载 Supervisor 和任务级 Checkpoint；调度时排除
-   `task_id` 已经存在于 `task_results` 的任务，只继续执行尚未完成的部分。
-8. **可重试故障与受控重规划。** 是否可重试由 `AgentTaskError.retryable` 显式标记；当前主要是
-   Retrieval 执行失败或未捕获的 Agent 执行异常。Supervisor 在任务粒度创建带新 ID、attempt 和
-   幂等键的重试任务，用 `ExecutionPlanPatch` 替换失败任务并重连下游依赖，而不是重跑整个请求。
-9. **过渡到长期记忆。** 最后只说明重复恢复不会重复执行 Memory Commit，Adapter 还会通过稳定
-   `mutation_id` 再做一层写入幂等；具体的长期记忆分层、授权和写入机制放到 `04` 展开。
-
-## 必要建议
-
-- 这 9 点适合作为准备清单，实际讲解时建议收敛成“旧架构问题 → 新架构与编排 → 结果保存与恢复
-  → 记忆过渡”四段，否则容易像逐条解释简历关键词。
-- 第 2 点和第 5 点应连在一起讲：先生成类型化 DAG，再由 Supervisor 根据 `depends_on` 分层派发，
-  避免重复解释两次调度过程。
-- 全程使用一个例子串联，例如“图片识别耳机并比价”：Recognition 与 Intent 并行，Retrieval 等待
-  二者结果，Explanation 等待 Retrieval；这样 DAG、私有输入和依赖执行都能落到同一条链路上。
-- 当前的“受控重规划”默认是确定性 retry Patch，不要讲成 LLM 在运行时自由重新设计计划。
-- 当前可重试错误分类还比较粗：Retrieval 内部异常和 Dispatcher 捕获的未处理异常都会标记为可重试。
-  面试时可以把网络抖动、临时服务不可用作为典型例子，但不要声称已经完成精细的异常分类体系。
-- 第 9 点应说“重复恢复不会**重复**写入长期记忆”，不能说成“不会写入长期记忆”。
-- 旧的单 Agent 固定链路已经不在当前主执行入口中；面试前需要准备对应的旧版提交或架构图，避免
-  面试官追问旧拓扑代码时只能口头描述。
-- 简历中的“故障注入测试”更准确的口径是“故障与恢复测试”：可重试 Retrieval 是直接故障注入，
-  已完成任务复用和 Memory 幂等属于 Checkpoint 恢复测试。
-
-## 口播稿
-
-> 这个项目早期采用的是单 Agent 内的固定执行链。商品识别、意图理解、检索、排序和解释都是这个
-> Agent 内部的能力节点，节点之间按照预先定义的顺序连接，并围绕同一份 `AgentState` 读写数据。
-> 随着能力增加，这种设计主要出现了三个问题：第一，任务依赖被固化在执行链里，增加并行任务、
-> 动态跳过或者局部重试都需要修改整体编排；第二，所有节点共享完整状态，数据的读取和回写边界
-> 不够清晰；第三，系统只能从整条流程的角度处理失败，缺少任务级的预算、幂等和恢复能力。
->
-> 为了解决这些问题，我把调度控制从具体业务能力中抽离出来，改成由 Supervisor 统一管理。
-> Supervisor 本身不负责商品识别或者检索，而是负责调用 Planner 生成计划、校验计划、判断就绪任务、
-> 派发任务、汇合结果以及处理恢复和重规划。Planner 会把一次用户请求转换成一个类型化任务 DAG，
-> 也就是一份 `ExecutionPlan`。其中每个节点都是一个 `AgentTaskV2`，明确记录由哪个 Agent 执行、任务
-> 类型、私有输入、前置依赖、预算、截止时间和幂等键；任务之间则通过 `depends_on` 形成有向无环图。
-> 计划执行前还会校验任务类型、预算、未知依赖和循环依赖，因此 Agent 不能绕过 Supervisor 自行增加
-> 任务或者改变执行关系。
->
-> 业务能力被拆成五类专业 Agent。Recognition Agent 负责图片商品识别和用户纠正；Intent Agent
-> 负责把自然语言转换成预算、品牌、型号和平台等购物约束；Retrieval Agent 负责候选召回、商品
-> 归一化、同款聚合、SKU 拆分和确定性排序；Explanation Agent 只根据最终结果和结构化证据生成
-> 解释；Memory Agent 负责跨会话偏好的召回、准备和受控提交。这样拆分不是为了增加 Agent 数量，
-> 而是按照输入模型、外部依赖、失败方式和副作用边界划分职责。特别是长期记忆会改变跨会话状态，
-> 所以单独隔离在 Memory Agent 中。
->
-> 所谓 Agent 只接收任务私有输入，准确来说是 Agent 的执行入口接收 `AgentTaskV2`，但业务数据只从
-> 对应的类型化 `task.input` 中读取。Supervisor 会根据已经完成的任务结果，为当前任务组装最小必要
-> 输入，然后通过 Registry 派发；Agent 不会拿到完整的 `SupervisorState`，也不能直接读写其他 Agent
-> 的内部状态。执行完成后，Agent 只能返回类型化的 `AgentResultV2`，由 Supervisor 统一归并。
->
-> 在依赖执行方面，可以用“上传耳机图片并进行比价”举例。Recognition 和 Intent 都没有前置依赖，
-> 所以会在第一批并行执行；Retrieval 的 `depends_on` 同时包含这两个任务，因此必须等待识别和意图
-> 结果都产生之后才能执行；Explanation 又依赖 Retrieval，只能在检索和排序完成后运行。Supervisor
-> 每轮只选择所有前置任务都已经产生终态结果的任务，同一批就绪任务并行派发，结果汇合后再解锁
-> 下一层任务。
->
-> 这里的 DAG 当前是通过确定性规则生成的，而不是让 LLM 自由规划。主要考虑是目前只有五类 Agent，
-> 任务组合主要由是否有图片、是否启用记忆等明确条件决定，依赖关系也比较稳定。规则规划没有额外
-> 模型延迟和成本，相同请求还能得到稳定、可验证、可复现的计划，这对故障恢复和长期记忆等副作用
-> 控制更加重要。项目保留了受控 LLM Planner 接口，但模型只能从白名单动作中提出结构化调整，仍然
-> 必须经过物化和校验；在当前可选策略较少的情况下，它的收益还不足以覆盖额外复杂度，所以默认关闭。
->
-> 每个任务完成后，Supervisor 会以 `task_id` 为键，把独立的 `AgentResultV2` 合并到
-> `task_results`。结果中不仅有业务输出，还包含状态、错误、证据引用、资源用量和 `output_hash`。
-> 如果启用了持久化，这份结果还会写入任务级 Checkpoint，同时 Supervisor 会保存计划和整体执行
-> 状态。Checkpoint 使用 session、turn、plan 和 task 组成稳定命名空间，因此系统能够准确定位某一轮
-> 中某个任务的执行结果。
->
-> 恢复时，Supervisor 会先加载整体状态和每个任务的 Checkpoint，把已完成结果重新放入
-> `task_results`。后续调度只选择 `task_id` 尚未出现在结果集合中的任务，所以已完成任务不会再次
-> 派发，只会从尚未完成的节点继续。测试中会记录中断前 Agent 的调用次数，恢复后断言调用次数没有
-> 增加，以此验证结果确实被复用；相同结果重复合并时通过 `output_hash` 保持幂等，不同结果则拒绝
-> 静默覆盖。
->
-> 对于执行失败，Agent 会在结果中通过 `retryable` 明确标记是否允许重试。当前主要覆盖 Retrieval
-> 执行失败和未处理的 Agent 执行异常。Supervisor 检测到可重试失败后，不会重跑整个请求，而是在
-> 任务粒度创建一个新的重试任务：新任务会增加 attempt，使用新的 task ID 和幂等键，并保留原任务
-> 作为 parent。随后通过 `ExecutionPlanPatch` 用重试任务替换失败任务，同时把下游依赖重新连接到
-> 新任务。整个过程受到最大重试次数、最大重规划次数、任务预算和计划校验限制，而且 Memory Commit
-> 不进入自动重试，因此这里的“受控重规划”本质上是对失败节点的局部、有限且可验证的计划修补。
->
-> 最后，简历里提到重复恢复不会重复写入长期记忆，这里我只作为恢复机制的补充说明。第一层是
-> Checkpoint 会阻止已经完成的 Memory Commit 再次派发；第二层是 Memory Adapter 使用稳定的
-> `mutation_id` 和载荷哈希保证数据库写入幂等。长期记忆的分层、用户授权和具体写入机制，我会在
-> 后面的记忆设计中单独展开。
-
-## 问：为什么 Planner 选择规则，而不是 LLM？
-
-> 当前我使用的是确定性规则 Planner。因为系统现阶段只有 Recognition、Intent、Retrieval、
-> Explanation 和 Memory 五类 Agent，任务组合主要由是否有图片、是否启用记忆等明确条件决定，
-> 用规则就能准确生成 DAG。
->
-> 规则方案的优势是延迟低、没有额外模型成本，而且计划稳定、可验证、可复现，这对任务级恢复、
-> 幂等重试和长期记忆写入非常重要。当前即使引入 LLM，它也只能从 `keep`、`skip`、`retry` 和
-> `add_template` 等白名单动作中选择，实际可优化的空间有限，因此还不足以覆盖额外复杂度。
->
-> 不过我保留了受控 LLM Planner 接口。后续如果 Agent、工具和执行策略明显增多，我会先用
-> Shadow 模式评测模型规划效果，再考虑只开放故障重规划，而不是直接把执行控制权交给模型。
-
-## 追问：规则 Planner 是不是固定拓扑？
-
-> 不是。固定的是建图规则，不是每次生成的拓扑。Planner 会根据请求动态组合任务。
+## 1. 核心执行循环
 
 ```text
-纯文本：Intent → Retrieval → Explanation
-
-图片：Recognition ─┐
-                   ├→ Retrieval → Explanation
-       Intent ─────┘
-
-启用记忆：Intent / Recognition → Memory Recall → Retrieval → Explanation
+MainAgent observe → propose one typed action → runtime guard
+       ↑                                      ↓
+       └──── result/evidence/version check ← tool or subagent
 ```
 
-## 追问：LLM Planner 当前能做什么？
+生产只有 `AgentFacade → MainAgentRuntime` 一条链。主 Agent 每轮只能从有限动作目录中选择一个
+动作：检索比较、补充检索、证据读取、Research/Verification 委派、追问、回答或无结果结束。
+运行时负责权限、硬约束、版本、证据、预算、幂等和 checkpoint；模型不能直接调用任意函数、访问
+URL 或修改规范状态。
 
-> 它不能任意创建 Agent、任务或修改任务输入，只能从 Supervisor 提供的动作目录中提出结构化
-> 调整。提议还必须经过 `PlanMaterializer` 和 `PlanValidator`，不合法或调用失败就回退到规则计划。
+## 2. 为什么称为 Multi-Agent
 
-## 追问：保存任务结果是什么意思？
+这里的 Multi-Agent 指主 Agent 与按需子 Agent 的协作，不是预先派发一张任务 DAG：
 
-> 它不是只保存最终回答，也不是写入长期记忆。每个 Specialist Agent 完成任务后都会返回独立的
-> `AgentResultV2`，其中包含任务状态、类型化输出、错误、证据引用、资源用量和结果哈希。Supervisor
-> 以 `task_id` 为键把结果合并到 `task_results`；启用持久化时，还会写入该任务独立的 Checkpoint。
-> 这样既能用前置任务结果解锁下游任务，也能在故障恢复时识别已经完成的任务，直接从断点继续。
+| 角色 | 输入边界 | 输出边界 |
+|---|---|---|
+| MainAgent | 规范约束、候选摘要、证据摘要、剩余预算 | 提议一个严格动作 |
+| ResearchSubagent | 冻结约束、明确缺口、有限候选/证据、子预算 | 候选、证据引用和未解决问题 |
+| VerificationSubagent | 指定候选、争议字段和可用详情端口 | 逐字段核验结果 |
 
-例如，Intent 已经完成，而 Retrieval 执行时服务中断。恢复后 Supervisor 会先加载 Intent 的任务
-结果，因此不会重新调用 Intent Agent，而是从 Retrieval 继续执行。相同结果重复恢复时通过
-`output_hash` 保持幂等，不同结果则拒绝静默覆盖。
+Research 与 Verification 都是单层、受预算限制的子循环；子 Agent 没有完整会话、长期记忆库或
+主状态写权限。普通明确型号请求零次委派是正常轨迹，不需要为了体现“多 Agent”强制启动子任务。
 
-## 追问：如何证明故障恢复和重规划有效？
+## 3. 委派准入与恢复
 
-> 我使用 Fake Agent 和可控 Registry 做故障与恢复测试。对于已完成任务，测试会记录中断前的 Agent
-> 调用次数，使用同一个 Checkpoint 恢复后断言调用次数没有增加，证明结果被复用。对于可重试故障，
-> `FailOnceRegistry` 会让 Retrieval 第一次返回 `retryable=True` 的失败，测试最终断言 Retrieval
-> 执行两次、`replan_count` 增加一次，并生成带 `:retry:2` 的替代任务。
+委派前必须同时满足：存在可描述的缺口、实际依赖已装配、候选/证据和约束版本匹配、父级预算
+可以覆盖子预算。子结果先按不可信输入处理，父 runtime 重新校验事实证据和确定性比较结果；
+详情端口不存在时，Verification 动作不会进入动作目录。
 
-## 追问：Checkpoint 持久化在哪里启动？
+Checkpoint 使用 `agent-runtime-v2/{session}/{request}/main` namespace，保存动作记录、查询
+fingerprint、候选、证据、版本和用量。已提交结果可复用；未提交只读子任务只能在未消耗的预算
+内有限重跑，不能因为恢复而重置预算或重复提交 Memory mutation。active interrupt 消费后清理
+session marker。
 
-> 系统没有单独的持久化开关，`SHIJIAJING_CHECKPOINT_DSN` 是否为空就是启动条件。
-> `open_agent_runtime()` 检测到 DSN 后调用 `open_graph_checkpointer()`，根据配置初始化 SQLite 或
-> PostgreSQL Saver，再由 `AgentFacade` 包装成 `LangGraphMultiAgentCheckpoint` 并注入 Supervisor。
-> 测试中不连接数据库，而是直接注入 `InMemoryMultiAgentCheckpoint`。
+## 4. 失败语义
 
-## 代码位置
+- 主模型输出非法：有限修复后转为明确失败或使用已验证结果，不启动另一套引擎。
+- 检索不可用：返回显式降级/不可用状态；本地 BM25 不声称执行了向量检索。
+- 子 Agent 超时、无进展或证据不足：返回结构化终态，由主 Agent 决定回答、追问或结束。
+- 预算耗尽：保留已验证结果，禁止通过重复 runtime 或额外查询绕过限制。
 
-- 规则建图：`src/shijiajing_agent/multi_agent/planner.py` 中的 `DeterministicPlanner.create_plan()`
-- 计划校验：同文件中的 `PlanValidator`
-- LLM 动作白名单：`src/shijiajing_agent/multi_agent/planner_catalog.py` 中的 `build_action_catalog()`
-- LLM 提议物化：`src/shijiajing_agent/multi_agent/planner_materializer.py` 中的 `PlanMaterializer`
-- 重规划触发：`src/shijiajing_agent/multi_agent/supervisor.py` 中的 `_maybe_replan()`
-- 任务结果协议：`src/shijiajing_agent/contracts.py` 中的 `AgentResultV2`
-- 结果归并与幂等校验：`src/shijiajing_agent/state.py` 中的 `merge_task_results()`
-- 任务级结果保存：`src/shijiajing_agent/multi_agent/supervisor.py` 中的 `_save_task_checkpoint()`
-- Checkpoint 实现：`src/shijiajing_agent/multi_agent/checkpoint.py`
-- 持久化启动：`src/shijiajing_agent/runtime.py` 中的 `open_agent_runtime()` 和 `_build_agent_facade()`
-- SQLite/PostgreSQL Checkpointer：`src/shijiajing_agent/adapters/langgraph_persistence.py`
-- 故障与恢复测试：`tests/multi_agent/test_supervisor.py`
+## 5. 口播示例
+
+> 对于“索尼 XM5，预算 2000 元以内，黑色”这类请求，首轮检索通常已经足够，因此主 Agent
+> 直接回答且委派数为 0。如果首轮候选不足，但存在明确的型号别名或未覆盖查询词，主 Agent 可以
+> 提出一次有界 `supplement_search`，也可以在缺口足够复杂时委派 Research。若两个候选的容量
+> 明确冲突，确定性 SKU 逻辑直接拆分；只有详情端口能补充争议字段时才委派 Verification。
+
+## 6. 代码位置
+
+- 门面：`src/shijiajing_agent/facade.py:55`
+- 动作契约：`src/shijiajing_agent/agent_runtime/contracts.py:20`
+- 委派准入：`src/shijiajing_agent/agent_runtime/policy.py:33`
+- 主循环：`src/shijiajing_agent/agent_runtime/runtime.py:100`
+- checkpoint namespace：`src/shijiajing_agent/agent_runtime/checkpoint.py:37`

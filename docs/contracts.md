@@ -1,79 +1,69 @@
 # 数据契约
 
-跨模块数据统一定义在 `contracts.py`，Pydantic 模型默认使用 `extra="forbid"`，未知字段不能
-跨越 Supervisor、Specialist Agent 或持久化边界。
+公共数据模型位于 `src/shijiajing_agent/contracts.py`；主/子 Agent 内部动作位于
+`src/shijiajing_agent/agent_runtime/contracts.py`；RAG 查询和索引身份位于
+`src/shijiajing_agent/rag_contracts.py`。Pydantic 模型默认 `extra="forbid"`，未知字段不能
+跨越模型、运行时或持久化边界。
 
 ## 1. 请求与响应
 
-- `AgentRequest`：文本、图片、识别修正三类输入至少提供一种，并携带稳定的
-  `session_id`、`request_id`。
-- `AgentResponse`：返回状态、识别结果、有效约束、SKU 比价组、澄清信息和 notices。
-- `AgentExecutionContext`：携带可信的 Memory owner、功能开关和执行上下文。
-- `AgentInterrupt` / `AgentResume`：按中断类型使用独立 payload，禁止自由字典恢复。
+- `AgentRequest`：文本、图片或识别修正至少提供一种，并携带稳定的 `session_id`、`request_id`。
+- `AgentResponse`：返回状态、识别结果、有效约束、比价组和 notices。
+- `AgentExecutionContext`：携带可信 Memory owner 与执行上下文；owner 不能由用户输入指定。
+- `AgentInterrupt` / `AgentResume`：按中断类型使用独立 payload，恢复前校验 session、turn、
+  constraints/evidence 版本和中断身份。
 
-## 2. 任务协议
+## 2. 商品、约束与 RAG
 
-- `ExecutionPlan`：计划 ID、任务列表、全局预算和最大重规划次数。
-- `AgentTaskV2`：任务类型、目标 Agent、依赖、幂等键、截止时间、预算和类型化输入。
-- `AgentResultV2`：任务状态、类型化输出、固定错误、用量、证据引用和输出哈希。
-- `TaskRecord`：Supervisor 保存的任务生命周期，不由 Specialist Agent 修改。
+- `ShoppingConstraints`：当前购物目标的规范事实；用户明确约束优先，来源、置信度和锁定状态
+  保留，未知开放属性不能因缺少静态 taxonomy ID 被丢弃。
+- `Offer`：索引与比较的最小商品报价单元，保留 `RawAttribute`、作用范围、来源版本、
+  `record_kind` 和 `price_basis`。商品概要不能伪装成真实 SKU 报价。
+- `RetrievalCandidate` / `NormalizedCandidate` / `SkuGroup` / `RankedGroup`：召回、动态归一化、
+  同款聚类、SKU 拆分和排序结果。
+- `PreparedQuery`：服务端重建 hard filters，并绑定 `constraints_version`、图片哈希、查询
+  指纹和 `index_manifest_id`；补查文本不能再次触发 query rewrite。
+- `AgentRuntimeUsage`：区分逻辑 `retrieval_calls`、物理 `db_search_attempts`、
+  `embedding_calls` 与模型/token 用量。
+- `IndexManifest`：声明快照、文本生成、tokenizer、embedding、维度、距离和有效行数；
+  `manifest_id` 是发布身份。
 
-任务类型与 Agent 的映射是固定 allowlist。例如 `retrieval.retrieve_and_rank` 必须由
-Retrieval Agent 执行，并返回 `RetrievalTaskOutput`；类型不匹配直接拒绝。
+用户硬约束始终进入检索后资格校验。检索前可下推的过滤仍必须在候选上复核；`unknown` 不等于
+满足，未满足硬要求的 Offer 不能进入确认推荐或最低价聚合。
 
-## 3. 领域契约
+## 3. 主/子 Agent 动作
 
-- `RecognitionResult`：品类、品牌、型号、属性及逐字段置信度。
-- `IntentPatch` / `ShoppingConstraints`：意图增量与带来源的规范约束。
-- `RetrievalQuery` / `RetrievalCandidate`：召回输入与候选证据。
-- `NormalizedCandidate` / `SkuGroup` / `RankedGroup`：归一化、同款聚类、SKU 拆分与排序结果。
-- `MemoryQuery` / `MemoryMutation`：白名单化记忆查询和显式变更。
+`MainAction` 是带 discriminator 的有限联合：
 
-用户明确约束始终进入硬过滤；识别得到的低置信属性只能作为软信号，不能覆盖用户输入。
-价格、销量、评分和解释数字必须来自结构化候选或证据对象。
+- `search_and_compare`、`supplement_search`、`inspect_evidence`；
+- `delegate_research`、`delegate_verification`；
+- `ask_user`、`answer`、`finish_no_results`。
 
-## 4. 状态与幂等
+主模型只提出动作参数。运行时补齐并校验权限、版本、硬约束、证据、预算、索引身份和结果
+引用；不能传入任意函数、URL、授权令牌或新的硬条件。
 
-`SupervisorState` 只保存计划、任务记录、任务结果、规范理解、预算、活动中断和审计事件。
-`merge_task_results` 使用 `task_id + output_hash` 保证重放幂等：相同哈希重复写入不改变状态，
-不同哈希则抛出 `TaskResultConflictError`。
+`SubagentTask` 接收冻结约束、有限候选/证据引用、明确目标和子预算。`SubagentResult` 的
+每个事实必须引用已登记的 `evidence_id`；父 runtime 重新检查后才可归并，子 Agent 不能写
+主状态或长期 Memory。
 
-Request Ledger 使用 `(session_id, request_id)` 保存最终响应；同一键不能被不同响应静默覆盖。
+## 4. 状态、幂等与恢复
+
+- `MainRuntimeState` 是当前 turn 的规范状态，`RuntimeSessionSnapshot` 保存有界会话摘要；
+  当前请求和会话使用 `agent-runtime-v2` namespace。
+- `constraints_version` 变化后，旧查询、旧子结果和旧证据不能直接归并。
+- `ActionRecord` 记录动作 fingerprint、状态、版本、结果引用、预留/结算用量和错误码。
+- Request Ledger 使用 `(session_id, request_id)` 幂等；不同响应不能静默覆盖同一键。
+- 已提交查询/动作恢复后可复用；执行中断且未提交的只读动作只允许在剩余预算内有限重跑。
+- 旧 Supervisor/DAG checkpoint 不转换为主 runtime；无法匹配的新恢复请求必须明确要求新会话。
 
 ## 5. 持久化安全
 
-- Checkpoint 写入前移除请求全文、图片 data URL 和自由 metadata。
-- 只允许 serializer 白名单中的契约类型反序列化。
-- 事件和 trace 只保存 ID、哈希、版本、计数、状态、错误码和降级标记。
-- 模型原始响应、Prompt、密钥和隐藏推理过程不得进入 Checkpoint、Event Store 或日志。
+- Checkpoint、Event Store、Trace 和 Cache 只保存白名单字段、ID、哈希、版本、计数、状态和
+  降级标记；不保存用户全文、图片 data URL、Prompt、密钥、模型原始响应或隐藏推理过程。
+- serializer 只允许显式契约类型；来源文本中的指令不改变工具权限。
+- Memory commit 需要 runtime 绑定的 mutation 集合、payload hash 和用户确认；恢复重放必须幂等。
 
 ## 6. 固定错误语义
 
-对外错误使用 `ErrorCode` 和固定可操作消息。模型或外部服务异常可以触发明确的
-`FALLBACK`，但不能把降级结果标记为原服务成功；任务级不可恢复错误使用 `FAILED`。
-
-## 7. Main Agent runtime 契约
-
-新路径不扩展旧 `AgentTaskV2`，而是在 `agent_runtime/contracts.py` 使用独立的严格判别联合：
-
-| 契约 | 运行时责任 |
-|---|---|
-| `DecisionObservation` / `MainAction` | 主 Agent 每轮只提出一个有限动作；不能传入授权令牌、函数名、任意 URL 或新硬条件 |
-| `ActionRecord` / `ToolObservation` | 记录动作 fingerprint、约束/证据版本、状态、结果引用和实际用量 |
-| `SubagentTask` / `SubagentObservation` | 冻结约束、有限 evidence allowlist、允许工具、局部截止时间和父预算投影 |
-| `SubagentResult` | 只能引用运行时登记的 candidate/evidence；`facts` 必须逐字段绑定 evidence |
-| `EvidenceRecord` / `EvidenceQualityReport` | 绑定 offer、来源、数据版本和可在答案中出现的事实 |
-| `RuntimeSessionSnapshot` / `MainRuntimeState` | 分离跨轮会话摘要与单轮可恢复状态 |
-
-所有模型契约 `extra="forbid"`，serializer 只允许显式 allowlist 类型。主 Agent 的 `answer` 仍须
-经过证据质量检查；Verification 的 `comparable/not_comparable/insufficient_evidence` 建议由
-确定性比较服务重新计算，模型不能覆盖型号、容量、币种或优惠适用条件等硬冲突。
-
-### 7.1 版本与引用规则
-
-- 用户更新约束时 `constraints_version` 递增；旧 subagent 结果不能直接归并。
-- `evidence_id` 由受控商品字段和来源内容哈希生成；未知 ID、跨请求 ID 或伪造 facts 均拒绝。
-- `agent-runtime-v1/{session}/{request}/main` 保存主状态，会话摘要在
-  `agent-runtime-v1/{session}/session`；子任务命名空间约定为
-  `agent-runtime-v1/{session}/{request}/subagents/{task_id}`。
-- subagent 没有长期 Memory commit 权限；HITL / Memory 授权由 runtime 绑定实际 mutation 集合。
+模型或外部服务异常可以触发明确的 fallback，但不能把降级结果标记为原服务成功；全通道不可用
+与真实空结果分开。不可恢复的动作以 `FAILED` 结束，并保留已验证结果和可操作 notice。

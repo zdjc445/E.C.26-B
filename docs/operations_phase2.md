@@ -1,6 +1,6 @@
 # 二期存储与发布运维
 
-本文档对应第二阶段方案的备份、事件修复和回滚边界。Supervisor/task Checkpoint 是执行状态
+本文档对应第二阶段方案的备份、事件修复和回滚边界。`MainRuntimeState` Checkpoint 是执行状态
 事实源；Request Ledger、Memory 和 Event Store 分别保存请求结果、长期记忆和追加式审计数据。
 Event Store 不能反向覆盖 Checkpoint。
 
@@ -13,8 +13,8 @@ Event Store 不能反向覆盖 Checkpoint。
 `shijiajing-preflight` 只校验配置，并对已启用的 Checkpoint、Request Ledger、Memory、Cache、Event Store 和 Trace 资源执行 setup/close 生命周期。runtime 还会统一持有并关闭 Ark 共享模型客户端，以及 Retrieval 适配器持有的 Embedding、Milvus 客户端和本地兜底资源；后续资源 setup 失败时仍按逆序关闭已创建资源。preflight 不调用模型、不查询 Milvus、不写入业务数据。
 
 JSON 输出同时记录实际生效的 `hitl_enabled`、Memory recall/commit、
-`retrieval_fusion_strategy`、`retrieval_rerank_enabled`、`retrieval_index_version` 和五类
-`cache_ttl_seconds`，用于发布灰度审计；这些字段只读展示配置，不接受客户端请求覆盖。
+`retrieval_index_version`、物理检索预算和各缓存 TTL，用于发布审计；这些字段只读展示配置，
+不接受客户端请求覆盖。融合与重排不是生产配置选择器，离线实验必须由实验工具显式指定。
 
 真实部署配置完成后执行：
 
@@ -197,8 +197,8 @@ uv run shijiajing-repair-events --dry-run
 ```
 
 LangGraph Checkpointer 的 DDL 由 `open_graph_checkpointer()` 在 runtime 启动阶段完成。
-任何数据库都必须先完成 setup，再允许业务请求进入。HITL 的活动计划、任务结果和中断信息
-与 Supervisor Checkpoint 一起备份和恢复。
+任何数据库都必须先完成 setup，再允许业务请求进入。HITL 的活动动作、查询、结果和中断信息
+与 `agent-runtime-v2` Checkpoint 一起备份和恢复。
 
 ## 2. SQLite 备份
 
@@ -348,8 +348,8 @@ Memory mutation 只有在 Request Ledger 提供真实 `turn_id` 与 `trace_id` �
 校验失败按 miss 重新调用真实提供方。Cache get/set/delete 故障只增加
 `cache_failure_total{operation="get|set|delete"}`，不改变响应正确性。
 
-runtime 在启动阶段打开 LangGraph Checkpointer。resume 从活动 Supervisor namespace 加载
-计划、任务结果和中断信息；不匹配或已消费的中断必须拒绝。
+runtime 在启动阶段打开 LangGraph Checkpointer。resume 从活动 `agent-runtime-v2` namespace
+加载主状态、动作结果和中断信息；不匹配或已消费的中断必须拒绝。
 
 ## 5. 回滚顺序
 
@@ -359,7 +359,7 @@ runtime 在启动阶段打开 LangGraph Checkpointer。resume 从活动 Supervis
 2. 存在 active interrupt 时，先完成 resume，或在业务确认后清理对应会话。
 3. Checkpoint 故障时停止需要恢复或 HITL 的请求；Event Store 不得覆盖 Checkpoint。
 4. Memory、Cache、Event Store 或 OpenTelemetry 故障分别切换到 `disabled`，不得删除正确性数据；Cache 关闭只产生 miss。
-5. RRF/rerank 回归时把 `SHIJIAJING_RETRIEVAL_FUSION_STRATEGY` 设为 `weighted`，并将 `SHIJIAJING_RETRIEVAL_RERANK_ENABLED` 设为 `false`。
+5. RRF/rerank 回归只能在离线 benchmark 中显式选择策略；生产配置不再切换融合或重排引擎。
 6. 完成恢复后重新执行 preflight、离线测试和 `shijiajing-repair-events --dry-run`，再开放写入。
 
 回滚完成条件是：Checkpoint schema 可读、Request Ledger 可重放、Memory owner 隔离仍成立、Event Store 不出现新的冲突事件，且 active interrupt 清单与切换前一致或已被明确消费。

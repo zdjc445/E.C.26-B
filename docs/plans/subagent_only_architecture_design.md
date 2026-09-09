@@ -1,8 +1,8 @@
 # 识价镜：收敛为主 Agent + 按需 Subagent 的修改方案
 
-状态：设计完成，尚未实施。日期：2026-09-09。代码核对基线：`e5944ff`。
+状态：已实施（代码、配置、测试和当前运维文档已同步）。日期：2026-09-09。实施基线：`cb46887`。
 
-本方案落实本次决定：项目只保留“一个主 Agent + 按需子 Agent”这一种编排架构，删除其他执行模式及其运行时代码。本文件只描述后续改造，本次不修改源码、配置、测试和数据。
+本方案落实本次决定：项目只保留“一个主 Agent + 按需子 Agent”这一种编排架构，删除其他执行模式及其运行时代码。本文件保留设计约束、迁移决策和验收口径；实际实现以当前源码和测试为准。
 
 本方案取代[此前设计](/Users/zsc/Projects/E.C.26-B/docs/plans/main_agent_on_demand_subagents_design.md:369)中保留 Workflow、单 Agent 模式、三引擎对照和配置切换回滚的要求。此前关于商品约束、证据和状态所有权的要求继续有效。
 
@@ -17,7 +17,7 @@
 
 本次范围限定在 Agent 编排及删除旧编排所必需的调用点迁移。商品检索、动态 Schema、SPU/SKU、模型供应商、存储选型和外部服务层沿用现有设计。
 
-后续 RAG 改造另见 [SKU 原始数据与按需补召回方案](sku_offer_rag_on_demand_retrieval_design.md)。执行该后续方案时，再扩展本文件的业务范围和动作目录（新增 `supplement_search`）；唯一主／子 Agent 架构、能力装配与状态所有权保持本文件的约束。
+RAG 的按需补召回动作 `supplement_search` 已在后续实现批次加入；其索引身份、物理计量和迁移验收见 [SKU 原始数据与按需补召回方案](sku_offer_rag_on_demand_retrieval_design.md) 及 [RAG 迁移 Runbook](../operations/rag_migration.md)。唯一主／子 Agent 架构、能力装配与状态所有权保持本文件的约束。
 
 ## 2. 唯一执行链路
 
@@ -40,7 +40,7 @@ flowchart TD
 
 识别、意图理解、记忆和回答继续由现有 `services/` 提供。检索工具内部的固定业务步骤保留；这些步骤属于工具实现，不是可以切换的 Workflow 引擎。主 Agent 继续提出严格类型化动作，runtime 负责执行。
 
-保留当前七类主动作：`search_and_compare`、`inspect_evidence`、`delegate_research`、`delegate_verification`、`ask_user`、`answer`、`finish_no_results`。定义位置：[agent_runtime/contracts.py:29](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/contracts.py:29)。
+保留当前八类主动作：`search_and_compare`、`supplement_search`、`inspect_evidence`、`delegate_research`、`delegate_verification`、`ask_user`、`answer`、`finish_no_results`。定义位置：[agent_runtime/contracts.py:29](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/agent_runtime/contracts.py:29)。
 
 ## 3. 主 Agent 与子 Agent 的职责
 
@@ -148,7 +148,7 @@ LangGraph 的 checkpoint 适配器仍被唯一 runtime 使用，因此保留相�
 
 ### 旧状态的处理
 
-- 保留现有 `agent-runtime-v1` namespace；数据结构不变时不为架构收敛随意修改版本。若必要字段变化，单独定义该 runtime 自身的序列化迁移。
+- 当前使用 `agent-runtime-v2` namespace；动作、查询、索引 manifest 和物理用量都纳入当前 runtime 状态。旧 Supervisor/DAG checkpoint 不转换为新状态。
 - 旧 Supervisor/DAG checkpoint 不转换成主 Agent 状态。后续切换前停止接收旧版本新请求，让旧进程处理完活动请求及可完成的中断；剩余旧中断明确结束或要求重新发起新会话。
 - 新版本只恢复主 runtime namespace。无法找到匹配状态的旧恢复请求必须明确失败，不能伪装成恢复成功或隐式重跑请求。
 - 已完成请求的 Ledger 结果、长期记忆、商品数据和历史事件保留；不自动删库，也不改写历史报告为新架构结果。
@@ -212,7 +212,7 @@ LangGraph 的 checkpoint 适配器仍被唯一 runtime 使用，因此保留相�
 | P3：删除旧代码与引用 | 删除清单、契约清理、CLI/发布检查/评测迁移 | 活跃源码没有旧引擎、Planner 或转导出依赖，删除后可导入和运行 |
 | P4：文档与整体验收 | 当前架构说明、配置示例、单架构评测说明、迁移记录 | 行为矩阵和项目现有检查通过，当前文档不再要求选择编排模式 |
 
-这些是一个改造任务内的实施批次，中间提交可以过渡，最终交付不保留双引擎。P1 的行为验证可使用当前 `main_with_subagents` 入口完成，P2 随即删除该选项。
+以上阶段已完成。实施过程按代码、RAG 计量、文档与验收分别提交；最终交付不保留双引擎。
 
 文档同步范围：`README.md`、`docs/architecture.md`、`docs/multi_agent.md`、`docs/configuration.md`、`docs/contracts.md`、`docs/evaluation.md`、相关运维/故障排查及 `docs/interview/` 中的当前架构叙述。`docs/multi_agent.md` 可保留文件路径，内容统一解释主子 Agent。旧多模式方案在实施时移入历史归档并注明被本方案取代，历史内容不当作当前使用说明。
 
@@ -227,4 +227,4 @@ LangGraph 的 checkpoint 适配器仍被唯一 runtime 使用，因此保留相�
 - 引用扫描中，旧模式名仅允许出现在迁移说明、历史文档/历史数据、废弃配置诊断及对应拒绝测试中，不能出现在运行路由或兼容分支中。
 - 执行项目现有 Ruff、格式、Pyright 和离线 Pytest 检查；外部服务相关检查按实际资源执行并记录，未运行项不宣称通过。
 
-本次方案产物仅为本文件。后续实施以以上单一架构和删除清单为准，不继续维护旧模式。
+本方案与当前实现的差异以验收记录为准；旧模式只允许出现在历史归档、废弃配置诊断和迁移说明中，不作为当前运行入口。
