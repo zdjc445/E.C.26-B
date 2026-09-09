@@ -15,6 +15,14 @@ from typing import Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from shijiajing_agent.domain.raw_offer import (
+    Availability,
+    PriceBasis,
+    Provenance,
+    RawAttribute,
+    RecordKind,
+)
+
 # ---------------------------------------------------------------------------
 # 基础枚举
 # ---------------------------------------------------------------------------
@@ -954,11 +962,22 @@ class Offer(BaseModel):
     offer_id: str = Field(min_length=1)
     platform: str = Field(min_length=1)
     source_product_id: str | None = None
+    source_sku_id: str | None = None
+    source_offer_id: str | None = None
+    record_kind: RecordKind = RecordKind.SKU_OFFER
+    raw_category_path: str | None = Field(default=None, max_length=512)
+    raw_attributes: list[RawAttribute] = Field(default_factory=list[RawAttribute], max_length=128)
+    provenance: Provenance = Provenance.LEGACY_DERIVED
+    source_revision: str | None = Field(default=None, max_length=128)
+    source_content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    availability: Availability = Availability.UNKNOWN
+    price_basis: PriceBasis = PriceBasis.UNKNOWN
     source_updated_at: str | None = None
     data_version: str | None = None
     title: str = ""
     normalized_title: str | None = None
     search_text: str | None = None
+    search_text_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     category_id: str | None = None
     brand: str | None = None
     model: str | None = None
@@ -994,7 +1013,8 @@ _DYNAMIC_SOURCE_PATH_RE = (
     r"^(title|category_id|brand|model|"
     r"identity_attributes\.[^\.\s]{1,128}|"
     r"variant_attributes\.[^\.\s]{1,128}|"
-    r"descriptive_attributes\.[^\.\s]{1,128})$"
+    r"descriptive_attributes\.[^\.\s]{1,128}|"
+    r"raw_category_path|raw_attributes\.[^\.\s]{1,128}\.(raw_key|raw_value))$"
 )
 
 

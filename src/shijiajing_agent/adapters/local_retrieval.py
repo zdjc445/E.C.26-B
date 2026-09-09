@@ -16,6 +16,7 @@ from typing import Any
 from shijiajing_agent.adapters.lexical import Bm25Index, tokenize
 from shijiajing_agent.contracts import Offer, RetrievalCandidate, RetrievalQuery
 from shijiajing_agent.domain.filters import offer_matches_hard_filters
+from shijiajing_agent.domain.raw_offer import RecordKind, prepare_raw_offer
 from shijiajing_agent.errors import RetrievalUnavailableError
 from shijiajing_agent.ports.observability import MetricsPort
 from shijiajing_agent.ports.retrieval import RetrievalResult
@@ -53,7 +54,7 @@ class LocalLexicalRetrievalAdapter:
                     line = line.strip()
                     if not line:
                         continue
-                    offer = Offer.model_validate_json(line)
+                    offer = prepare_raw_offer(Offer.model_validate_json(line))
                     offers.append(offer)
                     texts.append(offer.search_text or _fallback_text(offer))
         except (json.JSONDecodeError, ValueError) as exc:
@@ -80,7 +81,9 @@ class LocalLexicalRetrievalAdapter:
         filtered: list[tuple[Offer, float]] = []
         for doc_idx, bm25 in hits:
             offer = offers[doc_idx]
-            if offer_matches_hard_filters(offer, query.hard_filters):
+            if offer.record_kind is RecordKind.SKU_OFFER and offer_matches_hard_filters(
+                offer, query.hard_filters
+            ):
                 filtered.append((offer, bm25))
         filtered.sort(key=lambda pair: pair[1], reverse=True)
         filtered = filtered[:top_k]
