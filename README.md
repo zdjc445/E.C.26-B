@@ -121,6 +121,8 @@ RRF 顺序并继续多样性窗口，结果记录 `RerankResult` 降级原因；
 | [主 Agent + 按需 subagent 改造设计](docs/plans/main_agent_on_demand_subagents_design.md) | 设计、阶段实施记录、兼容回滚及验收清单 |
 | [单一主／子 Agent 架构收敛方案](docs/plans/subagent_only_architecture_design.md) | 已实施：只保留 Main + 按需 Subagent |
 | [SKU 原始数据与按需补召回 RAG 方案](docs/plans/sku_offer_rag_on_demand_retrieval_design.md) | 原始 Offer、混合召回、动态 Schema、按需补查与验收设计 |
+| [意图理解与 Query Expansion 一体化设计](docs/plans/intent_understanding_query_expansion_design.md) | 意图体系、指代消解、槽位合并、查询改写与主 Agent 路由的完整链路 |
+| [Query Expansion 完整系统设计](docs/plans/query_expansion_system_design.md) | 扩写策略、通道编译、安全校验、预算、评测和分阶段实施方案 |
 | [docs/product_canonicalization.md](docs/product_canonicalization.md) | 当前商品归一化、动态 Schema 四种迁移模式、证据校验、SPU/SKU 确定性处理 |
 | [docs/plans/dynamic_product_schema_implementation_plan.md](docs/plans/dynamic_product_schema_implementation_plan.md) | 无静态 Taxonomy 的 LLM 动态局部 Schema 目标架构、迁移与验收方案 |
 | [docs/configuration.md](docs/configuration.md) | 全部配置项与缺失行为 |

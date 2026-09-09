@@ -2,7 +2,7 @@
 
 状态：设计完成，尚未实施。日期：2026-09-09。代码核对基线：`6e3da65`。
 
-本文件是 [SKU 原始数据与按需补召回方案](sku_offer_rag_on_demand_retrieval_design.md)中“需求、查询扩展与过滤”的专项细化设计。编排继续使用 [MainAgent + 按需 Subagent 唯一架构](subagent_only_architecture_design.md)，不增加 QueryExpansionAgent，不增加新的编排模式。本次只新增设计文档，不修改业务代码、配置、测试或数据库；文中新增类型和文件均为目标设计。
+本文件是 [意图理解与 Query Expansion 一体化设计](intent_understanding_query_expansion_design.md)的检索侧专项细化，也是 [SKU 原始数据与按需补召回方案](sku_offer_rag_on_demand_retrieval_design.md)中“需求、查询扩展与过滤”的详细设计。编排继续使用 [MainAgent + 按需 Subagent 唯一架构](subagent_only_architecture_design.md)，不增加 QueryExpansionAgent，不增加新的编排模式。本次只新增设计文档，不修改业务代码、配置、测试或数据库；文中新增类型和文件均为目标设计。
 
 ## 1. 设计结论
 
@@ -49,7 +49,7 @@ Query Expansion 不重新实现意图识别和指代消解。上游先把当前�
 
 例如上一轮是“索尼 XM5”，本轮说“这个要黑色的”，`raw_user_text` 仍是“这个要黑色的”，但基础检索查询应为“Sony WH-1000XM5 黑色”。如果“这个”仍无法唯一解析，系统返回 `needs_clarification`，不能用扩写猜一个商品。
 
-现有 `CanonicalUnderstanding` 只有识别、意图 patch、约束和记忆，见 [contracts.py:794](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/contracts.py:794)。实施时应增加独立的 `ResolvedQueryContext`，或在进入检索前确定性构建同等信息；不要把含糊原文直接交给 Expansion Planner。
+现有 `CanonicalUnderstanding` 只有识别、意图 patch、约束和记忆，见 [contracts.py:410](/Users/zsc/Projects/E.C.26-B/src/shijiajing_agent/contracts.py:410)。实施时应增加独立的 `ResolvedQueryContext`，或在进入检索前确定性构建同等信息；不要把含糊原文直接交给 Expansion Planner。
 
 ### 3.2 下游输出
 
