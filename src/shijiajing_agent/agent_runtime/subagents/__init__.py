@@ -1,5 +1,6 @@
 """按需 subagent 的受限运行循环。"""
 
 from shijiajing_agent.agent_runtime.subagents.research import ResearchSubagent
+from shijiajing_agent.agent_runtime.subagents.verification import VerificationSubagent
 
-__all__ = ["ResearchSubagent"]
+__all__ = ["ResearchSubagent", "VerificationSubagent"]

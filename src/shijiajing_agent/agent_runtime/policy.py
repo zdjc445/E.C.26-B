@@ -72,6 +72,10 @@ class DelegationPolicy:
         known = {candidate.offer.offer_id for candidate in state.last_candidates}
         if any(candidate_id not in known for candidate_id in action.candidate_ids):
             return DelegationDecision(False, "candidate_not_in_current_results")
+        if any(evidence_id not in state.evidence for evidence_id in action.evidence_ids):
+            return DelegationDecision(False, "evidence_not_registered")
+        if not action.disputed_fields:
+            return DelegationDecision(False, "disputed_fields_missing")
         if any(
             result.role.value == "verification" and result.status.value != "failed"
             for result in state.subagent_results

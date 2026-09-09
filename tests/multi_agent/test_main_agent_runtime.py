@@ -15,11 +15,13 @@ from shijiajing_agent.agent_runtime.contracts import (
     AskUserAction,
     DecisionResult,
     DelegateResearchAction,
+    DelegateVerificationAction,
     MainAction,
     SearchAndCompareAction,
     SubagentActionKind,
     SubagentDecisionResult,
     SubagentFinishAction,
+    SubagentGetOfferDetailsAction,
     SubagentSearchAction,
 )
 from shijiajing_agent.config import Settings
@@ -32,7 +34,7 @@ from shijiajing_agent.contracts import (
 )
 from shijiajing_agent.facade import AgentFacade
 from shijiajing_agent.ports.retrieval import RetrievalResult
-from tests.multi_agent.conftest import two_candidate_result
+from tests.multi_agent.conftest import make_offer, two_candidate_result
 
 
 class AdaptiveDecision:
@@ -95,6 +97,72 @@ class ResearchDecision:
             action = SubagentSearchAction(query_text="WH-1000XM5 降噪耳机")
         else:
             action = SubagentFinishAction(status="complete", end_reason="candidate_found")
+        assert action.kind in allowed_actions
+        return SubagentDecisionResult(action=action)
+
+
+class VerificationMainDecision:
+    def __init__(self, disputed_field: str = "model") -> None:
+        self.disputed_field = disputed_field
+
+    async def decide(
+        self, observation: Any, allowed_actions: tuple[ActionKind, ...]
+    ) -> DecisionResult:
+        if not observation.evidence_summary:
+            action: MainAction = SearchAndCompareAction(query_text="索尼耳机")
+        elif observation.gaps:
+            action = AnswerAction(
+                result_ids=[str(observation.evidence_summary[0]["candidate_id"])],
+                evidence_ids=[str(observation.evidence_summary[0]["evidence_id"])],
+            )
+        else:
+            offers = observation.evidence_summary[:2]
+            action = DelegateVerificationAction(
+                candidate_ids=[str(item["offer_id"]) for item in offers],
+                disputed_fields=[self.disputed_field],
+                evidence_ids=[str(item["evidence_id"]) for item in offers],
+            )
+        assert action.kind in allowed_actions
+        return DecisionResult(action=action)
+
+
+class DetailPort:
+    def __init__(self, *, changed_model: str | None = None) -> None:
+        self.calls = 0
+        self.changed_model = changed_model
+
+    async def get_details(self, offer_ids: list[str], fields: list[str]) -> list[Any]:
+        self.calls += 1
+        return [
+            make_offer(
+                offer_id,
+                platform="jd" if offer_id == "o-jd" else "taobao",
+                price=1999.0 if offer_id == "o-jd" else 1899.0,
+                model=(
+                    self.changed_model
+                    if offer_id == "o-jd" and self.changed_model
+                    else "WH-1000XM5"
+                ),
+            )
+            for offer_id in offer_ids
+        ]
+
+
+class VerificationDecision:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def decide(
+        self, observation: Any, allowed_actions: tuple[SubagentActionKind, ...]
+    ) -> SubagentDecisionResult:
+        self.calls += 1
+        if SubagentActionKind.GET_OFFER_DETAILS in allowed_actions and not observation.queries:
+            action = SubagentGetOfferDetailsAction(
+                candidate_ids=[item["candidate_id"] for item in observation.candidate_summary],
+                fields=list(observation.focus_fields),
+            )
+        else:
+            action = SubagentFinishAction(status="complete", end_reason="verified")
         assert action.kind in allowed_actions
         return SubagentDecisionResult(action=action)
 
@@ -222,6 +290,89 @@ async def test_research_subagent_changes_query_and_parent_revalidates_results(
     assert result.queries == ["WH-1000XM5 降噪耳机"]
     assert result.evidence_ids
     assert result.facts
+
+
+@pytest.mark.asyncio
+async def test_verification_subagent_cannot_override_hard_model_conflict(
+    deps_factory: Any,
+) -> None:
+    settings = replace(
+        Settings(),
+        execution_mode="main_with_subagents",
+        main_agent_model="fake-main",
+        verification_subagent_enabled=True,
+    )
+    deps, fakes = deps_factory(settings)
+    deps.agent_decision = VerificationMainDecision()
+    deps.verification_decision = VerificationDecision()
+    deps.offer_details = DetailPort(changed_model="WH-1000XM4")
+    fakes["retrieval"].sequence = [two_candidate_result()]
+    facade = AgentFacade(deps)
+
+    response = await facade.run(
+        AgentRequest(session_id="verification", request_id="conflict", text="索尼耳机")
+    )
+
+    assert response.status is AgentStatus.SUCCESS
+    assert deps.offer_details.calls == 1
+    assert facade._main_runtime is not None
+    state = facade._main_runtime._local_states[("verification", "conflict")]
+    assert state.subagent_results[0].recommendation == "not_comparable"
+    assert state.gaps == ["not_comparable"]
+
+
+@pytest.mark.asyncio
+async def test_verification_subagent_reports_unknown_promotion_as_insufficient_evidence(
+    deps_factory: Any,
+) -> None:
+    settings = replace(
+        Settings(),
+        execution_mode="main_with_subagents",
+        main_agent_model="fake-main",
+        verification_subagent_enabled=True,
+    )
+    deps, fakes = deps_factory(settings)
+    deps.agent_decision = VerificationMainDecision("discount_eligibility")
+    deps.verification_decision = VerificationDecision()
+    deps.offer_details = DetailPort()
+    fakes["retrieval"].sequence = [two_candidate_result()]
+    facade = AgentFacade(deps)
+
+    response = await facade.run(
+        AgentRequest(session_id="verification", request_id="unknown", text="索尼耳机")
+    )
+
+    assert response.status is AgentStatus.SUCCESS
+    assert facade._main_runtime is not None
+    state = facade._main_runtime._local_states[("verification", "unknown")]
+    assert state.subagent_results[0].recommendation == "insufficient_evidence"
+    assert "discount_eligibility" in state.gaps
+
+
+@pytest.mark.asyncio
+async def test_verification_subagent_stays_closed_without_details_port(
+    deps_factory: Any,
+) -> None:
+    settings = replace(
+        Settings(),
+        execution_mode="main_with_subagents",
+        main_agent_model="fake-main",
+        verification_subagent_enabled=True,
+    )
+    deps, fakes = deps_factory(settings)
+    deps.agent_decision = AdaptiveDecision()
+    deps.verification_decision = VerificationDecision()
+    fakes["retrieval"].sequence = [two_candidate_result()]
+
+    facade = AgentFacade(deps)
+    response = await facade.run(
+        AgentRequest(session_id="verification-off", request_id="simple", text="索尼耳机")
+    )
+
+    assert response.status is AgentStatus.SUCCESS
+    assert any("核验 subagent 已关闭" in notice for notice in response.notices)
+    assert facade._main_runtime is not None
+    assert facade._main_runtime._local_states[("verification-off", "simple")].subagent_results == []
 
 
 def test_main_action_is_strict_and_discriminated() -> None:

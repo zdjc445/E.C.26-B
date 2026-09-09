@@ -17,7 +17,8 @@ from shijiajing_agent.agent_runtime.contracts import (
     AgentRuntimeUsage,
     AnswerAction,
     AskUserAction,
-    FinishNoResultsAction,
+    DelegateResearchAction,
+    DelegateVerificationAction,
     InspectEvidenceAction,
     MainAction,
     MainRuntimeState,
@@ -40,6 +41,7 @@ from shijiajing_agent.agent_runtime.policy import (
     observation_for,
 )
 from shijiajing_agent.agent_runtime.subagents.research import ResearchSubagent
+from shijiajing_agent.agent_runtime.subagents.verification import VerificationSubagent
 from shijiajing_agent.contracts import (
     AgentExecutionContext,
     AgentInterrupt,
@@ -145,13 +147,27 @@ class MainAgentRuntime:
             if research_decision is not None
             else None
         )
+        verification_decision = getattr(deps, "verification_decision", None)
+        offer_details = getattr(deps, "offer_details", None)
+        self._verification = (
+            VerificationSubagent(
+                verification_decision,
+                offer_details,
+                self._retrieval,
+                self._evidence,
+            )
+            if verification_decision is not None and offer_details is not None
+            else None
+        )
         self._guard = ActionGuard(
             DelegationPolicy(
                 research_enabled=(
                     deps.settings.research_subagent_enabled and self._research is not None
                 ),
-                verification_enabled=deps.settings.verification_subagent_enabled,
-                offer_details=getattr(deps, "offer_details", None),
+                verification_enabled=(
+                    deps.settings.verification_subagent_enabled and self._verification is not None
+                ),
+                offer_details=offer_details,
             )
         )
         self._local_states: dict[tuple[str, str], MainRuntimeState] = {}
@@ -229,7 +245,8 @@ class MainAgentRuntime:
                     and self._research is not None
                 ),
                 verification_enabled=self._settings.execution_mode == "main_with_subagents"
-                and self._settings.verification_subagent_enabled,
+                and self._settings.verification_subagent_enabled
+                and self._verification is not None,
             )
             observation = observation_for(state, allowed)
             try:
@@ -443,6 +460,12 @@ class MainAgentRuntime:
         reset_results: bool,
     ) -> None:
         request = state.current_request
+        if (
+            self._settings.verification_subagent_enabled
+            and self._verification is None
+            and "verification_subagent_unavailable" not in state.notices
+        ):
+            state.notices.append("核验 subagent 已关闭：未装配可补充详情的数据能力")
         if reset_results:
             state.ranked_groups = []
             state.last_candidates = []
@@ -601,8 +624,6 @@ class MainAgentRuntime:
                 usage=AgentRuntimeUsage(tool_calls=1),
             )
             return observation, None, None
-        from shijiajing_agent.agent_runtime.contracts import DelegateResearchAction
-
         if isinstance(action, DelegateResearchAction):
             if self._research is None:
                 raise ActionRejectedError("research_decision 未装配")
@@ -630,6 +651,7 @@ class MainAgentRuntime:
                 constraints_version=state.constraints_version,
                 evidence_version=state.evidence_version,
                 constraints_ref=f"constraints-v{state.constraints_version}",
+                disputed_fields=[],
                 allowed_evidence_ids=list(state.evidence)[:50],
                 allowed_tools=["search_once", "inspect_evidence", "compare_candidates"],
                 budget=child_budget,
@@ -646,6 +668,52 @@ class MainAgentRuntime:
             )
             observation = await self._merge_research_result(
                 state, outcome.result, outcome.candidates
+            )
+            return observation, None, None
+        if isinstance(action, DelegateVerificationAction):
+            if self._verification is None:
+                raise ActionRejectedError("verification 能力未装配")
+            ledger = BudgetLedger.start(state.budget, state.usage)
+            if not ledger.can_subagent():
+                raise BudgetExceededError("subagent 启动次数超限")
+            child_budget = ledger.child_budget(
+                SubagentBudget(
+                    max_decisions=self._settings.subagent_max_decisions,
+                    max_tool_calls=self._settings.subagent_max_tool_calls,
+                    max_seconds=self._settings.subagent_max_seconds,
+                    max_tokens=self._settings.subagent_max_tokens,
+                )
+            )
+            state.usage = state.usage.add(AgentRuntimeUsage(subagent_starts=1))
+            parent_action_id = state.actions[-1].action_id if state.actions else "main-action"
+            constraints = state.understanding.constraints
+            if constraints is None:
+                raise ActionRejectedError("缺少当前约束，不能启动 Verification")
+            task = SubagentTask(
+                task_id=self._subagent_task_id(state, action),
+                parent_action_id=parent_action_id,
+                role=SubagentRole.VERIFICATION,
+                objective="核验候选的争议字段：" + ",".join(action.disputed_fields),
+                constraints=constraints.model_copy(deep=True),
+                constraints_version=state.constraints_version,
+                evidence_version=state.evidence_version,
+                constraints_ref=f"constraints-v{state.constraints_version}",
+                allowed_evidence_ids=list(action.evidence_ids or list(state.evidence))[:50],
+                disputed_fields=list(action.disputed_fields),
+                allowed_tools=["inspect_evidence", "get_offer_details", "compare_candidates"],
+                budget=child_budget,
+                deadline_at=(
+                    datetime.now(UTC) + timedelta(seconds=child_budget.max_seconds)
+                ).isoformat(),
+            )
+            outcome = await self._verification.run(
+                task,
+                candidate_ids=list(action.candidate_ids),
+                existing_candidates=state.last_candidates,
+                existing_evidence=state.evidence,
+            )
+            observation = await self._merge_verification_result(
+                state, outcome.result, outcome.candidates, action.disputed_fields
             )
             return observation, None, None
         if isinstance(action, AnswerAction):
@@ -670,14 +738,12 @@ class MainAgentRuntime:
                 return None, None, interrupt
             response = self._clarification_response(state, action.missing_fields)
             return None, response, None
-        if isinstance(action, FinishNoResultsAction):
-            response = self._base_response(
-                state,
-                AgentStatus.NO_RESULTS,
-                "当前条件下没有符合要求的比价结果。",
-            )
-            return None, response, None
-        raise ActionRejectedError("subagent 尚未在当前执行模式启用")
+        response = self._base_response(
+            state,
+            AgentStatus.NO_RESULTS,
+            "当前条件下没有符合要求的比价结果。",
+        )
+        return None, response, None
 
     def _subagent_task_id(self, state: MainRuntimeState, action: MainAction) -> str:
         digest = content_hash(
@@ -688,7 +754,7 @@ class MainAgentRuntime:
                 "objective": getattr(action, "objective", ""),
             }
         )[:24]
-        return f"research:{digest}"
+        return f"{action.kind.value}:{digest}"
 
     async def _merge_research_result(
         self,
@@ -744,6 +810,70 @@ class MainAgentRuntime:
             gaps=list(state.gaps),
             conflicts=list(state.conflicts),
             fallback_reason=result.end_reason if status == "fallback" else None,
+            constraints_version=state.constraints_version,
+            evidence_version=state.evidence_version,
+            usage=result.usage,
+        )
+
+    async def _merge_verification_result(
+        self,
+        state: MainRuntimeState,
+        result: SubagentResult,
+        candidates: list[Any],
+        disputed_fields: list[str],
+    ) -> ToolObservation:
+        if result.role is not SubagentRole.VERIFICATION:
+            raise ActionRejectedError("子结果 role 不匹配")
+        if result.parent_action_id != (state.actions[-1].action_id if state.actions else ""):
+            raise ActionRejectedError("子结果 parent_action_id 不匹配")
+        if result.constraints_version != state.constraints_version:
+            raise ActionRejectedError("子结果 constraints_version 已过期")
+        merged = {item.offer.offer_id: item for item in state.last_candidates}
+        merged.update({item.offer.offer_id: item for item in candidates})
+        if any(item not in merged for item in result.candidate_ids):
+            raise ActionRejectedError("核验结果引用了不存在的 candidate_id")
+        constraints = state.understanding.constraints
+        if constraints is None:
+            raise ActionRejectedError("缺少当前约束，不能归并 Verification 结果")
+        compared = await self._retrieval.comparison.compare_candidates(
+            list(merged.values()), constraints
+        )
+        records = self._evidence.register(compared.ranked_groups)
+        new_records = [item for item in records if item.evidence_id not in state.evidence]
+        state.evidence.update({item.evidence_id: item for item in new_records})
+        if new_records:
+            state.evidence_version += 1
+        if any(item not in state.evidence for item in result.evidence_ids):
+            raise ActionRejectedError("核验结果引用了未注册的 evidence_id")
+        # recommendation 只由当前 Offer、字段和共享比较结果计算，忽略模型的自由判断。
+        from shijiajing_agent.agent_runtime.subagents.verification import VerificationSubagent
+
+        selected = [merged[item] for item in result.candidate_ids]
+        selected_compared = await self._retrieval.comparison.compare_candidates(
+            selected, constraints
+        )
+        recommendation = VerificationSubagent.deterministic_recommendation(
+            selected, selected_compared.ranked_groups, disputed_fields
+        )
+        if result.recommendation is not None and result.recommendation != recommendation:
+            raise ActionRejectedError("核验模型建议与确定性硬约束判定冲突")
+        state.last_candidates = list(merged.values())
+        state.ranked_groups = compared.ranked_groups
+        state.subagent_results.append(result.model_copy(update={"recommendation": recommendation}))
+        state.gaps = (
+            []
+            if recommendation == "comparable"
+            else list(result.unresolved_fields) or [recommendation]
+        )
+        state.conflicts = [risk for group in state.ranked_groups for risk in group.group.risks]
+        status = "success" if recommendation == "comparable" else "fallback"
+        return ToolObservation(
+            status=status,
+            result_refs=[group.group.group_id for group in state.ranked_groups],
+            new_evidence_ids=[item.evidence_id for item in new_records],
+            gaps=list(state.gaps),
+            conflicts=list(state.conflicts),
+            fallback_reason=None if status == "success" else recommendation,
             constraints_version=state.constraints_version,
             evidence_version=state.evidence_version,
             usage=result.usage,

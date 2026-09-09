@@ -321,6 +321,7 @@ class SubagentTask(BaseModel):
     evidence_version: int = Field(ge=0)
     constraints_ref: str = Field(min_length=1, max_length=128)
     allowed_evidence_ids: list[str] = Field(default_factory=list[str], max_length=50)
+    disputed_fields: list[str] = Field(default_factory=list[str], max_length=10)
     allowed_tools: list[str] = Field(min_length=1, max_length=4)
     budget: SubagentBudget = Field(default_factory=SubagentBudget)
     deadline_at: str = Field(min_length=1, max_length=64)
@@ -335,6 +336,7 @@ class SubagentObservation(BaseModel):
     constraints: ShoppingConstraints
     constraints_version: int = Field(ge=1)
     evidence_version: int = Field(ge=0)
+    focus_fields: list[str] = Field(default_factory=list[str], max_length=10)
     candidate_summary: list[dict[str, Any]] = Field(
         default_factory=list[dict[str, Any]], max_length=20
     )
