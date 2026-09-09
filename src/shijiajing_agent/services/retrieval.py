@@ -5,8 +5,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
+import re
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import cast
 
 from shijiajing_agent.agent_runtime.contracts import AgentRuntimeUsage
 from shijiajing_agent.contracts import (
@@ -19,10 +23,14 @@ from shijiajing_agent.contracts import (
 )
 from shijiajing_agent.domain.candidate_selection import select_candidate_window
 from shijiajing_agent.domain.filters import HardFilterBuilder
+from shijiajing_agent.domain.reranker_summary import build_rerank_document, candidate_version
 from shijiajing_agent.domain.retrieval_fusion import BestQueryChannelRRF
 from shijiajing_agent.ports.models import QueryRewritePort
 from shijiajing_agent.ports.retrieval import (
     ProductRetrievalPort,
+    RerankerPort,
+    RerankerStatus,
+    RerankResult,
     RetrievalResult,
     begin_retrieval_usage,
     finish_retrieval_usage,
@@ -68,6 +76,8 @@ class RetrievalService:
         initial_max_queries: int = 3,
         query_concurrency: int = 2,
         index_manifest_id: str | None = None,
+        reranker: RerankerPort | None = None,
+        reranker_cache_ttl_seconds: int = 300,
     ) -> None:
         self._query_rewrite = query_rewrite
         self._retrieval = retrieval
@@ -80,6 +90,9 @@ class RetrievalService:
         self._initial_max_queries = max(1, initial_max_queries)
         self._query_concurrency = max(1, min(4, query_concurrency))
         self._index_manifest_id = index_manifest_id or getattr(retrieval, "index_version", None)
+        self._reranker = reranker
+        self._reranker_cache_ttl_seconds = max(1, reranker_cache_ttl_seconds)
+        self._reranker_cache: dict[str, tuple[float, RerankResult]] = {}
 
     @property
     def comparison(self) -> ComparisonService:
@@ -255,6 +268,7 @@ class RetrievalService:
             index_version=result.index_version,
             fusion_version=result.fusion_version,
             rerank_version=result.rerank_version,
+            rerank_result=result.rerank_result,
             channel_results=[
                 channel.model_copy(
                     update={
@@ -377,6 +391,7 @@ class RetrievalService:
         union_limit: int | None = None,
         constraints_version: int = 1,
         max_queries: int | None = None,
+        rerank: bool = True,
     ) -> SearchOnceResult:
         plan, plan_usage = await self.prepare_queries(
             query_text,
@@ -394,7 +409,31 @@ class RetrievalService:
         result = self._merge_retrieval_results(
             prepared, results, union_limit=union_limit or self._union_limit
         )
-        window = select_candidate_window(result.candidates, limit=self._candidate_window_limit)
+        rerank_usage = AgentRuntimeUsage()
+        if rerank:
+            reranked, rerank_result = await self.rerank_candidates(
+                query_text,
+                constraints,
+                result.candidates,
+                constraints_version=constraints_version,
+            )
+            result.candidates = reranked
+            result.rerank_result = rerank_result
+            result.rerank_version = (
+                rerank_result.model_version
+                if rerank_result is not None and rerank_result.status is RerankerStatus.SUCCESS
+                else None
+            )
+            rerank_usage = rerank_result.usage if rerank_result is not None else AgentRuntimeUsage()
+        use_rerank = (
+            result.rerank_result is not None
+            and result.rerank_result.status is RerankerStatus.SUCCESS
+        )
+        window = select_candidate_window(
+            result.candidates,
+            limit=self._candidate_window_limit,
+            use_rerank=use_rerank,
+        )
         result = RetrievalResult(
             candidates=result.candidates,
             total_found=result.total_found,
@@ -404,6 +443,7 @@ class RetrievalService:
             index_version=result.index_version,
             fusion_version=result.fusion_version,
             rerank_version=result.rerank_version,
+            rerank_result=result.rerank_result,
             channel_results=result.channel_results,
             channel_health=result.channel_health,
             selected_candidates=window.candidates,
@@ -420,10 +460,83 @@ class RetrievalService:
             query=query,
             candidates=window.candidates,
             retrieval=result,
-            usage=plan_usage.add(_sum_usage(item.usage for item in results)),
+            usage=plan_usage.add(_sum_usage(item.usage for item in results)).add(rerank_usage),
             plan=plan,
             query_results=tuple(item.retrieval for item in results),
         )
+
+    async def rerank_candidates(
+        self,
+        query_text: str,
+        constraints: ShoppingConstraints,
+        candidates: list[RetrievalCandidate],
+        *,
+        constraints_version: int = 1,
+        deadline: float | None = None,
+    ) -> tuple[list[RetrievalCandidate], RerankResult | None]:
+        """对完整当前候选池精排；失败时原样返回 RRF 顺序。"""
+        if self._reranker is None or not candidates:
+            return candidates, None
+        pool = list(candidates[: self._union_limit])
+        version = candidate_version([item.offer for item in pool])
+        documents = [
+            build_rerank_document(
+                item.offer,
+                max_tokens=getattr(self._reranker, "document_max_tokens", 384),
+            ).document
+            for item in pool
+        ]
+        query = _build_rerank_query(query_text, constraints)
+        cache_key = _rerank_cache_key(
+            getattr(self._reranker, "cache_identity", "unknown"),
+            query,
+            version,
+            constraints_version,
+        )
+        cached = self._reranker_cache.get(cache_key)
+        if cached is not None and cached[0] > time.monotonic():
+            cached_result = cached[1].model_copy(
+                update={
+                    "cache_hit": True,
+                    "usage": AgentRuntimeUsage(reranker_cache_hits=1),
+                }
+            )
+            return _apply_rerank(pool, cached_result), cached_result
+        try:
+            result = await self._reranker.rerank(
+                query,
+                documents,
+                top_k=len(pool),
+                deadline=deadline,
+                candidate_version=version,
+            )
+        except Exception:
+            result = RerankResult(
+                status=RerankerStatus.FAILED,
+                candidate_version=version,
+                fallback_reason="adapter_exception",
+            )
+        if result.status is not RerankerStatus.SUCCESS:
+            return pool, result
+        try:
+            reranked = _apply_rerank(pool, result)
+        except ValueError:
+            failed = result.model_copy(
+                update={
+                    "status": RerankerStatus.FAILED,
+                    "results": [],
+                    "fallback_reason": "service_result_validation_failed",
+                    "usage": result.usage.model_copy(
+                        update={"reranker_fallbacks": result.usage.reranker_fallbacks + 1}
+                    ),
+                }
+            )
+            return pool, failed
+        self._reranker_cache[cache_key] = (
+            time.monotonic() + self._reranker_cache_ttl_seconds,
+            result,
+        )
+        return reranked, result
 
     @staticmethod
     def _prepared_query(
@@ -622,6 +735,72 @@ def _sum_usage(usages: Iterable[AgentRuntimeUsage]) -> AgentRuntimeUsage:
     for usage in usages:
         total = total.add(usage)
     return total
+
+
+def _apply_rerank(
+    candidates: list[RetrievalCandidate], result: RerankResult
+) -> list[RetrievalCandidate]:
+    if result.candidate_version != candidate_version([item.offer for item in candidates]):
+        raise ValueError("reranker candidate version drift")
+    expected = {item.offer.offer_id for item in candidates}
+    actual = [item.offer_id for item in result.results]
+    if set(actual) != expected or len(actual) != len(expected) or len(set(actual)) != len(actual):
+        raise ValueError("reranker result ids are incomplete or duplicated")
+    ranks = [item.rank for item in result.results]
+    if set(ranks) != set(range(1, len(expected) + 1)):
+        raise ValueError("reranker ranks are incomplete")
+    by_id = {item.offer.offer_id: item for item in candidates}
+    ordered: list[RetrievalCandidate] = []
+    for hit in sorted(result.results, key=lambda item: item.rank):
+        if not math.isfinite(hit.relevance_score):
+            raise ValueError("reranker returned non-finite score")
+        candidate = by_id[hit.offer_id]
+        ordered.append(
+            candidate.model_copy(
+                update={
+                    "rerank_score": hit.relevance_score,
+                    "rerank_version": result.model_version or result.model,
+                }
+            )
+        )
+    return ordered
+
+
+def _build_rerank_query(query_text: str, constraints: ShoppingConstraints) -> str:
+    parts = [_sanitize_query(query_text)]
+    for name in ("category_name", "brand", "model", "colors", "platforms", "attributes"):
+        value = constraints.effective_value(name)
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, dict):
+            values = cast(dict[str, object], value)
+            rendered = ", ".join(f"{key}:{values[key]}" for key in sorted(values))
+        elif isinstance(value, list):
+            items = cast(list[object], value)
+            rendered = ", ".join(str(item) for item in items)
+        else:
+            rendered = str(value)
+        parts.append(f"{name}: {_sanitize_query(rendered)}")
+    return " ".join(part for part in parts if part).strip()
+
+
+def _sanitize_query(value: str) -> str:
+    value = re.sub(r"https?://\S+|\S+@\S+", " ", value, flags=re.IGNORECASE)
+    value = re.sub(r"(?:owner|session|request)[_-]?id\s*[:=]\s*\S+", " ", value, flags=re.I)
+    value = re.sub(r"(?:\+?\d[\d ()-]{7,}\d)", " ", value)
+    return " ".join(value.split())
+
+
+def _rerank_cache_key(identity: str, query: str, version: str, constraints_version: int) -> str:
+    payload = {
+        "identity": identity,
+        "query": query,
+        "candidate_version": version,
+        "constraints_version": constraints_version,
+    }
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 __all__ = ["RetrievalService", "SearchAndCompareResult", "SearchOnceResult"]

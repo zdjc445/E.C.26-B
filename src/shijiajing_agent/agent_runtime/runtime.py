@@ -157,6 +157,8 @@ class MainAgentRuntime:
             rrf_k=deps.settings.retrieval_rrf_k,
             initial_max_queries=deps.settings.retrieval_initial_max_queries,
             query_concurrency=deps.settings.retrieval_query_concurrency,
+            reranker=getattr(deps, "reranker", None),
+            reranker_cache_ttl_seconds=deps.settings.reranker_cache_ttl_seconds,
         )
         self._evidence = EvidenceService()
         self._answer = AnswerService(self._evidence, deps.explanation)
@@ -453,6 +455,7 @@ class MainAgentRuntime:
                 max_retrieval_calls=self._settings.main_agent_max_retrieval_calls,
                 max_db_search_attempts=self._settings.retrieval_max_db_search_attempts,
                 max_embedding_calls=self._settings.retrieval_max_db_search_attempts,
+                max_reranker_requests=self._settings.main_agent_max_reranker_requests,
                 max_model_calls=self._settings.main_agent_max_model_calls,
                 max_tokens=self._settings.main_agent_max_tokens,
                 max_subagent_starts=self._settings.main_agent_max_subagent_starts,
@@ -1601,6 +1604,12 @@ class MainAgentRuntime:
                 - state.usage.embedding_calls
                 - state.reserved_usage.embedding_calls,
             ),
+            reranker_requests=max(
+                0,
+                state.budget.max_reranker_requests
+                - state.usage.reranker_requests
+                - state.reserved_usage.reranker_requests,
+            ),
         )
         available = state.budget
         current = state.usage.add(state.reserved_usage)
@@ -1613,6 +1622,8 @@ class MainAgentRuntime:
             raise BudgetExceededError("数据库检索额度预留不足")
         if current.embedding_calls + reserved.embedding_calls > available.max_embedding_calls:
             raise BudgetExceededError("embedding 额度预留不足")
+        if current.reranker_requests + reserved.reranker_requests > available.max_reranker_requests:
+            raise BudgetExceededError("Reranker 额度预留不足")
         state.reserved_usage = state.reserved_usage.add(reserved)
         return reserved
 
@@ -1626,6 +1637,9 @@ class MainAgentRuntime:
                     0, current.db_search_attempts - reservation.db_search_attempts
                 ),
                 "embedding_calls": max(0, current.embedding_calls - reservation.embedding_calls),
+                "reranker_requests": max(
+                    0, current.reranker_requests - reservation.reranker_requests
+                ),
             }
         )
 
@@ -1642,6 +1656,8 @@ class MainAgentRuntime:
             raise BudgetExceededError("数据库检索尝试次数超限")
         if next_usage.embedding_calls > state.budget.max_embedding_calls:
             raise BudgetExceededError("embedding 调用次数超限")
+        if next_usage.reranker_requests > state.budget.max_reranker_requests:
+            raise BudgetExceededError("Reranker 调用次数超限")
         if next_usage.model_calls > state.budget.max_model_calls:
             raise BudgetExceededError("生成模型调用次数超限")
         if next_usage.input_tokens + next_usage.output_tokens > state.budget.max_tokens:

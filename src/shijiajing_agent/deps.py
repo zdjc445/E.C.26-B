@@ -19,11 +19,13 @@ from shijiajing_agent.adapters.embeddings import build_embedding_ports
 from shijiajing_agent.adapters.local_retrieval import LocalLexicalRetrievalAdapter
 from shijiajing_agent.adapters.milvus_retrieval import MilvusHybridRetrievalAdapter
 from shijiajing_agent.adapters.observability import make_metrics, make_trace_sink
+from shijiajing_agent.adapters.reranker import AliyunRerankerAdapter, FakeReranker
 from shijiajing_agent.config import Settings
 from shijiajing_agent.domain.taxonomy import load_taxonomy
 from shijiajing_agent.facade import AgentDependencies
 from shijiajing_agent.ports.lifecycle import ResourceLifecyclePort
 from shijiajing_agent.ports.observability import MetricsPort
+from shijiajing_agent.ports.reranker import RerankerPort
 from shijiajing_agent.ports.retrieval import ProductRetrievalPort
 
 
@@ -110,8 +112,20 @@ def make_deps(
         research_decision = ArkSubagentDecision(client, subagent_model, "research")
 
     retrieval = make_retrieval(settings, metrics=metrics)
+    reranker: RerankerPort
+    if settings.reranker_base_url and settings.reranker_api_key and settings.reranker_model:
+        reranker = AliyunRerankerAdapter(settings)
+    elif settings.env in {"dev", "test"}:
+        # Fake 是开发/单测显式装配，不能成为生产缺配置时的静默路径。
+        reranker = FakeReranker()
+    else:
+        raise ValueError(
+            "生产 Reranker 配置缺失：SHIJIAJING_RERANKER_BASE_URL / "
+            "SHIJIAJING_RERANKER_API_KEY / SHIJIAJING_RERANKER_MODEL"
+        )
     if resource_registrar is not None:
         resource_registrar(retrieval)
+        resource_registrar(reranker)
 
     return AgentDependencies(
         taxonomy=taxonomy,
@@ -121,6 +135,7 @@ def make_deps(
         query_rewrite=query_rewrite,
         explanation=explanation,
         retrieval=retrieval,
+        reranker=reranker,
         trace=trace,
         metrics=metrics,
         agent_decision=agent_decision,

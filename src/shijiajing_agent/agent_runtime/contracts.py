@@ -70,6 +70,16 @@ class AgentRuntimeUsage(BaseModel):
     embedding_calls: int = Field(default=0, ge=0)
     embedding_inputs: int = Field(default=0, ge=0)
     embedding_tokens: int = Field(default=0, ge=0)
+    reranker_requests: int = Field(default=0, ge=0)
+    reranked_documents: int = Field(default=0, ge=0)
+    reranker_input_tokens: int = Field(default=0, ge=0)
+    reranker_output_tokens: int = Field(default=0, ge=0)
+    reranker_total_tokens: int = Field(default=0, ge=0)
+    reranker_latency_ms: float = Field(default=0.0, ge=0)
+    reranker_estimated_cost: float = Field(default=0.0, ge=0)
+    reranker_truncated_documents: int = Field(default=0, ge=0)
+    reranker_cache_hits: int = Field(default=0, ge=0)
+    reranker_fallbacks: int = Field(default=0, ge=0)
     subagent_starts: int = Field(default=0, ge=0)
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
@@ -85,6 +95,18 @@ class AgentRuntimeUsage(BaseModel):
             embedding_calls=self.embedding_calls + other.embedding_calls,
             embedding_inputs=self.embedding_inputs + other.embedding_inputs,
             embedding_tokens=self.embedding_tokens + other.embedding_tokens,
+            reranker_requests=self.reranker_requests + other.reranker_requests,
+            reranked_documents=self.reranked_documents + other.reranked_documents,
+            reranker_input_tokens=self.reranker_input_tokens + other.reranker_input_tokens,
+            reranker_output_tokens=self.reranker_output_tokens + other.reranker_output_tokens,
+            reranker_total_tokens=self.reranker_total_tokens + other.reranker_total_tokens,
+            reranker_latency_ms=self.reranker_latency_ms + other.reranker_latency_ms,
+            reranker_estimated_cost=self.reranker_estimated_cost + other.reranker_estimated_cost,
+            reranker_truncated_documents=(
+                self.reranker_truncated_documents + other.reranker_truncated_documents
+            ),
+            reranker_cache_hits=self.reranker_cache_hits + other.reranker_cache_hits,
+            reranker_fallbacks=self.reranker_fallbacks + other.reranker_fallbacks,
             subagent_starts=self.subagent_starts + other.subagent_starts,
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
@@ -100,6 +122,7 @@ class RuntimeBudget(BaseModel):
     max_retrieval_calls: int = Field(default=6, ge=1, le=100)
     max_db_search_attempts: int = Field(default=24, ge=1, le=1000)
     max_embedding_calls: int = Field(default=24, ge=1, le=1000)
+    max_reranker_requests: int = Field(default=4, ge=1, le=100)
     max_model_calls: int = Field(default=32, ge=1, le=200)
     max_tokens: int = Field(default=100_000, ge=1, le=2_000_000)
     max_subagent_starts: int = Field(default=2, ge=0, le=20)
@@ -116,6 +139,7 @@ class RuntimeBudgetRemaining(BaseModel):
     max_retrieval_calls: int = Field(default=0, ge=0, le=100)
     max_db_search_attempts: int = Field(default=0, ge=0, le=1000)
     max_embedding_calls: int = Field(default=0, ge=0, le=1000)
+    max_reranker_requests: int = Field(default=0, ge=0, le=100)
     max_model_calls: int = Field(default=0, ge=0, le=200)
     max_tokens: int = Field(default=0, ge=0, le=2_000_000)
     max_subagent_starts: int = Field(default=0, ge=0, le=20)

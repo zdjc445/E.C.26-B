@@ -84,6 +84,16 @@ _DEFAULTS: dict[str, str] = {
     "RETRIEVAL_SUPPLEMENT_MAX_QUERIES": "3",
     "RETRIEVAL_MAX_DB_SEARCH_ATTEMPTS": "24",
     "RETRIEVAL_QUERY_CONCURRENCY": "2",
+    "RERANKER_PROVIDER": "aliyun_bailian",
+    "RERANKER_TIMEOUT_SECONDS": "5",
+    "RERANKER_MAX_ATTEMPTS": "2",
+    "MAIN_AGENT_MAX_RERANKER_REQUESTS": "4",
+    "RERANKER_MAX_DOCUMENTS": "200",
+    "RERANKER_QUERY_MAX_TOKENS": "128",
+    "RERANKER_DOCUMENT_MAX_TOKENS": "384",
+    "RERANKER_REQUEST_MAX_TOKENS": "120000",
+    "RERANKER_CACHE_TTL_SECONDS": "300",
+    "RERANKER_COST_PER_MILLION_TOKENS": "0.5",
 }
 
 # 外部资源：缺失时必须启动失败（无默认值）
@@ -115,6 +125,10 @@ class Settings:
     ark_vision_model: str | None = None
     ark_text_model: str | None = None
     embedding_model: str | None = None
+    reranker_provider: str = "aliyun_bailian"
+    reranker_base_url: str | None = None
+    reranker_api_key: str | None = None
+    reranker_model: str | None = None
     milvus_uri: str | None = None
     milvus_token: str | None = None
     milvus_collection: str | None = None
@@ -190,6 +204,15 @@ class Settings:
     retrieval_supplement_max_queries: int = 3
     retrieval_max_db_search_attempts: int = 24
     retrieval_query_concurrency: int = 2
+    reranker_timeout_seconds: float = 5.0
+    reranker_max_attempts: int = 2
+    main_agent_max_reranker_requests: int = 4
+    reranker_max_documents: int = 200
+    reranker_query_max_tokens: int = 128
+    reranker_document_max_tokens: int = 384
+    reranker_request_max_tokens: int = 120_000
+    reranker_cache_ttl_seconds: int = 300
+    reranker_cost_per_million_tokens: float = 0.5
     event_store_backend: str = "disabled"
     event_store_dsn: str | None = None
 
@@ -215,6 +238,10 @@ class Settings:
                 missing.append("EMBEDDING_MODEL")
             if not self.main_agent_model:
                 missing.append("MAIN_AGENT_MODEL")
+            if self.env == "prod":
+                for name in ("RERANKER_BASE_URL", "RERANKER_API_KEY", "RERANKER_MODEL"):
+                    if getattr(self, _to_attr(name)) in (None, ""):
+                        missing.append(name)
         return missing
 
     def missing_models(self) -> list[str]:
@@ -247,6 +274,8 @@ class Settings:
 
         if self.env not in _ENVIRONMENTS:
             errors.append(f"ENV={self.env}")
+        if self.reranker_provider != "aliyun_bailian":
+            errors.append(f"RERANKER_PROVIDER={self.reranker_provider}")
         if not self.main_agent_model:
             errors.append("MAIN_AGENT_MODEL")
         if self.checkpoint_backend not in {"sqlite", "postgres"}:
@@ -290,6 +319,8 @@ class Settings:
             ("RETRIEVAL_TIMEOUT_SECONDS", self.retrieval_timeout_seconds),
             ("TURN_TIMEOUT_SECONDS", self.turn_timeout_seconds),
             ("POSTGRES_POOL_TIMEOUT_SECONDS", self.postgres_pool_timeout_seconds),
+            ("RERANKER_TIMEOUT_SECONDS", self.reranker_timeout_seconds),
+            ("RERANKER_COST_PER_MILLION_TOKENS", self.reranker_cost_per_million_tokens),
         ):
             require_finite_positive(name, value)
         for name, value in (
@@ -344,6 +375,13 @@ class Settings:
             ("RETRIEVAL_SUPPLEMENT_MAX_QUERIES", self.retrieval_supplement_max_queries),
             ("RETRIEVAL_MAX_DB_SEARCH_ATTEMPTS", self.retrieval_max_db_search_attempts),
             ("RETRIEVAL_QUERY_CONCURRENCY", self.retrieval_query_concurrency),
+            ("RERANKER_MAX_ATTEMPTS", self.reranker_max_attempts),
+            ("MAIN_AGENT_MAX_RERANKER_REQUESTS", self.main_agent_max_reranker_requests),
+            ("RERANKER_MAX_DOCUMENTS", self.reranker_max_documents),
+            ("RERANKER_QUERY_MAX_TOKENS", self.reranker_query_max_tokens),
+            ("RERANKER_DOCUMENT_MAX_TOKENS", self.reranker_document_max_tokens),
+            ("RERANKER_REQUEST_MAX_TOKENS", self.reranker_request_max_tokens),
+            ("RERANKER_CACHE_TTL_SECONDS", self.reranker_cache_ttl_seconds),
             ("MAIN_AGENT_MAX_DECISIONS", self.main_agent_max_decisions),
             ("MAIN_AGENT_MAX_TOOL_CALLS", self.main_agent_max_tool_calls),
             ("MAIN_AGENT_MAX_RETRIEVAL_CALLS", self.main_agent_max_retrieval_calls),
@@ -440,6 +478,10 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         ark_vision_model=get("ARK_VISION_MODEL"),
         ark_text_model=get("ARK_TEXT_MODEL"),
         embedding_model=get("EMBEDDING_MODEL"),
+        reranker_provider=get("RERANKER_PROVIDER") or _DEFAULTS["RERANKER_PROVIDER"],
+        reranker_base_url=get("RERANKER_BASE_URL"),
+        reranker_api_key=get("RERANKER_API_KEY"),
+        reranker_model=get("RERANKER_MODEL"),
         milvus_uri=get("MILVUS_URI"),
         milvus_token=get("MILVUS_TOKEN"),
         milvus_collection=get("MILVUS_COLLECTION"),
@@ -516,6 +558,15 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         retrieval_supplement_max_queries=geti("RETRIEVAL_SUPPLEMENT_MAX_QUERIES"),
         retrieval_max_db_search_attempts=geti("RETRIEVAL_MAX_DB_SEARCH_ATTEMPTS"),
         retrieval_query_concurrency=geti("RETRIEVAL_QUERY_CONCURRENCY"),
+        reranker_timeout_seconds=getf("RERANKER_TIMEOUT_SECONDS"),
+        reranker_max_attempts=geti("RERANKER_MAX_ATTEMPTS"),
+        main_agent_max_reranker_requests=geti("MAIN_AGENT_MAX_RERANKER_REQUESTS"),
+        reranker_max_documents=geti("RERANKER_MAX_DOCUMENTS"),
+        reranker_query_max_tokens=geti("RERANKER_QUERY_MAX_TOKENS"),
+        reranker_document_max_tokens=geti("RERANKER_DOCUMENT_MAX_TOKENS"),
+        reranker_request_max_tokens=geti("RERANKER_REQUEST_MAX_TOKENS"),
+        reranker_cache_ttl_seconds=geti("RERANKER_CACHE_TTL_SECONDS"),
+        reranker_cost_per_million_tokens=getf("RERANKER_COST_PER_MILLION_TOKENS"),
         event_store_backend=get("EVENT_STORE_BACKEND") or "disabled",
         event_store_dsn=get("EVENT_STORE_DSN"),
         preference_weights={

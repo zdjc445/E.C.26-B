@@ -59,6 +59,8 @@ class BudgetLedger:
             raise BudgetExceededError("数据库检索尝试次数超限")
         if next_usage.embedding_calls > self.limits.max_embedding_calls:
             raise BudgetExceededError("embedding 调用次数超限")
+        if next_usage.reranker_requests > self.limits.max_reranker_requests:
+            raise BudgetExceededError("Reranker 调用次数超限")
         if next_usage.model_calls > self.limits.max_model_calls:
             raise BudgetExceededError("生成模型调用次数超限")
         if next_usage.subagent_starts > self.limits.max_subagent_starts:

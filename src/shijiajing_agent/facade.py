@@ -51,6 +51,7 @@ from shijiajing_agent.ports.models import (
 )
 from shijiajing_agent.ports.observability import MetricsPort, TraceSinkPort
 from shijiajing_agent.ports.request_ledger import RequestLedgerPort
+from shijiajing_agent.ports.reranker import RerankerPort
 from shijiajing_agent.ports.retrieval import ProductRetrievalPort
 
 
@@ -67,6 +68,7 @@ class AgentDependencies:
     retrieval: ProductRetrievalPort
     trace: TraceSinkPort
     metrics: MetricsPort
+    reranker: RerankerPort | None = None
     graph_checkpointer: BaseCheckpointSaver[str] | None = None
     request_ledger: RequestLedgerPort | None = None
     memory: MemoryPort | None = None

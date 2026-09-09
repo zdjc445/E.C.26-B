@@ -269,6 +269,12 @@ def observation_for(
             - state.usage.embedding_calls
             - reserved.embedding_calls,
         ),
+        max_reranker_requests=max(
+            0,
+            state.budget.max_reranker_requests
+            - state.usage.reranker_requests
+            - reserved.reranker_requests,
+        ),
         max_model_calls=max(
             0, state.budget.max_model_calls - state.usage.model_calls - reserved.model_calls
         ),

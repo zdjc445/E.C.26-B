@@ -13,6 +13,14 @@ from typing import Protocol
 from shijiajing_agent.agent_runtime.contracts import AgentRuntimeUsage
 from shijiajing_agent.contracts import ImageRef, RetrievalCandidate, RetrievalQuery
 from shijiajing_agent.ports.lifecycle import ResourceLifecyclePort
+from shijiajing_agent.ports.reranker import (
+    RerankDocument,
+    RerankerPort,
+    RerankerStatus,
+    RerankHit,
+    RerankResult,
+    RerankTokenCounter,
+)
 from shijiajing_agent.rag_contracts import ChannelResult, ChannelStatus
 
 
@@ -26,6 +34,7 @@ class RetrievalResult:
     index_version: str | None = None
     fusion_version: str | None = None
     rerank_version: str | None = None
+    rerank_result: RerankResult | None = None
     channel_results: list[ChannelResult] = dc_field(default_factory=list[ChannelResult])
     channel_health: dict[str, ChannelStatus] = dc_field(default_factory=dict[str, ChannelStatus])
     selected_candidates: list[RetrievalCandidate] = dc_field(
@@ -74,6 +83,12 @@ class ProductRetrievalPort(ResourceLifecyclePort, Protocol):
 
 __all__ = [
     "ProductRetrievalPort",
+    "RerankDocument",
+    "RerankHit",
+    "RerankResult",
+    "RerankTokenCounter",
+    "RerankerPort",
+    "RerankerStatus",
     "RetrievalResult",
     "begin_retrieval_usage",
     "finish_retrieval_usage",

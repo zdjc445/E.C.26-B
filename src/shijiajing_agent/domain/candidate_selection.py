@@ -16,7 +16,7 @@ class CandidateWindow:
 
 
 def select_candidate_window(
-    candidates: list[RetrievalCandidate], limit: int = 60
+    candidates: list[RetrievalCandidate], limit: int = 60, *, use_rerank: bool = False
 ) -> CandidateWindow:
     """按商品／卖家桶轮转，再按融合分回填评估窗口。
 
@@ -26,10 +26,14 @@ def select_candidate_window(
     """
     if limit < 1:
         raise ValueError("候选窗口上限必须大于 0")
-    ordered = sorted(
-        {item.offer.offer_id: item for item in candidates}.values(),
-        key=lambda item: (-item.recall_score, item.offer.offer_id),
-    )
+
+    def sort_key(item: RetrievalCandidate) -> tuple[float, float, str]:
+        primary = (
+            item.rerank_score if use_rerank and item.rerank_score is not None else item.recall_score
+        )
+        return (-primary, -item.recall_score, item.offer.offer_id)
+
+    ordered = sorted({item.offer.offer_id: item for item in candidates}.values(), key=sort_key)
     if len(ordered) <= limit:
         return CandidateWindow(candidates=ordered, truncated_count=0)
 
@@ -42,10 +46,7 @@ def select_candidate_window(
         buckets.setdefault(key, []).append(candidate)
 
     # 桶的顺序由各桶最高融合分确定，桶内顺序已经按融合分和 offer_id 固定。
-    bucket_values = sorted(
-        buckets.values(),
-        key=lambda items: (-items[0].recall_score, items[0].offer.offer_id),
-    )
+    bucket_values = sorted(buckets.values(), key=lambda items: sort_key(items[0]))
     selected: list[RetrievalCandidate] = []
     positions = [0] * len(bucket_values)
     while len(selected) < limit:
