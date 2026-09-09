@@ -14,8 +14,13 @@ from shijiajing_agent.agent_runtime.contracts import (
     AnswerAction,
     AskUserAction,
     DecisionResult,
+    DelegateResearchAction,
     MainAction,
     SearchAndCompareAction,
+    SubagentActionKind,
+    SubagentDecisionResult,
+    SubagentFinishAction,
+    SubagentSearchAction,
 )
 from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import (
@@ -26,6 +31,7 @@ from shijiajing_agent.contracts import (
     InterruptKind,
 )
 from shijiajing_agent.facade import AgentFacade
+from shijiajing_agent.ports.retrieval import RetrievalResult
 from tests.multi_agent.conftest import two_candidate_result
 
 
@@ -40,7 +46,7 @@ class AdaptiveDecision:
         self, observation: Any, allowed_actions: tuple[ActionKind, ...]
     ) -> DecisionResult:
         self.calls += 1
-        if not observation.evidence_summary:
+        if not observation.evidence_summary and "no_qualified_candidates" not in observation.gaps:
             action: MainAction = SearchAndCompareAction(query_text="索尼耳机")
         else:
             action = AnswerAction(
@@ -60,6 +66,37 @@ class ClarifyingDecision:
         return DecisionResult(
             action=AskUserAction(missing_fields=["category_id"], question_type="missing_category")
         )
+
+
+class ResearchingMainDecision:
+    async def decide(
+        self, observation: Any, allowed_actions: tuple[ActionKind, ...]
+    ) -> DecisionResult:
+        if not observation.evidence_summary and "no_qualified_candidates" not in observation.gaps:
+            action: MainAction = SearchAndCompareAction(query_text="索尼耳机")
+        else:
+            action = DelegateResearchAction(
+                objective="根据型号别名寻找更多候选",
+                gap_code="alias_search",
+            )
+        assert action.kind in allowed_actions
+        return DecisionResult(action=action)
+
+
+class ResearchDecision:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def decide(
+        self, observation: Any, allowed_actions: tuple[SubagentActionKind, ...]
+    ) -> SubagentDecisionResult:
+        self.calls += 1
+        if not observation.queries:
+            action = SubagentSearchAction(query_text="WH-1000XM5 降噪耳机")
+        else:
+            action = SubagentFinishAction(status="complete", end_reason="candidate_found")
+        assert action.kind in allowed_actions
+        return SubagentDecisionResult(action=action)
 
 
 @pytest.mark.asyncio
@@ -148,6 +185,43 @@ async def test_main_agent_reuses_structured_session_context_on_next_turn(
     assert constraints.platforms.value == ["jd"]
     assert constraints.colors.value == ["白色"]
     assert fakes["retrieval"].calls == 2
+
+
+@pytest.mark.asyncio
+async def test_research_subagent_changes_query_and_parent_revalidates_results(
+    deps_factory: Any,
+) -> None:
+    settings = replace(
+        Settings(),
+        execution_mode="main_with_subagents",
+        main_agent_model="fake-main",
+        research_subagent_enabled=True,
+    )
+    deps, fakes = deps_factory(settings)
+    main_decision = ResearchingMainDecision()
+    research_decision = ResearchDecision()
+    deps.agent_decision = main_decision
+    deps.research_decision = research_decision
+    fakes["retrieval"].sequence = [
+        RetrievalResult(candidates=[], total_found=0),
+        two_candidate_result(),
+    ]
+
+    facade = AgentFacade(deps)
+    response = await facade.run(
+        AgentRequest(session_id="research", request_id="complex", text="索尼耳机")
+    )
+
+    assert response.status is AgentStatus.SUCCESS
+    assert research_decision.calls == 2
+    assert fakes["retrieval"].calls == 2
+    assert fakes["retrieval"].last_query is not None
+    assert fakes["retrieval"].last_query.query_text == "WH-1000XM5 降噪耳机"
+    assert facade._main_runtime is not None
+    result = facade._main_runtime._local_states[("research", "complex")].subagent_results[0]
+    assert result.queries == ["WH-1000XM5 降噪耳机"]
+    assert result.evidence_ids
+    assert result.facts
 
 
 def test_main_action_is_strict_and_discriminated() -> None:

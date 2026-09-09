@@ -176,6 +176,8 @@ async def _build_agent_facade(
         agent_decision=getattr(base, "agent_decision", None),
         agent_checkpoint=getattr(base, "agent_checkpoint", None),
         offer_details=getattr(base, "offer_details", None),
+        research_decision=getattr(base, "research_decision", None),
+        verification_decision=getattr(base, "verification_decision", None),
         supervisor_planner=getattr(base, "supervisor_planner", None),
         dynamic_schema_inducer=getattr(base, "dynamic_schema_inducer", None),
         dynamic_product_canonicalizer=getattr(base, "dynamic_product_canonicalizer", None),

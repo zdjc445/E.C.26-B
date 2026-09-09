@@ -35,7 +35,11 @@ from shijiajing_agent.domain.taxonomy import Taxonomy
 from shijiajing_agent.errors import ErrorCode, RequestLedgerUnavailableError, SessionConflictError
 from shijiajing_agent.multi_agent.checkpoint import LangGraphMultiAgentCheckpoint
 from shijiajing_agent.multi_agent.supervisor import MultiAgentSupervisor
-from shijiajing_agent.ports.agent_decision import AgentDecisionPort, OfferDetailPort
+from shijiajing_agent.ports.agent_decision import (
+    AgentDecisionPort,
+    OfferDetailPort,
+    SubagentDecisionPort,
+)
 from shijiajing_agent.ports.cache import VersionedCachePort
 from shijiajing_agent.ports.dependencies import SupervisorPlannerPort
 from shijiajing_agent.ports.event_store import EventStorePort
@@ -75,6 +79,8 @@ class AgentDependencies:
     agent_decision: AgentDecisionPort | None = None
     agent_checkpoint: AgentRuntimeCheckpointPort | None = None
     offer_details: OfferDetailPort | None = None
+    research_decision: SubagentDecisionPort | None = None
+    verification_decision: SubagentDecisionPort | None = None
     dynamic_schema_inducer: DynamicSchemaInductionPort | None = None
     dynamic_product_canonicalizer: DynamicProductCanonicalizationPort | None = None
 

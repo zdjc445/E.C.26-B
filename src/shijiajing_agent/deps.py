@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from shijiajing_agent.adapters.ark_agent_decision import ArkAgentDecision
+from shijiajing_agent.adapters.ark_agent_decision import ArkAgentDecision, ArkSubagentDecision
 from shijiajing_agent.adapters.ark_models import (
     ArkDynamicProductCanonicalizer,
     ArkDynamicSchemaInducer,
@@ -106,6 +106,8 @@ def make_deps(
         supervisor_planner = ArkSupervisorPlanner(client, taxonomy, settings)
 
     agent_decision = None
+    research_decision = None
+    verification_decision = None
     if settings.execution_mode != "workflow":
         client = getattr(vision, "client", None)
         if client is None:
@@ -113,6 +115,12 @@ def make_deps(
         if not settings.main_agent_model:
             raise ValueError("主 Agent 配置缺失：SHIJIAJING_MAIN_AGENT_MODEL")
         agent_decision = ArkAgentDecision(client, settings.main_agent_model)
+        subagent_model = settings.subagent_model_effective
+        if settings.execution_mode == "main_with_subagents" and subagent_model:
+            if settings.research_subagent_enabled:
+                research_decision = ArkSubagentDecision(client, subagent_model, "research")
+            if settings.verification_subagent_enabled:
+                verification_decision = ArkSubagentDecision(client, subagent_model, "verification")
 
     retrieval = make_retrieval(settings, metrics=metrics)
     if resource_registrar is not None:
@@ -130,6 +138,8 @@ def make_deps(
         metrics=metrics,
         supervisor_planner=supervisor_planner,
         agent_decision=agent_decision,
+        research_decision=research_decision,
+        verification_decision=verification_decision,
         dynamic_schema_inducer=dynamic_schema_inducer,
         dynamic_product_canonicalizer=dynamic_product_canonicalizer,
     )

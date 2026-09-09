@@ -241,6 +241,74 @@ class SubagentBudget(BaseModel):
     max_tokens: int = Field(default=20_000, ge=1, le=500_000)
 
 
+class SubagentActionKind(StrEnum):
+    SEARCH_ONCE = "search_once"
+    INSPECT_EVIDENCE = "inspect_evidence"
+    COMPARE_CANDIDATES = "compare_candidates"
+    GET_OFFER_DETAILS = "get_offer_details"
+    FINISH = "finish"
+    NEEDS_USER_INPUT = "needs_user_input"
+
+
+class SubagentSearchAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal[SubagentActionKind.SEARCH_ONCE] = SubagentActionKind.SEARCH_ONCE
+    query_text: str = Field(default="", max_length=1000)
+    soft_terms: list[str] = Field(default_factory=list[str], max_length=20)
+    reason_code: str = Field(default="close_gap", pattern=_CODE)
+
+
+class SubagentInspectEvidenceAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal[SubagentActionKind.INSPECT_EVIDENCE] = SubagentActionKind.INSPECT_EVIDENCE
+    evidence_ids: list[str] = Field(min_length=1, max_length=50)
+    fields: list[str] = Field(default_factory=list[str], max_length=20)
+
+
+class SubagentCompareCandidatesAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal[SubagentActionKind.COMPARE_CANDIDATES] = SubagentActionKind.COMPARE_CANDIDATES
+    candidate_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+class SubagentGetOfferDetailsAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal[SubagentActionKind.GET_OFFER_DETAILS] = SubagentActionKind.GET_OFFER_DETAILS
+    candidate_ids: list[str] = Field(min_length=1, max_length=20)
+    fields: list[str] = Field(min_length=1, max_length=20)
+
+
+class SubagentFinishAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal[SubagentActionKind.FINISH] = SubagentActionKind.FINISH
+    status: Literal["complete", "partial", "failed"] = "complete"
+    end_reason: str = Field(default="goal_satisfied", max_length=128, pattern=_CODE)
+
+
+class SubagentNeedsUserInputAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal[SubagentActionKind.NEEDS_USER_INPUT] = SubagentActionKind.NEEDS_USER_INPUT
+    unresolved_fields: list[str] = Field(min_length=1, max_length=20)
+    end_reason: str = Field(default="needs_user_input", max_length=128, pattern=_CODE)
+
+
+SubagentAction = Annotated[
+    SubagentSearchAction
+    | SubagentInspectEvidenceAction
+    | SubagentCompareCandidatesAction
+    | SubagentGetOfferDetailsAction
+    | SubagentFinishAction
+    | SubagentNeedsUserInputAction,
+    Field(discriminator="kind"),
+]
+
+
 class SubagentTask(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -253,9 +321,39 @@ class SubagentTask(BaseModel):
     evidence_version: int = Field(ge=0)
     constraints_ref: str = Field(min_length=1, max_length=128)
     allowed_evidence_ids: list[str] = Field(default_factory=list[str], max_length=50)
-    allowed_tools: list[str] = Field(min_length=1, max_length=3)
+    allowed_tools: list[str] = Field(min_length=1, max_length=4)
     budget: SubagentBudget = Field(default_factory=SubagentBudget)
     deadline_at: str = Field(min_length=1, max_length=64)
+
+
+class SubagentObservation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str = Field(min_length=1, max_length=128)
+    role: SubagentRole
+    objective: str = Field(min_length=1, max_length=1000)
+    constraints: ShoppingConstraints
+    constraints_version: int = Field(ge=1)
+    evidence_version: int = Field(ge=0)
+    candidate_summary: list[dict[str, Any]] = Field(
+        default_factory=list[dict[str, Any]], max_length=20
+    )
+    evidence_ids: list[str] = Field(default_factory=list[str], max_length=50)
+    queries: list[str] = Field(default_factory=list[str], max_length=10)
+    gaps: list[str] = Field(default_factory=list[str], max_length=20)
+    conflicts: list[str] = Field(default_factory=list[str], max_length=20)
+    available_actions: list[SubagentActionKind] = Field(min_length=1, max_length=6)
+    usage: AgentRuntimeUsage = Field(default_factory=AgentRuntimeUsage)
+    remaining_budget: SubagentBudget
+
+
+class SubagentDecisionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: SubagentAction
+    usage: AgentRuntimeUsage = Field(default_factory=lambda: AgentRuntimeUsage(decisions=1))
+    model: str | None = Field(default=None, max_length=128)
+    prompt_version: str | None = Field(default=None, max_length=128)
 
 
 class VerifiedFact(BaseModel):
@@ -396,9 +494,19 @@ __all__ = [
     "RuntimeBudget",
     "RuntimeSessionSnapshot",
     "SearchAndCompareAction",
+    "SubagentAction",
+    "SubagentActionKind",
     "SubagentBudget",
+    "SubagentCompareCandidatesAction",
+    "SubagentDecisionResult",
+    "SubagentFinishAction",
+    "SubagentGetOfferDetailsAction",
+    "SubagentInspectEvidenceAction",
+    "SubagentNeedsUserInputAction",
+    "SubagentObservation",
     "SubagentResult",
     "SubagentRole",
+    "SubagentSearchAction",
     "SubagentStatus",
     "SubagentTask",
     "ToolObservation",

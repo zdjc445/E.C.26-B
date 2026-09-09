@@ -8,6 +8,9 @@ from shijiajing_agent.agent_runtime.contracts import (
     ActionKind,
     DecisionObservation,
     DecisionResult,
+    SubagentActionKind,
+    SubagentDecisionResult,
+    SubagentObservation,
 )
 from shijiajing_agent.contracts import Offer
 
@@ -28,4 +31,14 @@ class OfferDetailPort(Protocol):
     async def get_details(self, offer_ids: list[str], fields: list[str]) -> list[Offer]: ...
 
 
-__all__ = ["AgentDecisionPort", "OfferDetailPort"]
+class SubagentDecisionPort(Protocol):
+    """子 Agent 决策端口；它只能在自己的有限动作目录中选择。"""
+
+    async def decide(
+        self,
+        observation: SubagentObservation,
+        allowed_actions: tuple[SubagentActionKind, ...],
+    ) -> SubagentDecisionResult: ...
+
+
+__all__ = ["AgentDecisionPort", "OfferDetailPort", "SubagentDecisionPort"]

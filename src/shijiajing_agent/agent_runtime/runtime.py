@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from time import perf_counter
 from typing import Any, cast
 
@@ -23,6 +24,11 @@ from shijiajing_agent.agent_runtime.contracts import (
     RuntimeBudget,
     RuntimeSessionSnapshot,
     SearchAndCompareAction,
+    SubagentBudget,
+    SubagentResult,
+    SubagentRole,
+    SubagentStatus,
+    SubagentTask,
     ToolObservation,
 )
 from shijiajing_agent.agent_runtime.main_agent import MainAgent
@@ -33,6 +39,7 @@ from shijiajing_agent.agent_runtime.policy import (
     allowed_actions_for,
     observation_for,
 )
+from shijiajing_agent.agent_runtime.subagents.research import ResearchSubagent
 from shijiajing_agent.contracts import (
     AgentExecutionContext,
     AgentInterrupt,
@@ -132,9 +139,17 @@ class MainAgentRuntime:
         self._answer = AnswerService(self._evidence, deps.explanation)
         self._memory = MemoryService(getattr(deps, "memory", None), deps.taxonomy)
         self._main_agent = MainAgent(self._decision_port)
+        research_decision = getattr(deps, "research_decision", None)
+        self._research = (
+            ResearchSubagent(research_decision, self._retrieval, self._evidence)
+            if research_decision is not None
+            else None
+        )
         self._guard = ActionGuard(
             DelegationPolicy(
-                research_enabled=deps.settings.research_subagent_enabled,
+                research_enabled=(
+                    deps.settings.research_subagent_enabled and self._research is not None
+                ),
                 verification_enabled=deps.settings.verification_subagent_enabled,
                 offer_details=getattr(deps, "offer_details", None),
             )
@@ -208,8 +223,11 @@ class MainAgentRuntime:
                 )
             allowed = allowed_actions_for(
                 state,
-                research_enabled=self._settings.execution_mode == "main_with_subagents"
-                and self._settings.research_subagent_enabled,
+                research_enabled=(
+                    self._settings.execution_mode == "main_with_subagents"
+                    and self._settings.research_subagent_enabled
+                    and self._research is not None
+                ),
                 verification_enabled=self._settings.execution_mode == "main_with_subagents"
                 and self._settings.verification_subagent_enabled,
             )
@@ -583,6 +601,53 @@ class MainAgentRuntime:
                 usage=AgentRuntimeUsage(tool_calls=1),
             )
             return observation, None, None
+        from shijiajing_agent.agent_runtime.contracts import DelegateResearchAction
+
+        if isinstance(action, DelegateResearchAction):
+            if self._research is None:
+                raise ActionRejectedError("research_decision 未装配")
+            ledger = BudgetLedger.start(state.budget, state.usage)
+            if not ledger.can_subagent():
+                raise BudgetExceededError("subagent 启动次数超限")
+            child_budget = ledger.child_budget(
+                SubagentBudget(
+                    max_decisions=self._settings.subagent_max_decisions,
+                    max_tool_calls=self._settings.subagent_max_tool_calls,
+                    max_seconds=self._settings.subagent_max_seconds,
+                    max_tokens=self._settings.subagent_max_tokens,
+                )
+            )
+            state.usage = state.usage.add(AgentRuntimeUsage(subagent_starts=1))
+            parent_action_id = state.actions[-1].action_id if state.actions else "main-action"
+            task = SubagentTask(
+                task_id=self._subagent_task_id(state, action),
+                parent_action_id=parent_action_id,
+                role=SubagentRole.RESEARCH,
+                objective=action.objective,
+                constraints=state.understanding.constraints.model_copy(deep=True)
+                if state.understanding.constraints is not None
+                else ShoppingConstraints(),
+                constraints_version=state.constraints_version,
+                evidence_version=state.evidence_version,
+                constraints_ref=f"constraints-v{state.constraints_version}",
+                allowed_evidence_ids=list(state.evidence)[:50],
+                allowed_tools=["search_once", "inspect_evidence", "compare_candidates"],
+                budget=child_budget,
+                deadline_at=(
+                    datetime.now(UTC) + timedelta(seconds=child_budget.max_seconds)
+                ).isoformat(),
+            )
+            outcome = await self._research.run(
+                task,
+                existing_candidates=state.last_candidates,
+                existing_evidence=state.evidence,
+                recognition=state.understanding.recognition,
+                image=state.current_request.image,
+            )
+            observation = await self._merge_research_result(
+                state, outcome.result, outcome.candidates
+            )
+            return observation, None, None
         if isinstance(action, AnswerAction):
             response = await self._answer_response(
                 state,
@@ -613,6 +678,76 @@ class MainAgentRuntime:
             )
             return None, response, None
         raise ActionRejectedError("subagent 尚未在当前执行模式启用")
+
+    def _subagent_task_id(self, state: MainRuntimeState, action: MainAction) -> str:
+        digest = content_hash(
+            {
+                "session_id": state.session_id,
+                "request_id": state.request_id,
+                "kind": action.kind.value,
+                "objective": getattr(action, "objective", ""),
+            }
+        )[:24]
+        return f"research:{digest}"
+
+    async def _merge_research_result(
+        self,
+        state: MainRuntimeState,
+        result: SubagentResult,
+        candidates: list[Any],
+    ) -> ToolObservation:
+        """把子结果当作不可信输入：版本、任务和证据引用全部重验。"""
+        if result.role is not SubagentRole.RESEARCH:
+            raise ActionRejectedError("子结果 role 不匹配")
+        if result.parent_action_id != (state.actions[-1].action_id if state.actions else ""):
+            raise ActionRejectedError("子结果 parent_action_id 不匹配")
+        if result.constraints_version != state.constraints_version:
+            raise ActionRejectedError("子结果 constraints_version 已过期")
+        if any(item.offer.offer_id not in result.candidate_ids for item in candidates):
+            raise ActionRejectedError("子结果返回了未声明的 candidate_id")
+        merged = {item.offer.offer_id: item for item in state.last_candidates}
+        merged.update({item.offer.offer_id: item for item in candidates})
+        if any(item not in merged for item in result.candidate_ids):
+            raise ActionRejectedError("子结果引用了不存在的 candidate_id")
+        constraints = state.understanding.constraints
+        if constraints is None:
+            raise ActionRejectedError("缺少当前约束，不能归并 Research 结果")
+        compared = await self._retrieval.comparison.compare_candidates(
+            list(merged.values()), constraints
+        )
+        records = self._evidence.register(compared.ranked_groups)
+        new_records = [item for item in records if item.evidence_id not in state.evidence]
+        state.evidence.update({item.evidence_id: item for item in new_records})
+        if new_records:
+            state.evidence_version += 1
+        if any(item not in state.evidence for item in result.evidence_ids):
+            raise ActionRejectedError("子结果引用了未注册的 evidence_id")
+        state.last_candidates = list(merged.values())
+        state.ranked_groups = compared.ranked_groups
+        state.subagent_results.append(result)
+        state.gaps = list(result.unresolved_fields)
+        if not state.gaps and not state.ranked_groups:
+            state.gaps = ["no_qualified_candidates"]
+        state.conflicts = [risk for group in state.ranked_groups for risk in group.group.risks]
+        if result.status is SubagentStatus.NEEDS_USER_INPUT:
+            status = "fallback"
+        elif result.status is SubagentStatus.FAILED:
+            status = "failed"
+        elif not state.ranked_groups:
+            status = "no_results"
+        else:
+            status = "success" if result.status is SubagentStatus.COMPLETE else "fallback"
+        return ToolObservation(
+            status=status,
+            result_refs=[group.group.group_id for group in state.ranked_groups],
+            new_evidence_ids=[item.evidence_id for item in new_records],
+            gaps=list(state.gaps),
+            conflicts=list(state.conflicts),
+            fallback_reason=result.end_reason if status == "fallback" else None,
+            constraints_version=state.constraints_version,
+            evidence_version=state.evidence_version,
+            usage=result.usage,
+        )
 
     async def _answer_response(
         self,
