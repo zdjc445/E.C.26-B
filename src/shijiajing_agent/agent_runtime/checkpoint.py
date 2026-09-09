@@ -34,15 +34,15 @@ class AgentRuntimeCheckpointPort(Protocol):
 
 
 def request_namespace(session_id: str, request_id: str) -> str:
-    return f"agent-runtime-v1/{session_id}/{request_id}/main"
+    return f"agent-runtime-v2/{session_id}/{request_id}/main"
 
 
 def session_namespace(session_id: str) -> str:
-    return f"agent-runtime-v1/{session_id}/session"
+    return f"agent-runtime-v2/{session_id}/session"
 
 
 def subagent_namespace(session_id: str, request_id: str, task_id: str) -> str:
-    return f"agent-runtime-v1/{session_id}/{request_id}/subagents/{task_id}"
+    return f"agent-runtime-v2/{session_id}/{request_id}/subagents/{task_id}"
 
 
 class InMemoryAgentRuntimeCheckpoint:
@@ -164,7 +164,7 @@ class LangGraphAgentRuntimeCheckpoint:
         await self._save(namespace, self._STATE_KEY, state, version)
         if state.active_interrupt is not None:
             await self._save(
-                f"agent-runtime-v1/{state.session_id}/__active__",
+                f"agent-runtime-v2/{state.session_id}/__active__",
                 self._ACTIVE_KEY,
                 {"namespace": namespace},
                 version,
@@ -173,7 +173,7 @@ class LangGraphAgentRuntimeCheckpoint:
             # 清理旧的 active marker；保留一个显式空值比依赖 marker 的历史
             # checkpoint 被删除更容易兼容不同 LangGraph saver 实现。
             await self._save(
-                f"agent-runtime-v1/{state.session_id}/__active__",
+                f"agent-runtime-v2/{state.session_id}/__active__",
                 self._ACTIVE_KEY,
                 {"namespace": None},
                 version,
@@ -181,7 +181,7 @@ class LangGraphAgentRuntimeCheckpoint:
         return version
 
     async def load_active(self, session_id: str) -> tuple[str, MainRuntimeState, int] | None:
-        loaded = await self._load(f"agent-runtime-v1/{session_id}/__active__", self._ACTIVE_KEY)
+        loaded = await self._load(f"agent-runtime-v2/{session_id}/__active__", self._ACTIVE_KEY)
         if loaded is None or not isinstance(loaded[0], dict):
             return None
         active_value = cast(dict[str, Any], loaded[0])

@@ -28,6 +28,7 @@ _CODE = r"^[a-z][a-z0-9_.-]{0,63}$"
 
 class ActionKind(StrEnum):
     SEARCH_AND_COMPARE = "search_and_compare"
+    SUPPLEMENT_SEARCH = "supplement_search"
     INSPECT_EVIDENCE = "inspect_evidence"
     DELEGATE_RESEARCH = "delegate_research"
     DELEGATE_VERIFICATION = "delegate_verification"
@@ -95,6 +96,20 @@ class RuntimeBudget(BaseModel):
     max_seconds: float = Field(default=60.0, gt=0, le=3600)
 
 
+class RuntimeBudgetRemaining(BaseModel):
+    """主请求可消费的剩余预算快照；耗尽后的计数允许为 0。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_decisions: int = Field(default=0, ge=0, le=100)
+    max_tool_calls: int = Field(default=0, ge=0, le=200)
+    max_retrieval_calls: int = Field(default=0, ge=0, le=100)
+    max_model_calls: int = Field(default=0, ge=0, le=200)
+    max_tokens: int = Field(default=0, ge=0, le=2_000_000)
+    max_subagent_starts: int = Field(default=0, ge=0, le=20)
+    max_seconds: float = Field(default=0.0, ge=0, le=3600)
+
+
 class SearchAndCompareAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -104,13 +119,39 @@ class SearchAndCompareAction(BaseModel):
     reason_code: str = Field(default="close_gap", pattern=_CODE)
 
 
+class SupplementQueryProposal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=1000)
+    assumptions: list[str] = Field(default_factory=list[str], max_length=10)
+    evidence_refs: list[str] = Field(default_factory=list[str], max_length=20)
+
+
+class SupplementSearchAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal[ActionKind.SUPPLEMENT_SEARCH] = ActionKind.SUPPLEMENT_SEARCH
+    gap_id: str = Field(min_length=1, max_length=64, pattern=_CODE)
+    query_proposals: list[SupplementQueryProposal] = Field(min_length=1, max_length=3)
+    reason_code: str = Field(default="close_gap", pattern=_CODE)
+
+
 class InspectEvidenceAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal[ActionKind.INSPECT_EVIDENCE] = ActionKind.INSPECT_EVIDENCE
-    evidence_ids: list[str] = Field(min_length=1, max_length=20)
+    evidence_ids: list[str] = Field(default_factory=list[str], max_length=20)
+    candidate_ids: list[str] = Field(default_factory=list[str], max_length=20)
     fields: list[str] = Field(default_factory=list[str], max_length=20)
     reason_code: str = Field(default="inspect_gap", pattern=_CODE)
+
+    @model_validator(mode="after")
+    def _has_reference(self) -> InspectEvidenceAction:
+        if not self.evidence_ids and not self.candidate_ids:
+            raise ValueError("inspect_evidence 至少需要一个 evidence_id 或 candidate_id")
+        if len(self.evidence_ids) + len(self.candidate_ids) > 20:
+            raise ValueError("inspect_evidence 引用总数不能超过 20")
+        return self
 
 
 class DelegateResearchAction(BaseModel):
@@ -163,6 +204,7 @@ class FinishNoResultsAction(BaseModel):
 
 MainAction = Annotated[
     SearchAndCompareAction
+    | SupplementSearchAction
     | InspectEvidenceAction
     | DelegateResearchAction
     | DelegateVerificationAction
@@ -189,9 +231,9 @@ class DecisionObservation(BaseModel):
     retrieval_assessment: dict[str, Any] | None = None
     gaps: list[str] = Field(default_factory=list[str], max_length=20)
     conflicts: list[str] = Field(default_factory=list[str], max_length=20)
-    available_actions: list[ActionKind] = Field(min_length=1, max_length=7)
+    available_actions: list[ActionKind] = Field(min_length=1, max_length=8)
     usage: AgentRuntimeUsage = Field(default_factory=AgentRuntimeUsage)
-    remaining_budget: RuntimeBudget = Field(default_factory=RuntimeBudget)
+    remaining_budget: RuntimeBudgetRemaining = Field(default_factory=RuntimeBudgetRemaining)
 
 
 class DecisionResult(BaseModel):
@@ -379,6 +421,7 @@ class SubagentResult(BaseModel):
     status: SubagentStatus
     candidate_ids: list[str] = Field(default_factory=list[str], max_length=50)
     queries: list[str] = Field(default_factory=list[str], max_length=10)
+    query_fingerprints: list[str] = Field(default_factory=list[str], max_length=20)
     facts: list[VerifiedFact] = Field(default_factory=list[VerifiedFact], max_length=100)
     evidence_ids: list[str] = Field(default_factory=list[str], max_length=100)
     unresolved_fields: list[str] = Field(default_factory=list[str], max_length=20)
@@ -435,7 +478,7 @@ class RuntimeSessionSnapshot(BaseModel):
 class MainRuntimeState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["agent-runtime-v1"] = "agent-runtime-v1"
+    schema_version: Literal["agent-runtime-v2"] = "agent-runtime-v2"
     session_id: str = Field(min_length=1, max_length=128)
     request_id: str = Field(min_length=1, max_length=128)
     turn_id: str = Field(min_length=1, max_length=128)
@@ -443,6 +486,7 @@ class MainRuntimeState(BaseModel):
     engine_version: str = Field(min_length=1, max_length=64)
     current_request: AgentRequest
     context: dict[str, Any] = Field(default_factory=dict[str, Any])
+    rag_state_version: int = Field(default=1, ge=1)
     understanding: CanonicalUnderstanding = Field(default_factory=CanonicalUnderstanding)
     constraints_version: int = Field(default=1, ge=1)
     evidence_version: int = Field(default=0, ge=0)
@@ -458,11 +502,18 @@ class MainRuntimeState(BaseModel):
     gaps: list[str] = Field(default_factory=list[str], max_length=20)
     conflicts: list[str] = Field(default_factory=list[str], max_length=20)
     seen_fingerprints: list[str] = Field(default_factory=list[str], max_length=100)
+    query_fingerprints: list[str] = Field(default_factory=list[str], max_length=100)
     no_progress_count: int = Field(default=0, ge=0)
     ranked_groups: list[RankedGroup] = Field(default_factory=list[RankedGroup], max_length=100)
     retrieval_assessment: dict[str, Any] | None = None
-    last_candidates: list[RetrievalCandidate] = Field(
+    supplement_stage_used: bool = False
+    supplement_query_fingerprints: list[str] = Field(default_factory=list[str], max_length=100)
+    supplement_no_progress_count: int = Field(default=0, ge=0, le=2)
+    recall_pool: list[RetrievalCandidate] = Field(
         default_factory=list[RetrievalCandidate], max_length=200
+    )
+    last_candidates: list[RetrievalCandidate] = Field(
+        default_factory=list[RetrievalCandidate], max_length=60
     )
     pending_mutations: list[MemoryMutation] = Field(
         default_factory=list[MemoryMutation], max_length=20
@@ -496,6 +547,7 @@ __all__ = [
     "MainAction",
     "MainRuntimeState",
     "RuntimeBudget",
+    "RuntimeBudgetRemaining",
     "RuntimeSessionSnapshot",
     "SearchAndCompareAction",
     "SubagentAction",
@@ -513,6 +565,8 @@ __all__ = [
     "SubagentSearchAction",
     "SubagentStatus",
     "SubagentTask",
+    "SupplementQueryProposal",
+    "SupplementSearchAction",
     "ToolObservation",
     "VerifiedFact",
 ]

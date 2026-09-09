@@ -83,6 +83,7 @@ class RetrievalService:
         constraints: ShoppingConstraints,
         *,
         recognition: RecognitionResult | None = None,
+        image_sha256: str | None = None,
         soft_terms: list[str] | None = None,
         max_queries: int | None = None,
         source: QuerySource = QuerySource.ORIGINAL,
@@ -120,12 +121,15 @@ class RetrievalService:
                 negative_terms=primary_negative,
                 constraints_version=constraints_version,
                 source=source,
+                image_sha256=image_sha256,
             )
         ]
+        seen_texts = {prepared[0].text}
         for item in variant_texts:
-            text = item.text.strip()
-            if not text or text == prepared[0].text:
+            text = _normalize_query_text(item.text)
+            if not text or text in seen_texts:
                 continue
+            seen_texts.add(text)
             prepared.append(
                 self._prepared_query(
                     text,
@@ -138,6 +142,7 @@ class RetrievalService:
                         if source is QuerySource.SUPPLEMENT
                         else QuerySource.INITIAL_EXPANSION
                     ),
+                    image_sha256=image_sha256,
                 )
             )
             if len(prepared) >= limit:
@@ -151,6 +156,45 @@ class RetrievalService:
             ),
             usage,
         )
+
+    def prepare_explicit_queries(
+        self,
+        query_texts: list[str],
+        constraints: ShoppingConstraints,
+        *,
+        constraints_version: int,
+        source: QuerySource = QuerySource.SUPPLEMENT,
+        assumptions_by_query: list[list[str]] | None = None,
+        evidence_refs_by_query: list[list[str]] | None = None,
+        image_sha256: str | None = None,
+    ) -> list[PreparedQuery]:
+        """把主 Agent 已批准的补查文本转成查询身份，不再触发二次改写。"""
+        hard_filters = HardFilterBuilder().build(constraints)
+        prepared: list[PreparedQuery] = []
+        seen: set[str] = set()
+        for index, raw_text in enumerate(query_texts):
+            text = _normalize_query_text(raw_text)
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            prepared.append(
+                self._prepared_query(
+                    text,
+                    hard_filters=hard_filters,
+                    soft_terms=[],
+                    negative_terms=[],
+                    constraints_version=constraints_version,
+                    source=source,
+                    assumptions=(assumptions_by_query or [])[index]
+                    if assumptions_by_query is not None and index < len(assumptions_by_query)
+                    else [],
+                    evidence_refs=(evidence_refs_by_query or [])[index]
+                    if evidence_refs_by_query is not None and index < len(evidence_refs_by_query)
+                    else [],
+                    image_sha256=image_sha256,
+                )
+            )
+        return prepared
 
     async def execute_prepared_query(
         self,
@@ -230,13 +274,72 @@ class RetrievalService:
         """用有界并发执行已批准查询；查询文本不再触发二次 rewrite。"""
         semaphore = asyncio.Semaphore(self._query_concurrency)
 
-        async def run(item: PreparedQuery) -> SearchOnceResult:
+        async def run(index: int, item: PreparedQuery) -> SearchOnceResult:
             async with semaphore:
                 return await self.execute_prepared_query(
-                    item, image=image, top_k=top_k, union_limit=union_limit
+                    item,
+                    image=image if index == 0 else None,
+                    top_k=top_k,
+                    union_limit=union_limit,
                 )
 
-        return list(await asyncio.gather(*(run(item) for item in prepared)))
+        return list(
+            await asyncio.gather(*(run(index, item) for index, item in enumerate(prepared)))
+        )
+
+    def merge_prepared_query_results(
+        self,
+        prepared: list[PreparedQuery],
+        results: list[SearchOnceResult],
+        *,
+        union_limit: int | None = None,
+    ) -> RetrievalResult:
+        """融合一批已执行查询；调用方可把结果与既有召回池再合并。"""
+        if len(prepared) != len(results):
+            raise ValueError("prepared query 与检索结果数量不一致")
+        return self._merge_retrieval_results(
+            prepared,
+            results,
+            union_limit=union_limit or self._union_limit,
+        )
+
+    @staticmethod
+    def merge_candidate_pools(
+        existing: list[RetrievalCandidate],
+        incoming: list[RetrievalCandidate],
+        *,
+        union_limit: int = 200,
+    ) -> list[RetrievalCandidate]:
+        """按 Offer 身份合并阶段召回池，保留同一 Offer 的最佳已观测分数。"""
+        merged: dict[str, RetrievalCandidate] = {}
+        for candidate in [*existing, *incoming]:
+            offer_id = candidate.offer.offer_id
+            previous = merged.get(offer_id)
+            if previous is None:
+                merged[offer_id] = candidate
+                continue
+            merged[offer_id] = previous.model_copy(
+                update={
+                    "dense_text_score": _max_optional(
+                        previous.dense_text_score, candidate.dense_text_score
+                    ),
+                    "sparse_score": _max_optional(previous.sparse_score, candidate.sparse_score),
+                    "image_similarity": _max_optional(
+                        previous.image_similarity, candidate.image_similarity
+                    ),
+                    "metadata_match": max(previous.metadata_match, candidate.metadata_match),
+                    "recall_score": max(previous.recall_score, candidate.recall_score),
+                    "rerank_score": _max_optional(previous.rerank_score, candidate.rerank_score),
+                    "channel_sources": list(
+                        dict.fromkeys([*previous.channel_sources, *candidate.channel_sources])
+                    ),
+                    "query_ids": list(dict.fromkeys([*previous.query_ids, *candidate.query_ids])),
+                }
+            )
+        ordered = sorted(
+            merged.values(), key=lambda item: (-item.recall_score, item.offer.offer_id)
+        )
+        return ordered[: max(1, union_limit)]
 
     async def search_once(
         self,
@@ -249,12 +352,15 @@ class RetrievalService:
         top_k: int | None = None,
         union_limit: int | None = None,
         constraints_version: int = 1,
+        max_queries: int | None = None,
     ) -> SearchOnceResult:
         plan, plan_usage = await self.prepare_queries(
             query_text,
             constraints,
             recognition=recognition,
+            image_sha256=image.sha256 if image is not None else None,
             soft_terms=soft_terms,
+            max_queries=max_queries,
             constraints_version=constraints_version,
         )
         prepared = [plan.original_query, *plan.variants]
@@ -307,14 +413,18 @@ class RetrievalService:
         negative_terms: list[str],
         constraints_version: int,
         source: QuerySource,
+        assumptions: list[str] | None = None,
+        evidence_refs: list[str] | None = None,
+        image_sha256: str | None = None,
     ) -> PreparedQuery:
         fingerprint_payload = {
-            "text": text,
+            "text": _normalize_query_text(text),
             "hard_filters": hard_filters.model_dump(mode="json"),
             "soft_terms": soft_terms,
             "negative_terms": negative_terms,
             "constraints_version": constraints_version,
-            "source": source.value,
+            "image_sha256": image_sha256,
+            "retrieval_version": "best-query-channel-rrf-v1",
         }
         fingerprint = hashlib.sha256(
             json.dumps(
@@ -324,12 +434,14 @@ class RetrievalService:
         query_id = f"q:{fingerprint[:24]}"
         return PreparedQuery(
             query_id=query_id,
-            text=text,
+            text=_normalize_query_text(text),
             hard_filters=hard_filters,
             soft_terms=soft_terms,
             negative_terms=negative_terms,
             constraints_version=constraints_version,
             source=source,
+            assumptions=list(assumptions or []),
+            evidence_refs=list(evidence_refs or []),
             fingerprint=fingerprint,
         )
 
@@ -461,6 +573,19 @@ def _aggregate_channel_status(statuses: list[ChannelStatus]) -> ChannelStatus:
 
 def _unique_strings(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
+
+
+def _normalize_query_text(value: str) -> str:
+    """只折叠空白，不删除型号标点或否定语义。"""
+    return " ".join(value.strip().split())
+
+
+def _max_optional(left: float | None, right: float | None) -> float | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return max(left, right)
 
 
 __all__ = ["RetrievalService", "SearchAndCompareResult", "SearchOnceResult"]

@@ -122,7 +122,7 @@ class EvidenceService:
                         for field in (fields or [])
                         if not any(field in item.fields for item in selected)
                     ],
-                    allowed_facts=facts,
+                    allowed_facts=facts[:100],
                 )
             )
         return EvidenceInspection(records=records, reports=reports, invalid_ids=invalid)
@@ -166,7 +166,7 @@ class EvidenceService:
                     evidence_ids=evidence_ids,
                     missing_fields=missing + list(group.missing_sku_attributes),
                     conflict_fields=list(group.risks),
-                    allowed_facts=facts,
+                    allowed_facts=facts[:100],
                 )
             )
         return reports

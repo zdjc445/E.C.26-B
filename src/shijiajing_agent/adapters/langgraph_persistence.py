@@ -93,7 +93,7 @@ _CONTRACT_NAMES = (
     "AgentEventRecord",
 )
 _RUNTIME_CONTRACT_NAMES = (
-    # agent-runtime-v1 内部契约；显式 allowlist，禁止 serializer 回退到 pickle。
+    # agent-runtime-v2 内部契约；显式 allowlist，禁止 serializer 回退到 pickle。
     "ActionKind",
     "ActionStatus",
     "SubagentRole",
@@ -109,6 +109,8 @@ _RUNTIME_CONTRACT_NAMES = (
     "SubagentFinishAction",
     "SubagentNeedsUserInputAction",
     "SearchAndCompareAction",
+    "SupplementQueryProposal",
+    "SupplementSearchAction",
     "InspectEvidenceAction",
     "DelegateResearchAction",
     "DelegateVerificationAction",

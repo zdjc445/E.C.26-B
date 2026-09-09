@@ -30,6 +30,7 @@ from shijiajing_agent.agent_runtime.contracts import (
     SubagentRole,
     SubagentStatus,
     SubagentTask,
+    SupplementSearchAction,
     ToolObservation,
 )
 from shijiajing_agent.agent_runtime.main_agent import MainAgent
@@ -58,12 +59,15 @@ from shijiajing_agent.contracts import (
     InterruptKind,
     MemoryConfirmationResume,
     RecognitionReviewResume,
+    RetrievalCandidate,
     SameItemReviewResume,
     ShoppingConstraints,
     content_hash,
     now_iso,
 )
+from shijiajing_agent.domain.candidate_selection import select_candidate_window
 from shijiajing_agent.domain.constraints import ConstraintMerger
+from shijiajing_agent.domain.filters import HardFilterBuilder
 from shijiajing_agent.domain.memory_policy import (
     apply_memory_defaults,
     build_memory_query,
@@ -86,10 +90,22 @@ class MainAgentRunResult:
     interrupt: AgentInterrupt | None = None
 
 
+@dataclass(frozen=True)
+class _StagedCandidateEvaluation:
+    recall_pool: list[RetrievalCandidate]
+    window: list[RetrievalCandidate]
+    comparison: Any
+    evidence_records: list[Any]
+    assessment: dict[str, Any] | None
+    gaps: list[str]
+    conflicts: list[str]
+    notices: list[str]
+
+
 class MainAgentRuntime:
     """一个请求只创建一个主 Agent；每次重新决策仍属于同一个 runtime。"""
 
-    engine_version = "main-agent-runtime-v1"
+    engine_version = "main-agent-runtime-v2"
 
     def __init__(
         self,
@@ -148,7 +164,12 @@ class MainAgentRuntime:
         self._main_agent = MainAgent(self._decision_port)
         research_decision = getattr(deps, "research_decision", None)
         self._research = (
-            ResearchSubagent(research_decision, self._retrieval, self._evidence)
+            ResearchSubagent(
+                research_decision,
+                self._retrieval,
+                self._evidence,
+                max_queries=deps.settings.retrieval_supplement_max_queries,
+            )
             if research_decision is not None
             else None
         )
@@ -504,6 +525,11 @@ class MainAgentRuntime:
         )
         application = resolve_memory_application(merged.constraints, memories)
         constraints = apply_memory_defaults(merged.constraints, memories)
+        constraints_changed = (
+            state.understanding.constraints is not None
+            and previous_constraints is not None
+            and constraints != previous_constraints
+        )
         state.understanding = CanonicalUnderstanding(
             recognition=recognition_outcome.recognition,
             intent_patch=intent_outcome.patch,
@@ -511,10 +537,16 @@ class MainAgentRuntime:
             memory_records=memories,
             memory_application=application,
         )
-        if reset_results or state.constraints_version == 1:
-            state.constraints_version = 1
-        elif state.understanding.constraints != previous_constraints:
+        if constraints_changed:
             state.constraints_version += 1
+        if reset_results or constraints_changed:
+            state.supplement_stage_used = False
+            state.supplement_query_fingerprints = []
+            state.supplement_no_progress_count = 0
+        if reset_results:
+            state.recall_pool = []
+        if reset_results or constraints_changed:
+            state.retrieval_assessment = None
         state.gaps = []
         if not constraints.category_id.value:
             state.gaps.append("missing_category")
@@ -560,33 +592,43 @@ class MainAgentRuntime:
                 soft_terms=action.soft_terms,
                 constraints_version=state.constraints_version,
             )
-            previous_ids = {item.offer.offer_id for item in state.last_candidates}
-            current_ids = {item.offer.offer_id for item in result.search.candidates}
-            records = self._evidence.register(result.comparison.ranked_groups)
-            new_records = [item for item in records if item.evidence_id not in state.evidence]
-            state.evidence.update({item.evidence_id: item for item in new_records})
-            if new_records:
-                state.evidence_version += 1
-                state.no_progress_count = 0
-            elif previous_ids and previous_ids == current_ids:
-                state.no_progress_count += 1
-            state.last_candidates = result.search.candidates
-            state.ranked_groups = result.comparison.ranked_groups
-            state.retrieval_assessment = (
-                result.comparison.assessment.model_dump(mode="json")
-                if result.comparison.assessment is not None
-                else None
+            pool = list(result.search.retrieval.candidates or result.search.candidates)
+            prepared_queries = (
+                [result.search.plan.original_query, *result.search.plan.variants]
+                if result.search.plan is not None
+                else []
             )
-            state.gaps = [] if state.ranked_groups else ["no_qualified_candidates"]
-            if result.comparison.assessment is not None:
-                state.gaps.extend(result.comparison.assessment.gaps)
-            if result.comparison.review_pairs:
-                state.gaps.append("same_item_uncertain")
-            state.conflicts = [risk for group in state.ranked_groups for risk in group.group.risks]
-            if result.comparison.notices:
-                state.notices.extend(result.comparison.notices)
-            usage = result.usage.model_copy(
-                update={"tool_calls": max(1, result.usage.tool_calls), "retrieval_calls": 1}
+            staged = await self._stage_candidate_evaluation(
+                pool,
+                constraints,
+                comparison=result.comparison,
+                query_fingerprints=[item.fingerprint for item in prepared_queries],
+                query_assumptions=(
+                    [assumption for item in prepared_queries for assumption in item.assumptions]
+                ),
+                retrieval_metadata={
+                    "channel_health": {
+                        key: value.value
+                        for key, value in result.search.retrieval.channel_health.items()
+                    },
+                    "fallback_used": result.search.retrieval.fallback_used,
+                    "index_version": result.search.retrieval.index_version,
+                },
+                stage="initial",
+            )
+            usage = result.usage.model_copy(update={"tool_calls": max(1, result.usage.tool_calls)})
+            self._ensure_usage_delta(state, usage)
+            previous_ids = {item.offer.offer_id for item in state.recall_pool}
+            new_records = self._commit_staged_evaluation(state, staged)
+            current_ids = {item.offer.offer_id for item in state.recall_pool}
+            if new_records or previous_ids != current_ids:
+                state.no_progress_count = 0
+            elif previous_ids:
+                state.no_progress_count += 1
+            state.query_fingerprints = list(
+                dict.fromkeys(
+                    [*state.query_fingerprints, *[item.fingerprint for item in prepared_queries]]
+                )
             )
             observation = ToolObservation(
                 status=(
@@ -596,8 +638,8 @@ class MainAgentRuntime:
                     if result.comparison.fallback_used or result.search.retrieval.fallback_used
                     else "success"
                 ),
-                result_refs=[group.group.group_id for group in state.ranked_groups],
-                new_evidence_ids=[item.evidence_id for item in new_records],
+                result_refs=[group.group.group_id for group in state.ranked_groups][:50],
+                new_evidence_ids=[item.evidence_id for item in new_records][:50],
                 gaps=list(state.gaps),
                 conflicts=list(state.conflicts),
                 fallback_reason=(
@@ -610,6 +652,143 @@ class MainAgentRuntime:
                 usage=usage,
             )
             return observation, None, None
+        if isinstance(action, SupplementSearchAction):
+            assert constraints is not None
+            max_queries = min(
+                self._settings.retrieval_supplement_max_queries,
+                len(action.query_proposals),
+            )
+            if max_queries < 1:
+                raise ActionRejectedError("补查没有可执行查询")
+            proposals = action.query_proposals[:max_queries]
+            prepared = self._retrieval.prepare_explicit_queries(
+                [item.text for item in proposals],
+                constraints,
+                constraints_version=state.constraints_version,
+                assumptions_by_query=[list(item.assumptions) for item in proposals],
+                evidence_refs_by_query=[list(item.evidence_refs) for item in proposals],
+                image_sha256=(
+                    state.current_request.image.sha256
+                    if state.current_request.image is not None
+                    else None
+                ),
+            )
+            if not prepared:
+                raise ActionRejectedError("补查查询为空或全部重复")
+            expected_filters = HardFilterBuilder().build(constraints)
+            invalid = [
+                item
+                for item in prepared
+                if item.constraints_version != state.constraints_version
+                or item.hard_filters.model_dump(mode="json")
+                != expected_filters.model_dump(mode="json")
+                or item.fingerprint in state.query_fingerprints
+            ]
+            if invalid:
+                raise ActionRejectedError("补查查询重复或未绑定当前硬约束")
+            if len(prepared) > state.budget.max_retrieval_calls - state.usage.retrieval_calls:
+                raise BudgetExceededError("补查查询超过剩余检索预算")
+            results = await self._retrieval.execute_prepared_query_batch(
+                prepared,
+                image=state.current_request.image,
+            )
+            merged_result = self._retrieval.merge_prepared_query_results(prepared, results)
+            incoming = list(merged_result.candidates)
+            previous_pool = list(state.recall_pool or state.last_candidates)
+            merged_pool = self._retrieval.merge_candidate_pools(
+                previous_pool,
+                incoming,
+                union_limit=self._settings.retrieval_union_limit,
+            )
+            staged = await self._stage_candidate_evaluation(
+                merged_pool,
+                constraints,
+                query_fingerprints=[item.fingerprint for item in prepared],
+                query_assumptions=[
+                    assumption for item in prepared for assumption in item.assumptions
+                ],
+                retrieval_metadata={
+                    "channel_health": {
+                        key: value.value for key, value in merged_result.channel_health.items()
+                    },
+                    "fallback_used": merged_result.fallback_used,
+                    "index_version": merged_result.index_version,
+                },
+                stage="supplement",
+            )
+            previous_offer_ids = {item.offer.offer_id for item in previous_pool}
+            incoming_offer_ids = {item.offer.offer_id for item in incoming}
+            new_offer_ids = incoming_offer_ids - previous_offer_ids
+            previous_group_offer_ids = {
+                offer.offer_id for group in state.ranked_groups for offer in group.group.offers
+            }
+            current_group_offer_ids = {
+                offer.offer_id
+                for group in staged.comparison.ranked_groups
+                for offer in group.group.offers
+            }
+            resolved_gaps = set(state.gaps) - set(staged.gaps)
+            progress = bool(
+                (new_offer_ids & current_group_offer_ids)
+                or (current_group_offer_ids - previous_group_offer_ids)
+                or resolved_gaps
+            )
+            if not previous_pool and not incoming:
+                progress = False
+            usage = AgentRuntimeUsage(
+                tool_calls=1,
+                retrieval_calls=sum(item.usage.retrieval_calls for item in results),
+                model_calls=staged.comparison.model_calls,
+            )
+            self._ensure_usage_delta(state, usage)
+            if not new_offer_ids and previous_pool:
+                # 没有新 Offer 时保留上一轮已提交结果，避免一次补查把结果清空。
+                state.supplement_no_progress_count = min(2, state.supplement_no_progress_count + 1)
+            elif progress:
+                state.supplement_no_progress_count = 0
+            else:
+                state.supplement_no_progress_count = min(2, state.supplement_no_progress_count + 1)
+            state.supplement_stage_used = True
+            state.supplement_query_fingerprints.extend(item.fingerprint for item in prepared)
+            state.query_fingerprints.extend(item.fingerprint for item in prepared)
+            state.query_fingerprints = list(dict.fromkeys(state.query_fingerprints))
+            state.supplement_query_fingerprints = list(
+                dict.fromkeys(state.supplement_query_fingerprints)
+            )
+            if not new_offer_ids and previous_pool:
+                new_records: list[Any] = []
+            else:
+                new_records = self._commit_staged_evaluation(state, staged)
+            state.no_progress_count = 0 if progress else state.no_progress_count + 1
+            fallback = bool(merged_result.fallback_used or staged.comparison.fallback_used)
+            status = (
+                "success"
+                if state.ranked_groups
+                else "fallback"
+                if fallback or previous_pool
+                else "no_results"
+            )
+            return (
+                ToolObservation(
+                    status=status,
+                    result_refs=[group.group.group_id for group in state.ranked_groups][:50],
+                    new_evidence_ids=[item.evidence_id for item in new_records][:50],
+                    gaps=list(state.gaps),
+                    conflicts=list(state.conflicts),
+                    fallback_reason=(
+                        "supplement_no_progress"
+                        if not progress
+                        else "retrieval_fallback"
+                        if fallback
+                        else None
+                    ),
+                    constraints_version=state.constraints_version,
+                    evidence_version=state.evidence_version,
+                    usage=usage,
+                ),
+                None,
+                None,
+            )
         if isinstance(action, InspectEvidenceAction):
             inspection = self._evidence.inspect(
                 state.evidence,
@@ -621,6 +800,46 @@ class MainAgentRuntime:
                 state.conflicts.extend(
                     [f"invalid_evidence:{item}" for item in inspection.invalid_ids]
                 )
+            if action.candidate_ids:
+                candidates_by_id = {
+                    item.offer.offer_id: item
+                    for item in (state.recall_pool or state.last_candidates)
+                }
+                selected: list[RetrievalCandidate] = []
+                for candidate_id in [
+                    *action.candidate_ids,
+                    *[item.offer.offer_id for item in state.last_candidates],
+                ]:
+                    candidate = candidates_by_id.get(candidate_id)
+                    if candidate is not None and candidate.offer.offer_id not in {
+                        item.offer.offer_id for item in selected
+                    }:
+                        selected.append(candidate)
+                if selected and constraints is not None:
+                    staged = await self._stage_candidate_evaluation(
+                        list(state.recall_pool or state.last_candidates),
+                        constraints,
+                        window_override=selected,
+                        query_fingerprints=state.query_fingerprints,
+                        stage="inspect",
+                    )
+                    usage = AgentRuntimeUsage(
+                        tool_calls=1,
+                        model_calls=staged.comparison.model_calls,
+                    )
+                    self._ensure_usage_delta(state, usage)
+                    new_records = self._commit_staged_evaluation(state, staged)
+                    observation = ToolObservation(
+                        status="success" if state.ranked_groups else "no_results",
+                        result_refs=[group.group.group_id for group in state.ranked_groups][:50],
+                        new_evidence_ids=[item.evidence_id for item in new_records][:50],
+                        gaps=list(state.gaps),
+                        conflicts=list(state.conflicts),
+                        constraints_version=state.constraints_version,
+                        evidence_version=state.evidence_version,
+                        usage=usage,
+                    )
+                    return observation, None, None
             observation = ToolObservation(
                 status="failed" if inspection.invalid_ids else "success",
                 result_refs=[item.evidence_id for item in inspection.records],
@@ -668,14 +887,16 @@ class MainAgentRuntime:
             )
             outcome = await self._research.run(
                 task,
-                existing_candidates=state.last_candidates,
+                existing_candidates=state.recall_pool or state.last_candidates,
                 existing_evidence=state.evidence,
                 recognition=state.understanding.recognition,
                 image=state.current_request.image,
             )
+            self._ensure_usage_delta(state, outcome.result.usage)
             observation = await self._merge_research_result(
                 state, outcome.result, outcome.candidates
             )
+            state.supplement_stage_used = True
             return observation, None, None
         if isinstance(action, DelegateVerificationAction):
             if self._verification is None:
@@ -716,7 +937,7 @@ class MainAgentRuntime:
             outcome = await self._verification.run(
                 task,
                 candidate_ids=list(action.candidate_ids),
-                existing_candidates=state.last_candidates,
+                existing_candidates=state.recall_pool or state.last_candidates,
                 existing_evidence=state.evidence,
             )
             observation = await self._merge_verification_result(
@@ -752,6 +973,89 @@ class MainAgentRuntime:
         )
         return None, response, None
 
+    async def _stage_candidate_evaluation(
+        self,
+        pool: list[RetrievalCandidate],
+        constraints: ShoppingConstraints,
+        *,
+        comparison: Any | None = None,
+        window_override: list[RetrievalCandidate] | None = None,
+        query_fingerprints: list[str] | None = None,
+        query_assumptions: list[str] | None = None,
+        retrieval_metadata: dict[str, Any] | None = None,
+        stage: str,
+    ) -> _StagedCandidateEvaluation:
+        if window_override is not None:
+            by_id: dict[str, RetrievalCandidate] = {}
+            for item in window_override:
+                by_id.setdefault(item.offer.offer_id, item)
+            window = list(by_id.values())[: self._settings.matching_candidate_limit]
+        else:
+            window = select_candidate_window(
+                pool, limit=self._settings.matching_candidate_limit
+            ).candidates
+        compared = comparison
+        if compared is None:
+            compared = await self._retrieval.comparison.compare_candidates(window, constraints)
+        records = self._evidence.register(compared.ranked_groups)
+        assessment = (
+            compared.assessment.model_dump(mode="json") if compared.assessment is not None else None
+        )
+        if assessment is not None:
+            unassessed = max(0, len(pool) - len(window))
+            assessment.update(
+                {
+                    "total_hits": len(pool),
+                    "unique_offers": len({item.offer.offer_id for item in pool}),
+                    "selected_window": len(window),
+                    "unassessed": unassessed,
+                    "truncated": max(0, len(pool) - len(window)),
+                    "query_count": len(query_fingerprints or []),
+                    "query_fingerprints": list(query_fingerprints or []),
+                    "query_assumptions": list(query_assumptions or []),
+                    "stage": stage,
+                    **(retrieval_metadata or {}),
+                }
+            )
+            if assessment["truncated"] and "recall_window_truncated" not in assessment["gaps"]:
+                assessment["gaps"].append("recall_window_truncated")
+        gaps = [] if compared.ranked_groups else ["no_qualified_candidates"]
+        if assessment is not None:
+            gaps.extend(item for item in assessment["gaps"] if item not in gaps)
+        if compared.review_pairs and "same_item_uncertain" not in gaps:
+            gaps.append("same_item_uncertain")
+        return _StagedCandidateEvaluation(
+            recall_pool=list(pool),
+            window=window,
+            comparison=compared,
+            evidence_records=records,
+            assessment=assessment,
+            gaps=gaps,
+            conflicts=[risk for group in compared.ranked_groups for risk in group.group.risks],
+            notices=list(compared.notices or []),
+        )
+
+    def _commit_staged_evaluation(
+        self,
+        state: MainRuntimeState,
+        staged: _StagedCandidateEvaluation,
+    ) -> list[Any]:
+        new_records = [
+            item for item in staged.evidence_records if item.evidence_id not in state.evidence
+        ]
+        state.evidence.update({item.evidence_id: item for item in new_records})
+        if new_records:
+            state.evidence_version += 1
+        state.recall_pool = list(staged.recall_pool)
+        state.last_candidates = list(staged.window)
+        state.ranked_groups = list(staged.comparison.ranked_groups)
+        state.retrieval_assessment = staged.assessment
+        state.gaps = list(staged.gaps)
+        state.conflicts = list(staged.conflicts)[:20]
+        if staged.notices:
+            state.notices.extend(staged.notices)
+        return new_records
+
     def _subagent_task_id(self, state: MainRuntimeState, action: MainAction) -> str:
         digest = content_hash(
             {
@@ -776,39 +1080,65 @@ class MainAgentRuntime:
             raise ActionRejectedError("子结果 parent_action_id 不匹配")
         if result.constraints_version != state.constraints_version:
             raise ActionRejectedError("子结果 constraints_version 已过期")
+        if len(set(result.query_fingerprints)) != len(result.query_fingerprints):
+            raise ActionRejectedError("子结果包含重复 query fingerprint")
+        if set(result.query_fingerprints) & set(state.query_fingerprints):
+            raise ActionRejectedError("子结果引用了已执行的 query")
         if any(item.offer.offer_id not in result.candidate_ids for item in candidates):
             raise ActionRejectedError("子结果返回了未声明的 candidate_id")
-        merged = {item.offer.offer_id: item for item in state.last_candidates}
+        merged = {
+            item.offer.offer_id: item for item in (state.recall_pool or state.last_candidates)
+        }
         merged.update({item.offer.offer_id: item for item in candidates})
         if any(item not in merged for item in result.candidate_ids):
             raise ActionRejectedError("子结果引用了不存在的 candidate_id")
         constraints = state.understanding.constraints
         if constraints is None:
             raise ActionRejectedError("缺少当前约束，不能归并 Research 结果")
-        compared = await self._retrieval.comparison.compare_candidates(
-            list(merged.values()), constraints
+        merged_pool = list(merged.values())[: self._settings.retrieval_union_limit]
+        window = select_candidate_window(
+            merged_pool, limit=self._settings.matching_candidate_limit
+        ).candidates
+        compared = await self._retrieval.comparison.compare_candidates(window, constraints)
+        staged = await self._stage_candidate_evaluation(
+            merged_pool,
+            constraints,
+            comparison=compared,
+            query_fingerprints=result.query_fingerprints,
+            stage="research",
         )
-        records = self._evidence.register(compared.ranked_groups)
+        available_evidence = set(state.evidence) | {
+            item.evidence_id for item in staged.evidence_records
+        }
+        if any(item not in available_evidence for item in result.evidence_ids):
+            raise ActionRejectedError("子结果引用了未注册的 evidence_id")
+        usage = result.usage.model_copy(
+            update={"model_calls": result.usage.model_calls + compared.model_calls}
+        )
+        self._ensure_usage_delta(state, usage)
+        records = staged.evidence_records
         new_records = [item for item in records if item.evidence_id not in state.evidence]
         state.evidence.update({item.evidence_id: item for item in new_records})
         if new_records:
             state.evidence_version += 1
-        if any(item not in state.evidence for item in result.evidence_ids):
-            raise ActionRejectedError("子结果引用了未注册的 evidence_id")
-        state.last_candidates = list(merged.values())
-        state.ranked_groups = compared.ranked_groups
+        state.recall_pool = merged_pool
+        state.last_candidates = staged.window
+        state.ranked_groups = staged.comparison.ranked_groups
+        state.query_fingerprints = list(
+            dict.fromkeys([*state.query_fingerprints, *result.query_fingerprints])
+        )
+        state.supplement_query_fingerprints = list(
+            dict.fromkeys([*state.supplement_query_fingerprints, *result.query_fingerprints])
+        )
         state.retrieval_assessment = (
-            compared.assessment.model_dump(mode="json")
-            if compared.assessment is not None
-            else state.retrieval_assessment
+            staged.assessment if staged.assessment is not None else state.retrieval_assessment
         )
         state.subagent_results.append(result)
         state.gaps = list(result.unresolved_fields)
-        if compared.assessment is not None:
-            state.gaps.extend(compared.assessment.gaps)
+        state.gaps.extend(item for item in staged.gaps if item not in state.gaps)
         if not state.gaps and not state.ranked_groups:
             state.gaps = ["no_qualified_candidates"]
-        state.conflicts = [risk for group in state.ranked_groups for risk in group.group.risks]
+        state.conflicts = list(staged.conflicts)[:20]
         if result.status is SubagentStatus.NEEDS_USER_INPUT:
             status = "fallback"
         elif result.status is SubagentStatus.FAILED:
@@ -819,14 +1149,14 @@ class MainAgentRuntime:
             status = "success" if result.status is SubagentStatus.COMPLETE else "fallback"
         return ToolObservation(
             status=status,
-            result_refs=[group.group.group_id for group in state.ranked_groups],
-            new_evidence_ids=[item.evidence_id for item in new_records],
+            result_refs=[group.group.group_id for group in state.ranked_groups][:50],
+            new_evidence_ids=[item.evidence_id for item in new_records][:50],
             gaps=list(state.gaps),
             conflicts=list(state.conflicts),
             fallback_reason=result.end_reason if status == "fallback" else None,
             constraints_version=state.constraints_version,
             evidence_version=state.evidence_version,
-            usage=result.usage,
+            usage=usage,
         )
 
     async def _merge_verification_result(
@@ -842,22 +1172,32 @@ class MainAgentRuntime:
             raise ActionRejectedError("子结果 parent_action_id 不匹配")
         if result.constraints_version != state.constraints_version:
             raise ActionRejectedError("子结果 constraints_version 已过期")
-        merged = {item.offer.offer_id: item for item in state.last_candidates}
+        merged = {
+            item.offer.offer_id: item for item in (state.recall_pool or state.last_candidates)
+        }
         merged.update({item.offer.offer_id: item for item in candidates})
         if any(item not in merged for item in result.candidate_ids):
             raise ActionRejectedError("核验结果引用了不存在的 candidate_id")
         constraints = state.understanding.constraints
         if constraints is None:
             raise ActionRejectedError("缺少当前约束，不能归并 Verification 结果")
-        compared = await self._retrieval.comparison.compare_candidates(
-            list(merged.values()), constraints
+        merged_pool = list(merged.values())[: self._settings.retrieval_union_limit]
+        window = select_candidate_window(
+            merged_pool, limit=self._settings.matching_candidate_limit
+        ).candidates
+        if not result.candidate_ids:
+            raise ActionRejectedError("核验结果缺少 candidate_id")
+        compared = await self._retrieval.comparison.compare_candidates(window, constraints)
+        staged = await self._stage_candidate_evaluation(
+            merged_pool,
+            constraints,
+            comparison=compared,
+            stage="verification",
         )
-        records = self._evidence.register(compared.ranked_groups)
-        new_records = [item for item in records if item.evidence_id not in state.evidence]
-        state.evidence.update({item.evidence_id: item for item in new_records})
-        if new_records:
-            state.evidence_version += 1
-        if any(item not in state.evidence for item in result.evidence_ids):
+        available_evidence = set(state.evidence) | {
+            item.evidence_id for item in staged.evidence_records
+        }
+        if any(item not in available_evidence for item in result.evidence_ids):
             raise ActionRejectedError("核验结果引用了未注册的 evidence_id")
         # recommendation 只由当前 Offer、字段和共享比较结果计算，忽略模型的自由判断。
         from shijiajing_agent.agent_runtime.subagents.verification import VerificationSubagent
@@ -871,12 +1211,24 @@ class MainAgentRuntime:
         )
         if result.recommendation is not None and result.recommendation != recommendation:
             raise ActionRejectedError("核验模型建议与确定性硬约束判定冲突")
-        state.last_candidates = list(merged.values())
-        state.ranked_groups = compared.ranked_groups
+        usage = result.usage.model_copy(
+            update={
+                "model_calls": (
+                    result.usage.model_calls + compared.model_calls + selected_compared.model_calls
+                )
+            }
+        )
+        self._ensure_usage_delta(state, usage)
+        records = staged.evidence_records
+        new_records = [item for item in records if item.evidence_id not in state.evidence]
+        state.evidence.update({item.evidence_id: item for item in new_records})
+        if new_records:
+            state.evidence_version += 1
+        state.recall_pool = merged_pool
+        state.last_candidates = staged.window
+        state.ranked_groups = staged.comparison.ranked_groups
         state.retrieval_assessment = (
-            compared.assessment.model_dump(mode="json")
-            if compared.assessment is not None
-            else state.retrieval_assessment
+            staged.assessment if staged.assessment is not None else state.retrieval_assessment
         )
         state.subagent_results.append(result.model_copy(update={"recommendation": recommendation}))
         state.gaps = (
@@ -884,20 +1236,19 @@ class MainAgentRuntime:
             if recommendation == "comparable"
             else list(result.unresolved_fields) or [recommendation]
         )
-        if compared.assessment is not None:
-            state.gaps.extend(compared.assessment.gaps)
-        state.conflicts = [risk for group in state.ranked_groups for risk in group.group.risks]
+        state.gaps.extend(item for item in staged.gaps if item not in state.gaps)
+        state.conflicts = list(staged.conflicts)[:20]
         status = "success" if recommendation == "comparable" else "fallback"
         return ToolObservation(
             status=status,
-            result_refs=[group.group.group_id for group in state.ranked_groups],
-            new_evidence_ids=[item.evidence_id for item in new_records],
+            result_refs=[group.group.group_id for group in state.ranked_groups][:50],
+            new_evidence_ids=[item.evidence_id for item in new_records][:50],
             gaps=list(state.gaps),
             conflicts=list(state.conflicts),
             fallback_reason=None if status == "success" else recommendation,
             constraints_version=state.constraints_version,
             evidence_version=state.evidence_version,
-            usage=result.usage,
+            usage=usage,
         )
 
     async def _answer_response(
@@ -1206,8 +1557,11 @@ class MainAgentRuntime:
         if ledger.expired():
             raise BudgetExceededError("主 Agent 执行时限超限")
 
-    def _add_usage(self, state: MainRuntimeState, usage: AgentRuntimeUsage) -> None:
-        next_usage = state.usage.add(usage)
+    @staticmethod
+    def _ensure_usage_delta(state: MainRuntimeState, delta: AgentRuntimeUsage) -> None:
+        next_usage = state.usage.add(delta)
+        if next_usage.decisions > state.budget.max_decisions:
+            raise BudgetExceededError("主 Agent 决策次数超限")
         if next_usage.tool_calls > state.budget.max_tool_calls:
             raise BudgetExceededError("工具派发次数超限")
         if next_usage.retrieval_calls > state.budget.max_retrieval_calls:
@@ -1216,6 +1570,10 @@ class MainAgentRuntime:
             raise BudgetExceededError("生成模型调用次数超限")
         if next_usage.input_tokens + next_usage.output_tokens > state.budget.max_tokens:
             raise BudgetExceededError("模型 token 预算超限")
+
+    def _add_usage(self, state: MainRuntimeState, usage: AgentRuntimeUsage) -> None:
+        self._ensure_usage_delta(state, usage)
+        next_usage = state.usage.add(usage)
         state.usage = next_usage
 
     async def _save(self, state: MainRuntimeState, version: int | None) -> None:

@@ -50,10 +50,12 @@ class ResearchSubagent:
         decision: SubagentDecisionPort,
         retrieval: RetrievalService,
         evidence: EvidenceService,
+        max_queries: int = 3,
     ) -> None:
         self._decision = decision
         self._retrieval = retrieval
         self._evidence = evidence
+        self._max_queries = max(1, max_queries)
 
     async def run(
         self,
@@ -72,6 +74,7 @@ class ResearchSubagent:
             if evidence_id in existing_evidence
         }
         queries: list[str] = []
+        query_fingerprints: list[str] = []
         gaps = ["research_not_started"]
         conflicts: list[str] = []
         ranked_groups: list[RankedGroup] = []
@@ -135,6 +138,11 @@ class ResearchSubagent:
                     if query in queries:
                         no_progress += 1
                         gaps = ["duplicate_query"]
+                    elif len(queries) >= self._max_queries:
+                        no_progress += 1
+                        gaps = ["supplement_query_limit"]
+                        end_reason = "supplement_query_limit"
+                        break
                     else:
                         queries.append(query)
                         search = await self._search(
@@ -146,6 +154,12 @@ class ResearchSubagent:
                             image,
                         )
                         usage = usage.add(search.usage)
+                        if search.plan is not None:
+                            query_fingerprints.extend(
+                                item.fingerprint
+                                for item in ([search.plan.original_query, *search.plan.variants])
+                                if item.fingerprint not in query_fingerprints
+                            )
                         before = set(candidates_by_id)
                         candidates_by_id.update(
                             {item.offer.offer_id: item for item in search.candidates}
@@ -246,6 +260,7 @@ class ResearchSubagent:
             status=end_status,
             candidate_ids=candidate_ids,
             queries=queries,
+            query_fingerprints=query_fingerprints,
             facts=facts,
             evidence_ids=evidence_ids,
             unresolved_fields=gaps,
@@ -272,6 +287,7 @@ class ResearchSubagent:
                 image=image,
                 soft_terms=soft_terms,
                 constraints_version=task.constraints_version,
+                max_queries=1,
             )
 
     @staticmethod

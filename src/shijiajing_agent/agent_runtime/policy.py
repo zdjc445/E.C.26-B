@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from shijiajing_agent.agent_runtime.contracts import (
     ActionKind,
+    ActionStatus,
     AnswerAction,
     AskUserAction,
     DecisionObservation,
@@ -14,7 +15,9 @@ from shijiajing_agent.agent_runtime.contracts import (
     InspectEvidenceAction,
     MainAction,
     MainRuntimeState,
+    RuntimeBudgetRemaining,
     SearchAndCompareAction,
+    SupplementSearchAction,
 )
 from shijiajing_agent.contracts import AgentStatus
 from shijiajing_agent.ports.agent_decision import OfferDetailPort
@@ -54,6 +57,8 @@ class DelegationPolicy:
             return DelegationDecision(False, "missing_category")
         if not state.gaps and state.ranked_groups:
             return DelegationDecision(False, "no_independent_gap")
+        if state.supplement_stage_used:
+            return DelegationDecision(False, "supplement_stage_already_completed")
         if any(
             result.role.value == "research" and result.status.value != "failed"
             for result in state.subagent_results
@@ -104,10 +109,47 @@ class ActionGuard:
             constraints = state.understanding.constraints
             if constraints is None or not constraints.category_id.value:
                 raise ActionRejectedError("检索前必须具备商品品类")
+            if any(
+                item.kind is ActionKind.SEARCH_AND_COMPARE
+                and item.constraints_version == state.constraints_version
+                and item.status is not ActionStatus.FAILED
+                for item in state.actions
+            ):
+                raise ActionRejectedError("当前约束版本的首轮检索已完成")
+        elif isinstance(action, SupplementSearchAction):
+            constraints = state.understanding.constraints
+            if constraints is None or not constraints.category_id.value:
+                raise ActionRejectedError("补查前必须具备当前约束")
+            if not state.retrieval_assessment:
+                raise ActionRejectedError("补查前必须完成首轮检索评估")
+            if not any(
+                item.kind is ActionKind.SEARCH_AND_COMPARE
+                and item.status is not ActionStatus.FAILED
+                for item in state.actions
+            ):
+                raise ActionRejectedError("补查前必须完成首轮检索")
+            if state.supplement_stage_used:
+                raise ActionRejectedError("当前约束版本的补查阶段已消费")
+            if action.gap_id not in state.gaps:
+                raise ActionRejectedError("补查引用了当前不存在的检索缺口")
+            missing_evidence = {
+                evidence_id
+                for proposal in action.query_proposals
+                for evidence_id in proposal.evidence_refs
+                if evidence_id not in state.evidence
+            }
+            if missing_evidence:
+                raise ActionRejectedError("补查引用了未注册的 evidence_id")
         elif isinstance(action, InspectEvidenceAction):
-            missing = set(action.evidence_ids) - set(state.evidence)
-            if missing:
+            missing_evidence = set(action.evidence_ids) - set(state.evidence)
+            if missing_evidence:
                 raise ActionRejectedError("inspect_evidence 引用了未注册的 evidence_id")
+            known_candidates = {
+                candidate.offer.offer_id
+                for candidate in (state.recall_pool or state.last_candidates)
+            }
+            if set(action.candidate_ids) - known_candidates:
+                raise ActionRejectedError("inspect_evidence 引用了当前召回池之外的 candidate_id")
         elif isinstance(action, AnswerAction):
             known_groups = {item.group.group_id for item in state.ranked_groups}
             if any(item not in known_groups for item in action.result_ids):
@@ -159,12 +201,22 @@ def allowed_actions_for(
         ActionKind.ANSWER,
         ActionKind.FINISH_NO_RESULTS,
     ]
-    if state.evidence:
+    if state.evidence or state.recall_pool or state.last_candidates:
         actions.insert(1, ActionKind.INSPECT_EVIDENCE)
     if research_enabled:
         actions.insert(2, ActionKind.DELEGATE_RESEARCH)
     if verification_enabled:
         actions.insert(3, ActionKind.DELEGATE_VERIFICATION)
+    if (
+        state.retrieval_assessment is not None
+        and any(
+            item.kind is ActionKind.SEARCH_AND_COMPARE and item.status is not ActionStatus.FAILED
+            for item in state.actions
+        )
+        and state.gaps
+        and not state.supplement_stage_used
+    ):
+        actions.insert(1, ActionKind.SUPPLEMENT_SEARCH)
     return tuple(dict.fromkeys(actions))
 
 
@@ -187,6 +239,19 @@ def observation_for(
         }
         for item in list(state.evidence.values())[:10]
     ]
+    remaining_tokens = max(
+        0,
+        state.budget.max_tokens - state.usage.input_tokens - state.usage.output_tokens,
+    )
+    remaining = RuntimeBudgetRemaining(
+        max_decisions=max(0, state.budget.max_decisions - state.usage.decisions),
+        max_tool_calls=max(0, state.budget.max_tool_calls - state.usage.tool_calls),
+        max_retrieval_calls=max(0, state.budget.max_retrieval_calls - state.usage.retrieval_calls),
+        max_model_calls=max(0, state.budget.max_model_calls - state.usage.model_calls),
+        max_tokens=remaining_tokens,
+        max_subagent_starts=max(0, state.budget.max_subagent_starts - state.usage.subagent_starts),
+        max_seconds=max(0.0, state.budget.max_seconds - state.usage.elapsed_ms / 1000.0),
+    )
     return DecisionObservation(
         objective_summary=objective,
         constraints_version=state.constraints_version,
@@ -195,11 +260,11 @@ def observation_for(
         understanding=state.understanding,
         evidence_summary=summary,
         retrieval_assessment=state.retrieval_assessment,
-        gaps=list(state.gaps),
-        conflicts=list(state.conflicts),
+        gaps=list(state.gaps)[:20],
+        conflicts=list(state.conflicts)[:20],
         available_actions=list(actions),
         usage=state.usage,
-        remaining_budget=state.budget,
+        remaining_budget=remaining,
     )
 
 

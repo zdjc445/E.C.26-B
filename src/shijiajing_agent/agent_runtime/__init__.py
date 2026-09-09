@@ -9,8 +9,11 @@ from shijiajing_agent.agent_runtime.contracts import (
     EvidenceQualityReport,
     EvidenceRecord,
     MainAction,
+    RuntimeBudgetRemaining,
     SubagentResult,
     SubagentTask,
+    SupplementQueryProposal,
+    SupplementSearchAction,
     ToolObservation,
 )
 
@@ -23,7 +26,10 @@ __all__ = [
     "EvidenceQualityReport",
     "EvidenceRecord",
     "MainAction",
+    "RuntimeBudgetRemaining",
     "SubagentResult",
     "SubagentTask",
+    "SupplementQueryProposal",
+    "SupplementSearchAction",
     "ToolObservation",
 ]

@@ -14,6 +14,7 @@ from shijiajing_agent.agent_runtime.contracts import (
     DecisionObservation,
     DecisionResult,
     FinishNoResultsAction,
+    MainAction,
     SubagentActionKind,
     SubagentDecisionResult,
     SubagentFinishAction,
@@ -194,6 +195,7 @@ class FakeMainDecision:
     def __init__(self) -> None:
         self.calls = 0
         self.observations: list[DecisionObservation] = []
+        self.action_queue: list[MainAction] = []
 
     async def decide(
         self,
@@ -202,7 +204,9 @@ class FakeMainDecision:
     ) -> DecisionResult:
         self.calls += 1
         self.observations.append(observation)
-        if ActionKind.ASK_USER in allowed_actions and (
+        if self.action_queue:
+            action = self.action_queue.pop(0)
+        elif ActionKind.ASK_USER in allowed_actions and (
             observation.constraints is None or not observation.constraints.category_id.value
         ):
             action = AskUserAction(
