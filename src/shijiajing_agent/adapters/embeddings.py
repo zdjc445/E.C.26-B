@@ -14,10 +14,12 @@ from __future__ import annotations
 import httpx
 from openai import AsyncOpenAI
 
+from shijiajing_agent.agent_runtime.contracts import AgentRuntimeUsage
 from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import ImageRef
 from shijiajing_agent.errors import RetrievalUnavailableError
 from shijiajing_agent.ports.models import ImageEmbeddingPort, TextEmbeddingPort
+from shijiajing_agent.ports.retrieval import record_retrieval_usage
 
 
 class ArkTextEmbedding:
@@ -53,6 +55,7 @@ class ArkTextEmbedding:
     async def embed_texts(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
+        record_retrieval_usage(AgentRuntimeUsage(embedding_calls=1, embedding_inputs=len(texts)))
         try:
             resp = await self._client.embeddings.create(
                 model=self._settings.embedding_model or "",
@@ -62,6 +65,10 @@ class ArkTextEmbedding:
         except Exception as exc:
             raise RetrievalUnavailableError(f"embedding 调用失败：{exc}") from exc
         vectors = [list(item.embedding) for item in resp.data]
+        response_usage = getattr(resp, "usage", None)
+        prompt_tokens = int(getattr(response_usage, "prompt_tokens", 0) or 0)
+        if prompt_tokens:
+            record_retrieval_usage(AgentRuntimeUsage(embedding_tokens=prompt_tokens))
         if self._dimension is None and vectors:
             self._dimension = len(vectors[0])
         return vectors

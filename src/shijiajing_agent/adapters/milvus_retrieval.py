@@ -25,6 +25,7 @@ from shijiajing_agent.adapters.local_retrieval import (
     LocalLexicalRetrievalAdapter,
     metadata_match,
 )
+from shijiajing_agent.agent_runtime.contracts import AgentRuntimeUsage
 from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import (
     HardFilters,
@@ -37,7 +38,7 @@ from shijiajing_agent.errors import RetrievalUnavailableError
 from shijiajing_agent.ports.milvus import MilvusClientPort, make_milvus_client
 from shijiajing_agent.ports.models import ImageEmbeddingPort, TextEmbeddingPort
 from shijiajing_agent.ports.observability import MetricsPort
-from shijiajing_agent.ports.retrieval import RetrievalResult
+from shijiajing_agent.ports.retrieval import RetrievalResult, record_retrieval_usage
 from shijiajing_agent.rag_contracts import ChannelKind, ChannelResult, ChannelStatus
 
 # 所有 Offer 标量字段 + 三个 JSON 属性字段。
@@ -141,6 +142,10 @@ class MilvusHybridRetrievalAdapter:
         self._metrics = metrics
         self._client = client  # 测试注入 FakeMilvusClient；None 时按配置构建
         self._closed = False
+
+    @property
+    def index_version(self) -> str | None:
+        return self._settings.retrieval_index_version
 
     async def setup(self) -> None:
         """Milvus 与 Embedding 客户端按首次检索惰性连接；此处统一完成生命周期契约。"""
@@ -397,6 +402,7 @@ class MilvusHybridRetrievalAdapter:
         top_k: int,
     ) -> list[list[dict[str, Any]]]:
         """把同步 pymilvus 调用放入受控线程，避免阻塞事件循环。"""
+        record_retrieval_usage(AgentRuntimeUsage(db_search_attempts=1))
         return await asyncio.to_thread(
             client.search,
             collection_name=collection,

@@ -35,7 +35,7 @@ from shijiajing_agent.domain.raw_offer import (
 )
 from shijiajing_agent.domain.taxonomy import Taxonomy, TaxonomyFile
 from shijiajing_agent.ports.milvus import make_milvus_client
-from shijiajing_agent.rag_contracts import IndexManifest
+from shijiajing_agent.rag_contracts import IndexManifest, manifest_identity
 from shijiajing_agent.tools.cli_support import configure_utf8_output
 
 _BATCH = 60
@@ -265,7 +265,8 @@ def _build_manifest(
         json.dumps(source_hashes, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
     snapshot_id = hashlib.sha256(snapshot_path.read_bytes()).hexdigest()[:32]
-    return IndexManifest(
+    manifest = IndexManifest(
+        manifest_id="0" * 64,
         schema_version="raw-offer-v1",
         snapshot_id=snapshot_id,
         source_batches=[snapshot_path.name],
@@ -281,6 +282,7 @@ def _build_manifest(
         built_at=datetime.now(UTC),
         valid_offer_count=sum(1 for offer in offers if _is_indexable(offer)),
     )
+    return manifest.model_copy(update={"manifest_id": manifest_identity(manifest)})
 
 
 def _write_manifest(path: Path, manifest: IndexManifest) -> None:

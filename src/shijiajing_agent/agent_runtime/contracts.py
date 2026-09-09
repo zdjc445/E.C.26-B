@@ -66,6 +66,11 @@ class AgentRuntimeUsage(BaseModel):
     model_calls: int = Field(default=0, ge=0)
     tool_calls: int = Field(default=0, ge=0)
     retrieval_calls: int = Field(default=0, ge=0)
+    # retrieval_calls 是逻辑查询数；以下字段记录真实物理调用。
+    db_search_attempts: int = Field(default=0, ge=0)
+    embedding_calls: int = Field(default=0, ge=0)
+    embedding_inputs: int = Field(default=0, ge=0)
+    embedding_tokens: int = Field(default=0, ge=0)
     subagent_starts: int = Field(default=0, ge=0)
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
@@ -77,6 +82,10 @@ class AgentRuntimeUsage(BaseModel):
             model_calls=self.model_calls + other.model_calls,
             tool_calls=self.tool_calls + other.tool_calls,
             retrieval_calls=self.retrieval_calls + other.retrieval_calls,
+            db_search_attempts=self.db_search_attempts + other.db_search_attempts,
+            embedding_calls=self.embedding_calls + other.embedding_calls,
+            embedding_inputs=self.embedding_inputs + other.embedding_inputs,
+            embedding_tokens=self.embedding_tokens + other.embedding_tokens,
             subagent_starts=self.subagent_starts + other.subagent_starts,
             input_tokens=self.input_tokens + other.input_tokens,
             output_tokens=self.output_tokens + other.output_tokens,
@@ -90,6 +99,8 @@ class RuntimeBudget(BaseModel):
     max_decisions: int = Field(default=8, ge=1, le=100)
     max_tool_calls: int = Field(default=24, ge=1, le=200)
     max_retrieval_calls: int = Field(default=6, ge=1, le=100)
+    max_db_search_attempts: int = Field(default=24, ge=1, le=1000)
+    max_embedding_calls: int = Field(default=24, ge=1, le=1000)
     max_model_calls: int = Field(default=32, ge=1, le=200)
     max_tokens: int = Field(default=100_000, ge=1, le=2_000_000)
     max_subagent_starts: int = Field(default=2, ge=0, le=20)
@@ -104,6 +115,8 @@ class RuntimeBudgetRemaining(BaseModel):
     max_decisions: int = Field(default=0, ge=0, le=100)
     max_tool_calls: int = Field(default=0, ge=0, le=200)
     max_retrieval_calls: int = Field(default=0, ge=0, le=100)
+    max_db_search_attempts: int = Field(default=0, ge=0, le=1000)
+    max_embedding_calls: int = Field(default=0, ge=0, le=1000)
     max_model_calls: int = Field(default=0, ge=0, le=200)
     max_tokens: int = Field(default=0, ge=0, le=2_000_000)
     max_subagent_starts: int = Field(default=0, ge=0, le=20)
@@ -498,6 +511,7 @@ class MainRuntimeState(BaseModel):
         default_factory=list[SubagentResult], max_length=20
     )
     usage: AgentRuntimeUsage = Field(default_factory=AgentRuntimeUsage)
+    reserved_usage: AgentRuntimeUsage = Field(default_factory=AgentRuntimeUsage)
     budget: RuntimeBudget = Field(default_factory=RuntimeBudget)
     gaps: list[str] = Field(default_factory=list[str], max_length=20)
     conflicts: list[str] = Field(default_factory=list[str], max_length=20)

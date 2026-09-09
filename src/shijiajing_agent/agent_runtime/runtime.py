@@ -451,6 +451,8 @@ class MainAgentRuntime:
                 max_decisions=self._settings.main_agent_max_decisions,
                 max_tool_calls=self._settings.main_agent_max_tool_calls,
                 max_retrieval_calls=self._settings.main_agent_max_retrieval_calls,
+                max_db_search_attempts=self._settings.retrieval_max_db_search_attempts,
+                max_embedding_calls=self._settings.retrieval_max_db_search_attempts,
                 max_model_calls=self._settings.main_agent_max_model_calls,
                 max_tokens=self._settings.main_agent_max_tokens,
                 max_subagent_starts=self._settings.main_agent_max_subagent_starts,
@@ -584,14 +586,27 @@ class MainAgentRuntime:
             assert constraints is not None
             if not BudgetLedger.start(state.budget, state.usage).can_retrieve():
                 raise BudgetExceededError("真实检索次数超限")
-            result = await self._retrieval.search_and_compare(
-                action.query_text or state.current_request.text or "",
-                constraints,
-                recognition=state.understanding.recognition,
-                image=state.current_request.image,
-                soft_terms=action.soft_terms,
-                constraints_version=state.constraints_version,
+            remaining_retrieval = (
+                state.budget.max_retrieval_calls
+                - state.usage.retrieval_calls
+                - state.reserved_usage.retrieval_calls
             )
+            max_queries = min(self._settings.retrieval_initial_max_queries, remaining_retrieval)
+            if max_queries < 1:
+                raise BudgetExceededError("真实检索次数超限")
+            reservation = self._reserve_retrieval_budget(state, max_queries)
+            try:
+                result = await self._retrieval.search_and_compare(
+                    action.query_text or state.current_request.text or "",
+                    constraints,
+                    recognition=state.understanding.recognition,
+                    image=state.current_request.image,
+                    soft_terms=action.soft_terms,
+                    constraints_version=state.constraints_version,
+                    max_queries=max_queries,
+                )
+            finally:
+                self._release_retrieval_budget(state, reservation)
             pool = list(result.search.retrieval.candidates or result.search.candidates)
             prepared_queries = (
                 [result.search.plan.original_query, *result.search.plan.variants]
@@ -686,12 +701,21 @@ class MainAgentRuntime:
             ]
             if invalid:
                 raise ActionRejectedError("补查查询重复或未绑定当前硬约束")
-            if len(prepared) > state.budget.max_retrieval_calls - state.usage.retrieval_calls:
+            if (
+                len(prepared)
+                > state.budget.max_retrieval_calls
+                - state.usage.retrieval_calls
+                - state.reserved_usage.retrieval_calls
+            ):
                 raise BudgetExceededError("补查查询超过剩余检索预算")
-            results = await self._retrieval.execute_prepared_query_batch(
-                prepared,
-                image=state.current_request.image,
-            )
+            reservation = self._reserve_retrieval_budget(state, len(prepared))
+            try:
+                results = await self._retrieval.execute_prepared_query_batch(
+                    prepared,
+                    image=state.current_request.image,
+                )
+            finally:
+                self._release_retrieval_budget(state, reservation)
             merged_result = self._retrieval.merge_prepared_query_results(prepared, results)
             incoming = list(merged_result.candidates)
             previous_pool = list(state.recall_pool or state.last_candidates)
@@ -739,7 +763,7 @@ class MainAgentRuntime:
                 tool_calls=1,
                 retrieval_calls=sum(item.usage.retrieval_calls for item in results),
                 model_calls=staged.comparison.model_calls,
-            )
+            ).add(merged_result.usage)
             self._ensure_usage_delta(state, usage)
             if not new_offer_ids and previous_pool:
                 # 没有新 Offer 时保留上一轮已提交结果，避免一次补查把结果清空。
@@ -1557,6 +1581,54 @@ class MainAgentRuntime:
         if ledger.expired():
             raise BudgetExceededError("主 Agent 执行时限超限")
 
+    def _reserve_retrieval_budget(
+        self, state: MainRuntimeState, query_count: int
+    ) -> AgentRuntimeUsage:
+        """在发起批量召回前预留当前请求剩余物理额度，避免恢复/并发重复领取。"""
+        if query_count < 1:
+            raise BudgetExceededError("没有可预留的检索查询")
+        reserved = AgentRuntimeUsage(
+            retrieval_calls=query_count,
+            db_search_attempts=max(
+                0,
+                state.budget.max_db_search_attempts
+                - state.usage.db_search_attempts
+                - state.reserved_usage.db_search_attempts,
+            ),
+            embedding_calls=max(
+                0,
+                state.budget.max_embedding_calls
+                - state.usage.embedding_calls
+                - state.reserved_usage.embedding_calls,
+            ),
+        )
+        available = state.budget
+        current = state.usage.add(state.reserved_usage)
+        if current.retrieval_calls + query_count > available.max_retrieval_calls:
+            raise BudgetExceededError("逻辑检索额度预留不足")
+        if (
+            current.db_search_attempts + reserved.db_search_attempts
+            > available.max_db_search_attempts
+        ):
+            raise BudgetExceededError("数据库检索额度预留不足")
+        if current.embedding_calls + reserved.embedding_calls > available.max_embedding_calls:
+            raise BudgetExceededError("embedding 额度预留不足")
+        state.reserved_usage = state.reserved_usage.add(reserved)
+        return reserved
+
+    @staticmethod
+    def _release_retrieval_budget(state: MainRuntimeState, reservation: AgentRuntimeUsage) -> None:
+        current = state.reserved_usage
+        state.reserved_usage = current.model_copy(
+            update={
+                "retrieval_calls": max(0, current.retrieval_calls - reservation.retrieval_calls),
+                "db_search_attempts": max(
+                    0, current.db_search_attempts - reservation.db_search_attempts
+                ),
+                "embedding_calls": max(0, current.embedding_calls - reservation.embedding_calls),
+            }
+        )
+
     @staticmethod
     def _ensure_usage_delta(state: MainRuntimeState, delta: AgentRuntimeUsage) -> None:
         next_usage = state.usage.add(delta)
@@ -1566,6 +1638,10 @@ class MainAgentRuntime:
             raise BudgetExceededError("工具派发次数超限")
         if next_usage.retrieval_calls > state.budget.max_retrieval_calls:
             raise BudgetExceededError("真实检索次数超限")
+        if next_usage.db_search_attempts > state.budget.max_db_search_attempts:
+            raise BudgetExceededError("数据库检索尝试次数超限")
+        if next_usage.embedding_calls > state.budget.max_embedding_calls:
+            raise BudgetExceededError("embedding 调用次数超限")
         if next_usage.model_calls > state.budget.max_model_calls:
             raise BudgetExceededError("生成模型调用次数超限")
         if next_usage.input_tokens + next_usage.output_tokens > state.budget.max_tokens:

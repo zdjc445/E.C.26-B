@@ -243,13 +243,42 @@ def observation_for(
         0,
         state.budget.max_tokens - state.usage.input_tokens - state.usage.output_tokens,
     )
+    reserved = state.reserved_usage
     remaining = RuntimeBudgetRemaining(
-        max_decisions=max(0, state.budget.max_decisions - state.usage.decisions),
-        max_tool_calls=max(0, state.budget.max_tool_calls - state.usage.tool_calls),
-        max_retrieval_calls=max(0, state.budget.max_retrieval_calls - state.usage.retrieval_calls),
-        max_model_calls=max(0, state.budget.max_model_calls - state.usage.model_calls),
+        max_decisions=max(
+            0, state.budget.max_decisions - state.usage.decisions - reserved.decisions
+        ),
+        max_tool_calls=max(
+            0, state.budget.max_tool_calls - state.usage.tool_calls - reserved.tool_calls
+        ),
+        max_retrieval_calls=max(
+            0,
+            state.budget.max_retrieval_calls
+            - state.usage.retrieval_calls
+            - reserved.retrieval_calls,
+        ),
+        max_db_search_attempts=max(
+            0,
+            state.budget.max_db_search_attempts
+            - state.usage.db_search_attempts
+            - reserved.db_search_attempts,
+        ),
+        max_embedding_calls=max(
+            0,
+            state.budget.max_embedding_calls
+            - state.usage.embedding_calls
+            - reserved.embedding_calls,
+        ),
+        max_model_calls=max(
+            0, state.budget.max_model_calls - state.usage.model_calls - reserved.model_calls
+        ),
         max_tokens=remaining_tokens,
-        max_subagent_starts=max(0, state.budget.max_subagent_starts - state.usage.subagent_starts),
+        max_subagent_starts=max(
+            0,
+            state.budget.max_subagent_starts
+            - state.usage.subagent_starts
+            - reserved.subagent_starts,
+        ),
         max_seconds=max(0.0, state.budget.max_seconds - state.usage.elapsed_ms / 1000.0),
     )
     return DecisionObservation(

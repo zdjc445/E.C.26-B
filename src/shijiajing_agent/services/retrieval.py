@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from shijiajing_agent.agent_runtime.contracts import AgentRuntimeUsage
@@ -20,7 +21,12 @@ from shijiajing_agent.domain.candidate_selection import select_candidate_window
 from shijiajing_agent.domain.filters import HardFilterBuilder
 from shijiajing_agent.domain.retrieval_fusion import BestQueryChannelRRF
 from shijiajing_agent.ports.models import QueryRewritePort
-from shijiajing_agent.ports.retrieval import ProductRetrievalPort, RetrievalResult
+from shijiajing_agent.ports.retrieval import (
+    ProductRetrievalPort,
+    RetrievalResult,
+    begin_retrieval_usage,
+    finish_retrieval_usage,
+)
 from shijiajing_agent.rag_contracts import (
     ChannelStatus,
     PreparedQuery,
@@ -61,6 +67,7 @@ class RetrievalService:
         rrf_k: int = 60,
         initial_max_queries: int = 3,
         query_concurrency: int = 2,
+        index_manifest_id: str | None = None,
     ) -> None:
         self._query_rewrite = query_rewrite
         self._retrieval = retrieval
@@ -72,6 +79,7 @@ class RetrievalService:
         self._fusion = BestQueryChannelRRF(rrf_k)
         self._initial_max_queries = max(1, initial_max_queries)
         self._query_concurrency = max(1, min(4, query_concurrency))
+        self._index_manifest_id = index_manifest_id or getattr(retrieval, "index_version", None)
 
     @property
     def comparison(self) -> ComparisonService:
@@ -122,6 +130,7 @@ class RetrievalService:
                 constraints_version=constraints_version,
                 source=source,
                 image_sha256=image_sha256,
+                index_manifest_id=self._index_manifest_id,
             )
         ]
         seen_texts = {prepared[0].text}
@@ -143,6 +152,7 @@ class RetrievalService:
                         else QuerySource.INITIAL_EXPANSION
                     ),
                     image_sha256=image_sha256,
+                    index_manifest_id=self._index_manifest_id,
                 )
             )
             if len(prepared) >= limit:
@@ -167,6 +177,7 @@ class RetrievalService:
         assumptions_by_query: list[list[str]] | None = None,
         evidence_refs_by_query: list[list[str]] | None = None,
         image_sha256: str | None = None,
+        index_manifest_id: str | None = None,
     ) -> list[PreparedQuery]:
         """把主 Agent 已批准的补查文本转成查询身份，不再触发二次改写。"""
         hard_filters = HardFilterBuilder().build(constraints)
@@ -192,6 +203,7 @@ class RetrievalService:
                     if evidence_refs_by_query is not None and index < len(evidence_refs_by_query)
                     else [],
                     image_sha256=image_sha256,
+                    index_manifest_id=index_manifest_id or self._index_manifest_id,
                 )
             )
         return prepared
@@ -210,13 +222,24 @@ class RetrievalService:
             soft_terms=prepared.soft_terms,
             negative_terms=prepared.negative_terms,
         )
-        result = await self._retrieval.search(
-            query,
-            image=image,
-            top_k=top_k or self._top_k,
-            union_limit=union_limit or self._union_limit,
-            category_names=self._category_names,
-        )
+        usage_token = begin_retrieval_usage()
+        try:
+            result = await self._retrieval.search(
+                query,
+                image=image,
+                top_k=top_k or self._top_k,
+                union_limit=union_limit or self._union_limit,
+                category_names=self._category_names,
+            )
+        finally:
+            measured_usage = finish_retrieval_usage(usage_token)
+        if (
+            prepared.index_manifest_id is not None
+            and result.index_version is not None
+            and prepared.index_manifest_id != result.index_version
+        ):
+            raise ValueError("检索结果 index manifest 与 PreparedQuery 不一致")
+        result.usage = result.usage.add(measured_usage)
         candidates = [
             item.model_copy(
                 update={"query_ids": list(dict.fromkeys([*item.query_ids, prepared.query_id]))}
@@ -253,12 +276,13 @@ class RetrievalService:
             channel_health=result.channel_health,
             selected_candidates=candidates,
             truncated_count=result.truncated_count,
+            usage=result.usage,
         )
         return SearchOnceResult(
             query=query,
             candidates=candidates,
             retrieval=result,
-            usage=AgentRuntimeUsage(retrieval_calls=1),
+            usage=AgentRuntimeUsage(retrieval_calls=1).add(result.usage),
             plan=None,
             query_results=(result,),
         )
@@ -384,6 +408,7 @@ class RetrievalService:
             channel_health=result.channel_health,
             selected_candidates=window.candidates,
             truncated_count=window.truncated_count,
+            usage=result.usage,
         )
         query = RetrievalQuery(
             query_text=plan.original_query.text,
@@ -395,11 +420,7 @@ class RetrievalService:
             query=query,
             candidates=window.candidates,
             retrieval=result,
-            usage=plan_usage.add(
-                AgentRuntimeUsage(
-                    retrieval_calls=sum(item.usage.retrieval_calls for item in results)
-                )
-            ),
+            usage=plan_usage.add(_sum_usage(item.usage for item in results)),
             plan=plan,
             query_results=tuple(item.retrieval for item in results),
         )
@@ -416,6 +437,7 @@ class RetrievalService:
         assumptions: list[str] | None = None,
         evidence_refs: list[str] | None = None,
         image_sha256: str | None = None,
+        index_manifest_id: str | None = None,
     ) -> PreparedQuery:
         fingerprint_payload = {
             "text": _normalize_query_text(text),
@@ -424,6 +446,7 @@ class RetrievalService:
             "negative_terms": negative_terms,
             "constraints_version": constraints_version,
             "image_sha256": image_sha256,
+            "index_manifest_id": index_manifest_id,
             "retrieval_version": "best-query-channel-rrf-v1",
         }
         fingerprint = hashlib.sha256(
@@ -442,6 +465,7 @@ class RetrievalService:
             source=source,
             assumptions=list(assumptions or []),
             evidence_refs=list(evidence_refs or []),
+            index_manifest_id=index_manifest_id,
             fingerprint=fingerprint,
         )
 
@@ -458,7 +482,9 @@ class RetrievalService:
         fallback_used = False
         fallback_reason: str | None = None
         index_version: str | None = None
+        usage = AgentRuntimeUsage()
         for query, item in zip(prepared, results, strict=True):
+            usage = usage.add(item.retrieval.usage)
             per_channel: dict[str, list[RetrievalCandidate]] = {}
             if item.retrieval.channel_results:
                 for channel_result in item.retrieval.channel_results:
@@ -524,6 +550,7 @@ class RetrievalService:
                 for channel, statuses in health_by_channel.items()
             },
             selected_candidates=fused,
+            usage=usage,
         )
 
     async def search_and_compare(
@@ -537,6 +564,7 @@ class RetrievalService:
         ranking_context: object | None = None,
         split_offer_ids: set[str] | None = None,
         constraints_version: int = 1,
+        max_queries: int | None = None,
     ) -> SearchAndCompareResult:
         search = await self.search_once(
             query_text,
@@ -545,6 +573,7 @@ class RetrievalService:
             image=image,
             soft_terms=soft_terms,
             constraints_version=constraints_version,
+            max_queries=max_queries,
         )
         comparison = await self._comparison.compare_candidates(
             search.candidates,
@@ -586,6 +615,13 @@ def _max_optional(left: float | None, right: float | None) -> float | None:
     if right is None:
         return left
     return max(left, right)
+
+
+def _sum_usage(usages: Iterable[AgentRuntimeUsage]) -> AgentRuntimeUsage:
+    total = AgentRuntimeUsage()
+    for usage in usages:
+        total = total.add(usage)
+    return total
 
 
 __all__ = ["RetrievalService", "SearchAndCompareResult", "SearchOnceResult"]

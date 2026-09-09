@@ -7,13 +7,14 @@ from typing import Any
 
 import pytest
 
+from shijiajing_agent.agent_runtime.contracts import AgentRuntimeUsage
 from shijiajing_agent.contracts import (
     HardFilters,
     RetrievalCandidate,
     RetrievalQuery,
     ShoppingConstraints,
 )
-from shijiajing_agent.ports.retrieval import RetrievalResult
+from shijiajing_agent.ports.retrieval import RetrievalResult, record_retrieval_usage
 from shijiajing_agent.rag_contracts import (
     ChannelKind,
     ChannelResult,
@@ -96,6 +97,23 @@ class FakeRetrieval:
         )
 
 
+class VersionedFakeRetrieval(FakeRetrieval):
+    index_version = "manifest-v1"
+
+    async def search(self, query: RetrievalQuery, **kwargs: Any) -> RetrievalResult:
+        result = await super().search(query, **kwargs)
+        result.index_version = self.index_version
+        return result
+
+
+class MeteredFakeRetrieval(FakeRetrieval):
+    async def search(self, query: RetrievalQuery, **kwargs: Any) -> RetrievalResult:
+        record_retrieval_usage(
+            AgentRuntimeUsage(db_search_attempts=2, embedding_calls=1, embedding_inputs=1)
+        )
+        return await super().search(query, **kwargs)
+
+
 @pytest.mark.asyncio
 async def test_search_once_preserves_plan_versions_and_fuses_variants() -> None:
     retrieval = FakeRetrieval()
@@ -123,3 +141,74 @@ async def test_search_once_preserves_plan_versions_and_fuses_variants() -> None:
     shared = next(item for item in result.candidates if item.offer.offer_id == "shared")
     assert len(shared.query_ids) == 2
     assert result.retrieval.fusion_version == "best-query-channel-rrf-v1"
+
+
+def test_prepared_query_fingerprint_binds_index_manifest() -> None:
+    service = RetrievalService(
+        FakeRewrite(),
+        VersionedFakeRetrieval(),
+        comparison=object(),  # type: ignore[arg-type]
+        index_manifest_id="manifest-v1",
+    )
+    query = service._prepared_query(  # type: ignore[attr-defined]
+        "同一查询",
+        hard_filters=HardFilters(),
+        soft_terms=[],
+        negative_terms=[],
+        constraints_version=1,
+        source=QuerySource.ORIGINAL,
+        index_manifest_id="manifest-v1",
+    )
+    other = service._prepared_query(  # type: ignore[attr-defined]
+        "同一查询",
+        hard_filters=HardFilters(),
+        soft_terms=[],
+        negative_terms=[],
+        constraints_version=1,
+        source=QuerySource.ORIGINAL,
+        index_manifest_id="manifest-v2",
+    )
+    assert query.index_manifest_id == "manifest-v1"
+    assert query.fingerprint != other.fingerprint
+
+
+@pytest.mark.asyncio
+async def test_prepared_query_rejects_mismatched_index_manifest() -> None:
+    retrieval = VersionedFakeRetrieval()
+    service = RetrievalService(
+        FakeRewrite(), retrieval, comparison=object(), index_manifest_id="manifest-v2"
+    )
+    query = service._prepared_query(  # type: ignore[attr-defined]
+        "查询",
+        hard_filters=HardFilters(),
+        soft_terms=[],
+        negative_terms=[],
+        constraints_version=1,
+        source=QuerySource.ORIGINAL,
+        index_manifest_id="manifest-v2",
+    )
+    with pytest.raises(ValueError, match="manifest"):
+        await service.execute_prepared_query(query)
+
+
+@pytest.mark.asyncio
+async def test_retrieval_usage_separates_logical_and_physical_calls() -> None:
+    service = RetrievalService(
+        FakeRewrite(), MeteredFakeRetrieval(), comparison=object(), index_manifest_id="v1"
+    )
+    query = service._prepared_query(  # type: ignore[attr-defined]
+        "查询",
+        hard_filters=HardFilters(),
+        soft_terms=[],
+        negative_terms=[],
+        constraints_version=1,
+        source=QuerySource.ORIGINAL,
+        index_manifest_id="v1",
+    )
+
+    result = await service.execute_prepared_query(query)
+
+    assert result.usage.retrieval_calls == 1
+    assert result.usage.db_search_attempts == 2
+    assert result.usage.embedding_calls == 1
+    assert result.usage.embedding_inputs == 1

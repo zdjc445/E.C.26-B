@@ -38,6 +38,13 @@ class LocalLexicalRetrievalAdapter:
         """释放惰性索引引用，保证 runtime 关闭后不保留快照对象。"""
         self._loaded = None
 
+    @property
+    def index_version(self) -> str | None:
+        """本地快照内容身份；不存在时保持惰性，不在装配期报错。"""
+        if not self._path.exists():
+            return None
+        return _snapshot_digest(self._path, 0)
+
     # ------------------------------------------------------------------
     def _load(self) -> tuple[list[Offer], Bm25Index, str]:
         """惰性加载只读快照并构建 BM25 索引。"""
@@ -156,9 +163,9 @@ def metadata_match(query: RetrievalQuery, offer: Offer) -> float:
 
 
 def _snapshot_digest(path: Path, n_lines: int) -> str:
-    """快照版本指纹：mtime + 行数哈希，进入 RetrievalResult.index_version。"""
-    stat = path.stat()
-    return hashlib.sha256(f"{stat.st_mtime_ns}:{n_lines}".encode()).hexdigest()[:12]
+    """快照内容指纹，与索引 manifest 的 snapshot_id 使用同一算法。"""
+    del n_lines
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:32]
 
 
 def _query_id(query: RetrievalQuery) -> str:

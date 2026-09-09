@@ -68,6 +68,8 @@ class PreparedQuery(BaseModel):
     requirement_ids: list[str] = Field(default_factory=list[str], max_length=20)
     assumptions: list[str] = Field(default_factory=list[str], max_length=20)
     evidence_refs: list[str] = Field(default_factory=list[str], max_length=20)
+    # 绑定已发布索引 manifest；历史/Fake 适配器没有身份时明确为 None。
+    index_manifest_id: str | None = Field(default=None, max_length=128)
     fingerprint: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
 
 
@@ -140,6 +142,7 @@ class IndexManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str = Field(min_length=1, max_length=64)
+    manifest_id: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     snapshot_id: str = Field(min_length=1, max_length=128)
     source_batches: list[str] = Field(default_factory=list[str], max_length=1000)
     source_content_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
@@ -155,6 +158,19 @@ class IndexManifest(BaseModel):
     valid_offer_count: int = Field(ge=0)
 
 
+def manifest_identity(manifest: IndexManifest) -> str:
+    """根据 manifest 内容计算发布身份。"""
+    import hashlib
+    import json
+
+    payload = manifest.model_dump(mode="json", exclude={"manifest_id"})
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+
+
 __all__ = [
     "CandidateAssessment",
     "ChannelKind",
@@ -168,4 +184,5 @@ __all__ = [
     "RequirementState",
     "RetrievalBatchResult",
     "SemanticRequirement",
+    "manifest_identity",
 ]
