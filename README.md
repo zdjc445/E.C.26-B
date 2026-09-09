@@ -124,6 +124,8 @@ uv run --env-file .env shijiajing-planner-shadow \
 | [docs/memory.md](docs/memory.md) | 三层上下文、显式记忆写入、scope/apply mode、HITL、持久化与验收设计 |
 | [docs/multi_agent.md](docs/multi_agent.md) | Supervisor、Specialist Agent、并行汇合与确定性边界 |
 | [主 Agent + 按需 subagent 改造设计](docs/plans/main_agent_on_demand_subagents_design.md) | 设计、阶段实施记录、兼容回滚及验收清单 |
+| [单一主／子 Agent 架构收敛方案](docs/plans/subagent_only_architecture_design.md) | 待实施：只保留 Main + 按需 Subagent，删除其他编排模式 |
+| [SKU 原始数据与按需补召回 RAG 方案](docs/plans/sku_offer_rag_on_demand_retrieval_design.md) | 待实施：平台 SKU 原始入库、混合召回、检索后动态 Schema、可选补查与完整验收清单 |
 | [docs/product_canonicalization.md](docs/product_canonicalization.md) | 当前商品归一化、动态 Schema 四种迁移模式、证据校验、SPU/SKU 确定性处理 |
 | [docs/plans/dynamic_product_schema_implementation_plan.md](docs/plans/dynamic_product_schema_implementation_plan.md) | 无静态 Taxonomy 的 LLM 动态局部 Schema 目标架构、迁移与验收方案 |
 | [docs/configuration.md](docs/configuration.md) | 全部配置项与缺失行为 |

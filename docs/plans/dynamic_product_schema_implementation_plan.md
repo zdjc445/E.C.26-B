@@ -5,6 +5,8 @@
 > 当前实现与运行行为见 [`docs/product_canonicalization.md`](../product_canonicalization.md)。
 > 本方案的目标是逐步移除 `data/taxonomy.json` 对商品归一化、同款召回和 SKU 拆分的运行时准入作用。
 
+> 后续待实施设计见 [SKU 原始数据与按需补召回 RAG 方案](sku_offer_rag_on_demand_retrieval_design.md)，补充原始 SKU 入库、检索后需求校验、跨查询融合与补查阶段的 Schema 复用；不代表这些能力已由本方案的现有实现提供。
+
 ## 1. 决策摘要
 
 目标架构不再要求人工预先枚举品类、品牌别名、属性键、属性枚举以及
