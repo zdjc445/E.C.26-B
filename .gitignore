@@ -15,6 +15,7 @@ build/
 # Codex 会话临时目录
 .codex_tmp/
 .codex-tmp/
+.codex-build/
 /tmp/
 
 # ===== 本地配置与数据 =====
