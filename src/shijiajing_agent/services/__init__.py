@@ -1,4 +1,4 @@
-"""主 Agent 与旧 Workflow 共用的业务服务。"""
+"""主 Agent runtime 共用的业务服务。"""
 
 from shijiajing_agent.services.answer import AnswerResult, AnswerService
 from shijiajing_agent.services.comparison import ComparisonResult, ComparisonService

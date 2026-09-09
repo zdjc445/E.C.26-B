@@ -148,7 +148,7 @@ class CapabilityDeniedError(ShijiajingError):
 
 class HandoffRejectedError(ShijiajingError):
     code = ErrorCode.HANDOFF_REJECTED
-    user_message = "Agent handoff 未获 Supervisor 批准"
+    user_message = "Agent 委派未通过运行时能力校验"
 
 
 def validation_to_code(exc: ValidationError) -> ErrorCode:
