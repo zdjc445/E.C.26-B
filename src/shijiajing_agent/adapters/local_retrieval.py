@@ -113,7 +113,7 @@ class LocalLexicalRetrievalAdapter:
             total_found=total_found,
             channel_counts={"sparse": len(candidates)},
             index_version=digest,
-            fusion_version="weighted-v1",
+            fusion_version="best-query-channel-rrf-v1",
         )
 
 

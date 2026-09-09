@@ -9,49 +9,42 @@ import pytest
 from shijiajing_agent.config import Settings, load_settings
 
 
-def test_supervisor_planner_modes_and_limits_are_loaded() -> None:
-    settings = load_settings(
-        {
-            "SHIJIAJING_SUPERVISOR_PLANNER_MODE": "active_replan",
-            "SHIJIAJING_SUPERVISOR_MODEL": "supervisor-v1",
-            "SHIJIAJING_SUPERVISOR_PLANNER_TIMEOUT_SECONDS": "4.5",
-            "SHIJIAJING_SUPERVISOR_PLANNER_MAX_REPAIRS": "0",
-            "SHIJIAJING_SUPERVISOR_PLANNER_MAX_TOKENS": "900",
-        }
-    )
-    assert settings.supervisor_planner_mode == "active_replan"
-    assert settings.supervisor_model == "supervisor-v1"
-    assert settings.supervisor_planner_timeout_seconds == 4.5
-    assert settings.supervisor_planner_max_repairs == 0
-    assert settings.supervisor_planner_max_tokens == 900
+def test_removed_orchestration_configuration_is_rejected() -> None:
+    with pytest.raises(ValueError, match="SHIJIAJING_EXECUTION_MODE"):
+        load_settings({"SHIJIAJING_EXECUTION_MODE": "workflow"})
 
-    missing = Settings(
-        checkpoint_dsn="checkpoint.db",
-        supervisor_planner_mode="active",
-    )
-    assert "SUPERVISOR_MODEL" in missing.validate_engineering()
-    assert "SUPERVISOR_MODEL" in missing.validate(require_real_adapters=True)
+    with pytest.raises(ValueError, match="SHIJIAJING_SUPERVISOR_PLANNER_MODE"):
+        load_settings({"SHIJIAJING_SUPERVISOR_PLANNER_MODE": "active_replan"})
 
 
 def test_environment_names_are_exact() -> None:
     assert load_settings({"SHIJIAJING_ENV": "prod"}).env == "prod"
-    assert Settings(env="dev", checkpoint_dsn="checkpoint.db").validate_engineering() == []
-    assert Settings(env="test", checkpoint_dsn="checkpoint.db").validate_engineering() == []
+    assert (
+        Settings(
+            env="dev", checkpoint_dsn="checkpoint.db", main_agent_model="main"
+        ).validate_engineering()
+        == []
+    )
+    assert (
+        Settings(
+            env="test", checkpoint_dsn="checkpoint.db", main_agent_model="main"
+        ).validate_engineering()
+        == []
+    )
 
 
 def test_unknown_environment_is_rejected() -> None:
-    errors = Settings(env="production").validate_engineering()
+    errors = Settings(env="production", main_agent_model="main").validate_engineering()
     assert "ENV=production" in errors
     assert "CHECKPOINT_DSN" in errors
 
 
 def test_checkpoint_dsn_is_required() -> None:
-    assert Settings().validate_engineering().count("CHECKPOINT_DSN") == 1
+    assert Settings(main_agent_model="main").validate_engineering().count("CHECKPOINT_DSN") == 1
 
 
-def test_main_agent_mode_requires_explicit_model_and_allows_zero_subagent_starts() -> None:
+def test_main_agent_requires_explicit_model_and_allows_zero_subagent_starts() -> None:
     settings = Settings(
-        execution_mode="main",
         checkpoint_dsn="checkpoint.db",
         main_agent_max_subagent_starts=0,
     )
@@ -67,6 +60,7 @@ def test_production_requires_persistent_event_store() -> None:
     configured = Settings(
         env="prod",
         checkpoint_dsn="checkpoint.db",
+        main_agent_model="main",
         event_store_backend="sqlite",
         event_store_dsn="events.db",
     )
@@ -154,7 +148,10 @@ def test_numeric_engineering_settings_reject_invalid_values() -> None:
         recent_turns_limit=0,
         recognition_review_threshold=float("inf"),
         retrieval_rrf_k=0,
-        retrieval_rerank_limit=0,
+        retrieval_initial_max_queries=0,
+        retrieval_supplement_max_queries=0,
+        retrieval_max_db_search_attempts=0,
+        retrieval_query_concurrency=0,
     )
 
     errors = invalid.validate_engineering()
@@ -181,7 +178,10 @@ def test_numeric_engineering_settings_reject_invalid_values() -> None:
         "RECENT_TURNS_LIMIT",
         "RECOGNITION_REVIEW_THRESHOLD",
         "RETRIEVAL_RRF_K",
-        "RETRIEVAL_RERANK_LIMIT",
+        "RETRIEVAL_INITIAL_MAX_QUERIES",
+        "RETRIEVAL_SUPPLEMENT_MAX_QUERIES",
+        "RETRIEVAL_MAX_DB_SEARCH_ATTEMPTS",
+        "RETRIEVAL_QUERY_CONCURRENCY",
     }
     assert expected.issubset(errors)
 
@@ -189,6 +189,7 @@ def test_numeric_engineering_settings_reject_invalid_values() -> None:
 def test_numeric_engineering_settings_accept_documented_boundaries() -> None:
     valid = Settings(
         checkpoint_dsn="checkpoint.db",
+        main_agent_model="main",
         vision_timeout_seconds=0.001,
         text_model_timeout_seconds=0.001,
         retrieval_timeout_seconds=0.001,
@@ -214,7 +215,10 @@ def test_numeric_engineering_settings_accept_documented_boundaries() -> None:
         recent_turns_limit=1,
         recognition_review_threshold=0.0,
         retrieval_rrf_k=1,
-        retrieval_rerank_limit=1,
+        retrieval_initial_max_queries=1,
+        retrieval_supplement_max_queries=1,
+        retrieval_max_db_search_attempts=1,
+        retrieval_query_concurrency=1,
     )
 
     assert valid.validate_engineering() == []

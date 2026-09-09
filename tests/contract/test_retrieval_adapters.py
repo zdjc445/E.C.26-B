@@ -316,13 +316,7 @@ async def test_milvus_close_releases_owned_resources_once(tmp_path: Path) -> Non
 
 
 async def test_milvus_text_fusion_formula(tmp_path: Path) -> None:
-    """§13.4 文本公式：recall = Σ(weight×signal) / Σ(available weights)。
-
-    归一化后（min-max 于当前候选集）：
-      dense  通道：o-dense=1.0, o-both=0.0
-      sparse 通道：o-sparse=1.0, o-both=0.0
-    查询词"索尼"（唯一 token）的 metadata 命中率：仅 o-sparse 命中（1.0）。
-    """
+    """生产固定使用按通道排名的 RRF，metadata 不作为独立召回通道。"""
     docs = [
         entity("o-dense", price=1899.0, title="Sony WH-1000XM5 降噪耳机"),
         entity("o-sparse", price=1799.0, title="索尼 头戴式 降噪 耳机"),
@@ -349,20 +343,21 @@ async def test_milvus_text_fusion_formula(tmp_path: Path) -> None:
     assert {c.offer.offer_id for c in result.candidates} == {"o-dense", "o-sparse", "o-both"}
     by_id = {c.offer.offer_id: c for c in result.candidates}
     dense = by_id["o-dense"]
-    assert dense.recall_score == pytest.approx(0.5 / 0.7)  # dense+metadata 归一化
+    assert dense.recall_score == pytest.approx(0.5)
     sparse = by_id["o-sparse"]
-    assert sparse.recall_score == pytest.approx(1.0)  # sparse+metadata 全命中
+    assert sparse.recall_score == pytest.approx(1.0 / 3.0)
     both = by_id["o-both"]
-    assert both.recall_score == pytest.approx(0.0)
+    assert both.recall_score == pytest.approx(1.0)
     assert both.channel_sources == ["dense", "sparse"]
     # filter 表达式传入 fake
     assert client.calls and client.calls[0]["filter"] == "category_id == 'headphone'"
-    # 排序：o-sparse 最高
-    assert result.candidates[0].offer.offer_id == "o-sparse"
+    assert result.fusion_version == "best-query-channel-rrf-v1"
+    # 两个通道都命中，o-both 获得最佳排名
+    assert result.candidates[0].offer.offer_id == "o-both"
 
 
 async def test_milvus_image_channel_and_weights(tmp_path: Path) -> None:
-    """有图片且图像向量可用：图像通道参与，公式切换为 §13.4 图片权重。"""
+    """有图片且图像向量可用：图像通道参与固定 RRF。"""
     docs = [entity("o1", price=1899.0)]
     client = FakeMilvusClient(docs, distance={"o1": {"text_dense": 0.9, "image_dense": 0.5}})
     adapter = MilvusHybridRetrievalAdapter(
@@ -378,8 +373,6 @@ async def test_milvus_image_channel_and_weights(tmp_path: Path) -> None:
         top_k=10,
     )
     c = result.candidates[0]
-    # 单候选各通道归一化后=1.0；metadata 命中（默认标题含"索尼"）：
-    # (0.35*1.0 + 0.25*1.0 + 0.2*1.0) / (0.35+0.25+0.2) = 1.0
     assert c.image_similarity is not None
     assert c.recall_score == pytest.approx(1.0)
     assert c.channel_sources == ["dense", "image"]

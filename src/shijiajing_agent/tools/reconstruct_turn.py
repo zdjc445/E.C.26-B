@@ -19,7 +19,6 @@ _VERSION_FIELDS = (
     "taxonomy_version",
     "retrieval_index_version",
     "fusion_version",
-    "rerank_version",
 )
 _TERMINAL_EVENT_TYPES = frozenset({"agent_completed", "agent_failed"})
 
@@ -94,7 +93,7 @@ def reconstruct_turn(
         (
             event.event_type
             for event in reversed(ordered)
-            if event.agent_name == "supervisor" and event.event_type in _TERMINAL_EVENT_TYPES
+            if event.event_type in _TERMINAL_EVENT_TYPES
         ),
         None,
     )

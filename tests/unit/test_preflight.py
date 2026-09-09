@@ -20,6 +20,7 @@ async def test_preflight_checks_native_sqlite_resources(tmp_path) -> None:
         request_ledger_backend="sqlite",
         request_ledger_dsn=str(tmp_path / "ledger.db"),
         trace_backend="structlog",
+        main_agent_model="fake-main",
     )
 
     result = await run_preflight(settings, require_real_adapters=False)
@@ -30,8 +31,7 @@ async def test_preflight_checks_native_sqlite_resources(tmp_path) -> None:
     assert result["memory_commit_enabled"] is True
     assert result["hitl_enabled"] is False
     assert result["memory_confirmation_required"] is True
-    assert result["retrieval_fusion_strategy"] == "weighted"
-    assert result["retrieval_rerank_enabled"] is False
+    assert result["retrieval_fusion_strategy"] == "best-query-channel-rrf-v1"
     assert result["retrieval_index_version"] is None
     assert result["cache_ttl_seconds"] == {
         "vision": 2_592_000,
@@ -39,8 +39,8 @@ async def test_preflight_checks_native_sqlite_resources(tmp_path) -> None:
         "query_rewrite": 604_800,
         "retrieval": 300,
         "explanation": 86_400,
-            "dynamic_schema": 604_800,
-            "dynamic_canonicalization": 604_800,
+        "dynamic_schema": 604_800,
+        "dynamic_canonicalization": 604_800,
     }
     assert result["postgres_pool"] == {
         "min_size": 1,
@@ -48,7 +48,7 @@ async def test_preflight_checks_native_sqlite_resources(tmp_path) -> None:
         "timeout_seconds": 30.0,
     }
     assert result["checked_resources"] == [
-        "multi_agent_checkpointer",
+        "agent_runtime_checkpointer",
         "request_ledger",
         "trace",
     ]
@@ -68,6 +68,7 @@ async def test_preflight_trace_probe_requires_opentelemetry() -> None:
         request_ledger_backend="sqlite",
         request_ledger_dsn="ledger.db",
         trace_backend="structlog",
+        main_agent_model="fake-main",
     )
 
     with pytest.raises(ValueError, match="TRACE_BACKEND=opentelemetry"):
@@ -98,6 +99,7 @@ async def test_preflight_trace_probe_emits_synthetic_turn(monkeypatch, tmp_path)
         request_ledger_dsn=str(tmp_path / "ledger.db"),
         trace_backend="opentelemetry",
         trace_dsn="http://collector.example/v1/traces",
+        main_agent_model="fake-main",
     )
 
     result = await run_preflight(settings, require_real_adapters=False, verify_trace=True)

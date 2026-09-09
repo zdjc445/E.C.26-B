@@ -33,7 +33,7 @@ from shijiajing_agent.contracts import (
     RetrievalCandidate,
     RetrievalQuery,
 )
-from shijiajing_agent.domain.retrieval_fusion import ReciprocalRankFusion, WeightedScoreFusion
+from shijiajing_agent.domain.retrieval_fusion import ReciprocalRankFusion
 from shijiajing_agent.errors import RetrievalUnavailableError
 from shijiajing_agent.ports.milvus import MilvusClientPort, make_milvus_client
 from shijiajing_agent.ports.models import ImageEmbeddingPort, TextEmbeddingPort
@@ -288,21 +288,17 @@ class MilvusHybridRetrievalAdapter:
                     image_hits, results_by_id, channel_scores["image"], sources_by_id, "image"
                 )
 
-        # 并集截断
+        # 融合前保留各通道的全部有界命中；不能因 dense 先返回而丢弃 sparse 命中。
         candidates = list(results_by_id.values())
-        if len(candidates) > union_limit:
-            candidates = candidates[:union_limit]
         if not candidates:
             return RetrievalResult(
                 candidates=[],
                 total_found=0,
                 index_version=self._settings.retrieval_index_version,
-                fusion_version="weighted-v1",
+                fusion_version="best-query-channel-rrf-v1",
             )
 
-        # 每信号在当前候选集归一化
-        for channel in ("dense", "sparse", "image"):
-            _min_max_normalize(channel_scores[channel], candidates)
+        # 原始相似度只作为调试字段保留，不跨通道 min-max 后当作概率。
         ranked: list[RetrievalCandidate] = []
         for row in candidates:
             offer = _entity_to_offer(row)
@@ -323,40 +319,37 @@ class MilvusHybridRetrievalAdapter:
                     channel_sources=sources_by_id.get(offer.offer_id, []),
                 )
             )
-        weighted = WeightedScoreFusion()
-        ranked = weighted.fuse({"all": ranked}, union_limit)
-        fusion_version = weighted.version
-        if self._settings.retrieval_fusion_strategy == "rrf":
-            channel_results: dict[str, list[RetrievalCandidate]] = {}
-            score_fields = {
-                "dense": "dense_text_score",
-                "sparse": "sparse_score",
-                "image": "image_similarity",
-                "metadata": "metadata_match",
-            }
-            for channel, field in score_fields.items():
-                channel_candidates = [
-                    candidate.model_copy(
-                        update={"recall_score": float(getattr(candidate, field) or 0.0)}
-                    )
-                    for candidate in ranked
-                    if getattr(candidate, field) is not None
-                ]
-                if channel_candidates:
-                    channel_results[channel] = sorted(
-                        channel_candidates,
-                        key=lambda candidate: (
-                            -candidate.recall_score,
-                            candidate.offer.offer_id,
-                        ),
-                    )
-            fusion = ReciprocalRankFusion(self._settings.retrieval_rrf_k)
-            ranked = fusion.fuse(channel_results, union_limit)
-            ranked = [
-                candidate.model_copy(update={"recall_score": 1.0 / rank})
-                for rank, candidate in enumerate(ranked, start=1)
+        # metadata 是过滤/辅助信息，不作为独立召回通道；应用层跨 query 合并时
+        # 复用同一固定 RRF 版本。
+        channel_results: dict[str, list[RetrievalCandidate]] = {}
+        score_fields = {
+            "dense": "dense_text_score",
+            "sparse": "sparse_score",
+            "image": "image_similarity",
+        }
+        for channel, field in score_fields.items():
+            channel_candidates = [
+                candidate.model_copy(
+                    update={"recall_score": float(getattr(candidate, field) or 0.0)}
+                )
+                for candidate in ranked
+                if getattr(candidate, field) is not None
             ]
-            fusion_version = fusion.version
+            if channel_candidates:
+                channel_results[channel] = sorted(
+                    channel_candidates,
+                    key=lambda candidate: (
+                        -candidate.recall_score,
+                        candidate.offer.offer_id,
+                    ),
+                )
+        fusion = ReciprocalRankFusion(self._settings.retrieval_rrf_k)
+        ranked = fusion.fuse(channel_results, union_limit)
+        ranked = [
+            candidate.model_copy(update={"recall_score": 1.0 / rank})
+            for rank, candidate in enumerate(ranked, start=1)
+        ]
+        fusion_version = "best-query-channel-rrf-v1"
 
         if self._metrics is not None:
             self._metrics.inc("retrieval_candidate_count", value=float(len(ranked)))
@@ -395,24 +388,6 @@ class MilvusHybridRetrievalAdapter:
             src = sources.setdefault(raw_id, [])
             if channel not in src:
                 src.append(channel)
-
-
-def _min_max_normalize(scores: dict[str, float], candidates: list[dict[str, Any]]) -> None:
-    """把通道分数在候选集内 min-max 到 [0,1]。"""
-    values: list[float] = []
-    for c in candidates:
-        cid = c.get("offer_id")
-        if isinstance(cid, str) and cid in scores:
-            values.append(scores[cid])
-    if not values:
-        return
-    lo, hi = min(values), max(values)
-    if hi <= lo:
-        for key in list(scores):
-            scores[key] = 1.0 if hi > 0 else 0.0
-        return
-    for key in list(scores):
-        scores[key] = (scores[key] - lo) / (hi - lo)
 
 
 def _entity_to_offer(entity: dict[str, Any]) -> Offer:

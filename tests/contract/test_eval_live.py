@@ -48,7 +48,7 @@ from shijiajing_agent.evals_live import (
     write_run_manifest,
 )
 from shijiajing_agent.ports.retrieval import RetrievalResult
-from tests.multi_agent.conftest import (
+from tests.agent_runtime.conftest import (
     FakeExplanation,
     FakeRetrieval,
     candidate,
@@ -59,7 +59,7 @@ from tests.multi_agent.conftest import (
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings()
+    return Settings(main_agent_model="fake-main")
 
 
 @pytest.fixture

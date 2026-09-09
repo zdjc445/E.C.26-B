@@ -1,7 +1,7 @@
-"""受控 Multi-Agent 的统一应用门面。
+"""主 Agent + 按需 Subagent 的统一应用门面。
 
-门面只负责请求幂等、会话串行、整轮超时与 Supervisor 生命周期；业务任务的计划、
-派发、汇合和恢复全部由 :class:`MultiAgentSupervisor` 负责。
+门面只负责请求幂等、会话串行、整轮超时和 checkpoint 生命周期；所有业务动作、
+子 Agent 委派、汇合和恢复都在唯一的 :class:`MainAgentRuntime` 内完成。
 """
 
 from __future__ import annotations
@@ -33,15 +33,12 @@ from shijiajing_agent.contracts import (
 )
 from shijiajing_agent.domain.taxonomy import Taxonomy
 from shijiajing_agent.errors import ErrorCode, RequestLedgerUnavailableError, SessionConflictError
-from shijiajing_agent.multi_agent.checkpoint import LangGraphMultiAgentCheckpoint
-from shijiajing_agent.multi_agent.supervisor import MultiAgentSupervisor
 from shijiajing_agent.ports.agent_decision import (
     AgentDecisionPort,
     OfferDetailPort,
     SubagentDecisionPort,
 )
 from shijiajing_agent.ports.cache import VersionedCachePort
-from shijiajing_agent.ports.dependencies import SupervisorPlannerPort
 from shijiajing_agent.ports.event_store import EventStorePort
 from shijiajing_agent.ports.memory import MemoryPort
 from shijiajing_agent.ports.models import (
@@ -59,7 +56,7 @@ from shijiajing_agent.ports.retrieval import ProductRetrievalPort
 
 @dataclass
 class AgentDependencies:
-    """Supervisor 与 Specialist Agent 共用的端口容器。"""
+    """唯一主 runtime 及其按需子 Agent 共用的端口容器。"""
 
     taxonomy: Taxonomy
     settings: Settings
@@ -75,7 +72,6 @@ class AgentDependencies:
     memory: MemoryPort | None = None
     cache: VersionedCachePort | None = None
     event_store: EventStorePort | None = None
-    supervisor_planner: SupervisorPlannerPort | None = None
     agent_decision: AgentDecisionPort | None = None
     agent_checkpoint: AgentRuntimeCheckpointPort | None = None
     offer_details: OfferDetailPort | None = None
@@ -86,7 +82,7 @@ class AgentDependencies:
 
 
 class AgentFacade:
-    """对外暴露 run/start/resume 的唯一 Multi-Agent 入口。"""
+    """对外暴露 run/start/resume 的唯一 Agent runtime 入口。"""
 
     def __init__(self, deps: AgentDependencies) -> None:
         self._deps = deps
@@ -184,27 +180,20 @@ class AgentFacade:
         resume: AgentResume,
         context: AgentExecutionContext,
     ) -> AgentTurnResult:
-        """从 Supervisor Checkpoint 恢复一次 HITL 中断。"""
+        """从主 Agent runtime checkpoint 恢复一次 HITL 中断。"""
         request = AgentRequest(session_id=session_id, request_id="resume", text="resume")
-        if (
-            self._deps.graph_checkpointer is None
-            and self._deps.agent_checkpoint is None
-            and self._is_main_mode
-        ):
+        if self._deps.graph_checkpointer is None and self._deps.agent_checkpoint is None:
             return AgentTurnResult(
                 response=self._failed(
                     request,
                     ErrorCode.INVALID_REQUEST,
-                    "Multi-Agent resume 需要持久化 Checkpoint。",
+                    "主 Agent resume 需要持久化 Checkpoint。",
                 )
             )
         try:
             async with self._session_lock(session_id):
                 async with asyncio.timeout(self._deps.settings.turn_timeout_seconds):
-                    if self._is_main_mode:
-                        outcome = await self._main().resume(session_id, resume, context)
-                    else:
-                        outcome = await self._supervisor().resume(session_id, resume, context)
+                    outcome = await self._main().resume(session_id, resume, context)
                 if outcome.response is not None:
                     completed_request = AgentRequest(
                         session_id=outcome.response.session_id,
@@ -230,22 +219,6 @@ class AgentFacade:
                 response=self._failed(request, ErrorCode.INTERNAL_ERROR, "resume 处理失败。")
             )
 
-    def _supervisor(self) -> MultiAgentSupervisor:
-        checkpoint = (
-            LangGraphMultiAgentCheckpoint(self._deps.graph_checkpointer)
-            if self._deps.graph_checkpointer is not None
-            else None
-        )
-        return MultiAgentSupervisor(
-            self._deps,
-            planner_port=self._deps.supervisor_planner,
-            checkpoint=checkpoint,
-        )
-
-    @property
-    def _is_main_mode(self) -> bool:
-        return self._deps.settings.execution_mode in {"main", "main_with_subagents"}
-
     async def _run_engine(
         self,
         request: AgentRequest,
@@ -253,13 +226,7 @@ class AgentFacade:
         context: AgentExecutionContext,
         pause_for_hitl: bool,
     ) -> Any:
-        if self._is_main_mode:
-            return await self._main().run(
-                request,
-                context=context,
-                pause_for_hitl=pause_for_hitl,
-            )
-        return await self._supervisor().run(
+        return await self._main().run(
             request,
             context=context,
             pause_for_hitl=pause_for_hitl,
@@ -314,7 +281,7 @@ class AgentFacade:
                         request.session_id,
                         request.request_id,
                         response.turn_id,
-                        "supervisor",
+                        "main",
                         None,
                         "request_result_committed",
                         0,
@@ -323,7 +290,7 @@ class AgentFacade:
                     request_id=request.request_id,
                     turn_id=response.turn_id,
                     trace_id=response.trace_id,
-                    agent_name="supervisor",
+                    agent_name="main",
                     event_type="request_result_committed",
                     status=response.status.value,
                     output_hash=response_hash,

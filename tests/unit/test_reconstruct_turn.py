@@ -20,7 +20,7 @@ def make_event(
     occurred_at: str,
     request_id: str = "r1",
     trace_id: str = "trace-1",
-    agent_name: str = "supervisor",
+    agent_name: str = "main",
     node_name: str | None = "parse_intent",
     payload: dict[str, object] | None = None,
 ) -> AgentEventRecord:
@@ -53,7 +53,10 @@ def test_reconstruct_turn_orders_events_and_collects_versions() -> None:
             make_event(
                 "node_completed",
                 occurred_at="2026-08-22T00:00:01+00:00",
-                payload={"prompt_version": "prompt-v1", "fusion_version": "weighted-v1"},
+                payload={
+                    "prompt_version": "prompt-v1",
+                    "fusion_version": "best-query-channel-rrf-v1",
+                },
             ),
             make_event(
                 "agent_failed",
@@ -74,9 +77,9 @@ def test_reconstruct_turn_orders_events_and_collects_versions() -> None:
     assert result.versions == {
         "prompt_version": ("prompt-v1",),
         "taxonomy_version": ("taxonomy-v1",),
-        "fusion_version": ("weighted-v1",),
+        "fusion_version": ("best-query-channel-rrf-v1",),
     }
-    assert result.terminal_event_type == "agent_completed"
+    assert result.terminal_event_type == "agent_failed"
     assert result.trace_id == "trace-1"
 
 

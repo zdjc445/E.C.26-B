@@ -5,12 +5,6 @@ from __future__ import annotations
 from typing import Protocol
 
 from shijiajing_agent.config import Settings
-from shijiajing_agent.contracts import (
-    ExecutionPlan,
-    ExecutionPlanPatch,
-    SupervisorPlanningInput,
-    SupervisorReplanningInput,
-)
 from shijiajing_agent.domain.taxonomy import Taxonomy
 from shijiajing_agent.ports.agent_decision import (
     AgentDecisionPort,
@@ -51,16 +45,7 @@ class AgentDependenciesPort(Protocol):
     memory: MemoryPort | None
     cache: VersionedCachePort | None
     event_store: EventStorePort | None
-    supervisor_planner: SupervisorPlannerPort | None
     agent_decision: AgentDecisionPort | None
     offer_details: OfferDetailPort | None
     research_decision: SubagentDecisionPort | None
     verification_decision: SubagentDecisionPort | None
-
-
-class SupervisorPlannerPort(Protocol):
-    """结构化可选 Planner；输出仍必须交给 PlanValidator。"""
-
-    async def create_plan(self, request: SupervisorPlanningInput) -> ExecutionPlan: ...
-
-    async def revise_plan(self, request: SupervisorReplanningInput) -> ExecutionPlanPatch: ...

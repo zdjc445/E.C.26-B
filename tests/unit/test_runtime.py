@@ -188,9 +188,8 @@ async def test_resource_registration_is_identity_deduplicated() -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_preserves_configured_supervisor_planner() -> None:
-    settings = Settings(supervisor_planner_mode="shadow", supervisor_model="planner-test")
-    planner = object()
+async def test_runtime_exposes_only_main_agent_dependencies() -> None:
+    settings = Settings(main_agent_model="main-test")
     deps = AgentDependencies(
         taxonomy=load_taxonomy(settings.taxonomy_path_resolved),
         settings=settings,
@@ -201,8 +200,8 @@ async def test_runtime_preserves_configured_supervisor_planner() -> None:
         retrieval=_AsyncResource(),
         trace=_AsyncResource(),
         metrics=SimpleNamespace(),
-        supervisor_planner=planner,  # type: ignore[arg-type]
     )
 
     async with open_agent_runtime(settings, deps_factory=lambda _: deps) as facade:
-        assert facade.dependencies.supervisor_planner is planner
+        assert facade.dependencies.settings.main_agent_model == "main-test"
+        assert not hasattr(facade.dependencies, "supervisor_planner")

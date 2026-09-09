@@ -14,6 +14,24 @@ from pathlib import Path
 
 _ENV_PREFIX = "SHIJIAJING"
 
+# 旧编排和可选 RAG 开关只保留迁移诊断，不能再被解析或驱动兼容引擎。
+REMOVED_CONFIGURATION = (
+    "EXECUTION_MODE",
+    "RESEARCH_SUBAGENT_ENABLED",
+    "VERIFICATION_SUBAGENT_ENABLED",
+    "SUPERVISOR_MODEL",
+    "SUPERVISOR_PLANNER_MODE",
+    "SUPERVISOR_PLANNER_TIMEOUT_SECONDS",
+    "SUPERVISOR_PLANNER_MAX_REPAIRS",
+    "SUPERVISOR_PLANNER_MAX_TOKENS",
+    "MAX_AGENT_TASKS",
+    "MAX_SUPERVISOR_REPLANS",
+    "AGENT_TASK_TIMEOUT_SECONDS",
+    "RETRIEVAL_FUSION_STRATEGY",
+    "RETRIEVAL_RERANK_ENABLED",
+    "RETRIEVAL_RERANK_LIMIT",
+)
+
 # 仅算法类参数有默认值；外部资源标识不提供代码默认值（方案 §13）。
 _DEFAULTS: dict[str, str] = {
     "VISION_TIMEOUT_SECONDS": "30",
@@ -52,17 +70,6 @@ _DEFAULTS: dict[str, str] = {
     "RECENT_TURNS_MAX_BYTES": "65536",
     "MEMORY_MUTATION_LEDGER_RETENTION_DAYS": "90",
     "RETRIEVAL_RRF_K": "60",
-    "RETRIEVAL_RERANK_LIMIT": "60",
-    "MAX_AGENT_TASKS": "32",
-    "MAX_SUPERVISOR_REPLANS": "2",
-    "AGENT_TASK_TIMEOUT_SECONDS": "30",
-    "SUPERVISOR_PLANNER_MODE": "off",
-    "SUPERVISOR_PLANNER_TIMEOUT_SECONDS": "8",
-    "SUPERVISOR_PLANNER_MAX_REPAIRS": "1",
-    "SUPERVISOR_PLANNER_MAX_TOKENS": "1500",
-    "EXECUTION_MODE": "workflow",
-    "RESEARCH_SUBAGENT_ENABLED": "false",
-    "VERIFICATION_SUBAGENT_ENABLED": "false",
     "MAIN_AGENT_MAX_DECISIONS": "8",
     "MAIN_AGENT_MAX_TOOL_CALLS": "24",
     "MAIN_AGENT_MAX_RETRIEVAL_CALLS": "6",
@@ -73,6 +80,10 @@ _DEFAULTS: dict[str, str] = {
     "SUBAGENT_MAX_TOOL_CALLS": "6",
     "SUBAGENT_MAX_SECONDS": "30",
     "SUBAGENT_MAX_TOKENS": "20000",
+    "RETRIEVAL_INITIAL_MAX_QUERIES": "3",
+    "RETRIEVAL_SUPPLEMENT_MAX_QUERIES": "3",
+    "RETRIEVAL_MAX_DB_SEARCH_ATTEMPTS": "24",
+    "RETRIEVAL_QUERY_CONCURRENCY": "2",
 }
 
 # 外部资源：缺失时必须启动失败（无默认值）
@@ -109,16 +120,8 @@ class Settings:
     milvus_collection: str | None = None
     checkpoint_backend: str = "sqlite"
     checkpoint_dsn: str | None = None
-    supervisor_model: str | None = None
-    supervisor_planner_mode: str = "off"
-    supervisor_planner_timeout_seconds: float = 8.0
-    supervisor_planner_max_repairs: int = 1
-    supervisor_planner_max_tokens: int = 1500
-    execution_mode: str = "workflow"
     main_agent_model: str | None = None
     subagent_model: str | None = None
-    research_subagent_enabled: bool = False
-    verification_subagent_enabled: bool = False
     main_agent_max_decisions: int = 8
     main_agent_max_tool_calls: int = 24
     main_agent_max_retrieval_calls: int = 6
@@ -129,9 +132,6 @@ class Settings:
     subagent_max_tool_calls: int = 6
     subagent_max_seconds: float = 30.0
     subagent_max_tokens: int = 20_000
-    max_agent_tasks: int = 32
-    max_supervisor_replans: int = 2
-    agent_task_timeout_seconds: float = 30.0
     request_ledger_backend: str = "disabled"
     request_ledger_dsn: str | None = None
     trace_backend: str = "structlog"
@@ -184,11 +184,12 @@ class Settings:
     memory_confirmation_required: bool = True
     cache_backend: str = "disabled"
     cache_dsn: str | None = None
-    retrieval_fusion_strategy: str = "weighted"
     retrieval_rrf_k: int = 60
-    retrieval_rerank_limit: int = 60
-    retrieval_rerank_enabled: bool = False
     retrieval_index_version: str | None = None
+    retrieval_initial_max_queries: int = 3
+    retrieval_supplement_max_queries: int = 3
+    retrieval_max_db_search_attempts: int = 24
+    retrieval_query_concurrency: int = 2
     event_store_backend: str = "disabled"
     event_store_dsn: str | None = None
 
@@ -212,9 +213,7 @@ class Settings:
                 missing.extend((*_MILVUS_REQUIRED, "LOCAL_PRODUCT_SNAPSHOT_PATH"))
             if milvus_configured and self.embedding_model in (None, ""):
                 missing.append("EMBEDDING_MODEL")
-            if self.supervisor_planner_mode != "off" and not self.supervisor_model:
-                missing.append("SUPERVISOR_MODEL")
-            if self.execution_mode in {"main", "main_with_subagents"} and not self.main_agent_model:
+            if not self.main_agent_model:
                 missing.append("MAIN_AGENT_MODEL")
         return missing
 
@@ -248,20 +247,8 @@ class Settings:
 
         if self.env not in _ENVIRONMENTS:
             errors.append(f"ENV={self.env}")
-        if self.supervisor_planner_mode not in {"off", "shadow", "active_replan", "active"}:
-            errors.append(f"SUPERVISOR_PLANNER_MODE={self.supervisor_planner_mode}")
-        if self.supervisor_planner_mode != "off" and not self.supervisor_model:
-            errors.append("SUPERVISOR_MODEL")
-        if self.execution_mode not in {"workflow", "main", "main_with_subagents"}:
-            errors.append(f"EXECUTION_MODE={self.execution_mode}")
-        if self.execution_mode in {"main", "main_with_subagents"} and not self.main_agent_model:
+        if not self.main_agent_model:
             errors.append("MAIN_AGENT_MODEL")
-        if self.execution_mode != "workflow" and self.supervisor_planner_mode != "off":
-            errors.append("EXECUTION_MODE_SUPERVISOR_PLANNER_CONFLICT")
-        if self.execution_mode != "main_with_subagents" and self.research_subagent_enabled:
-            errors.append("RESEARCH_SUBAGENT_ENABLED_REQUIRES_MAIN_WITH_SUBAGENTS")
-        if self.execution_mode != "main_with_subagents" and self.verification_subagent_enabled:
-            errors.append("VERIFICATION_SUBAGENT_ENABLED_REQUIRES_MAIN_WITH_SUBAGENTS")
         if self.checkpoint_backend not in {"sqlite", "postgres"}:
             errors.append(f"CHECKPOINT_BACKEND={self.checkpoint_backend}")
         if self.checkpoint_backend in {"sqlite", "postgres"} and not self.checkpoint_dsn:
@@ -297,16 +284,12 @@ class Settings:
             errors.append("EVENT_STORE_DSN")
         if self.env == "prod" and self.event_store_backend == "disabled":
             errors.append("EVENT_STORE_BACKEND")
-        if self.retrieval_fusion_strategy not in {"weighted", "rrf"}:
-            errors.append(f"RETRIEVAL_FUSION_STRATEGY={self.retrieval_fusion_strategy}")
         for name, value in (
             ("VISION_TIMEOUT_SECONDS", self.vision_timeout_seconds),
             ("TEXT_MODEL_TIMEOUT_SECONDS", self.text_model_timeout_seconds),
             ("RETRIEVAL_TIMEOUT_SECONDS", self.retrieval_timeout_seconds),
             ("TURN_TIMEOUT_SECONDS", self.turn_timeout_seconds),
             ("POSTGRES_POOL_TIMEOUT_SECONDS", self.postgres_pool_timeout_seconds),
-            ("AGENT_TASK_TIMEOUT_SECONDS", self.agent_task_timeout_seconds),
-            ("SUPERVISOR_PLANNER_TIMEOUT_SECONDS", self.supervisor_planner_timeout_seconds),
         ):
             require_finite_positive(name, value)
         for name, value in (
@@ -357,11 +340,10 @@ class Settings:
                 self.memory_mutation_ledger_retention_days,
             ),
             ("RETRIEVAL_RRF_K", self.retrieval_rrf_k),
-            ("RETRIEVAL_RERANK_LIMIT", self.retrieval_rerank_limit),
-            ("MAX_AGENT_TASKS", self.max_agent_tasks),
-            ("MAX_SUPERVISOR_REPLANS", self.max_supervisor_replans),
-            ("SUPERVISOR_PLANNER_MAX_REPAIRS", self.supervisor_planner_max_repairs),
-            ("SUPERVISOR_PLANNER_MAX_TOKENS", self.supervisor_planner_max_tokens),
+            ("RETRIEVAL_INITIAL_MAX_QUERIES", self.retrieval_initial_max_queries),
+            ("RETRIEVAL_SUPPLEMENT_MAX_QUERIES", self.retrieval_supplement_max_queries),
+            ("RETRIEVAL_MAX_DB_SEARCH_ATTEMPTS", self.retrieval_max_db_search_attempts),
+            ("RETRIEVAL_QUERY_CONCURRENCY", self.retrieval_query_concurrency),
             ("MAIN_AGENT_MAX_DECISIONS", self.main_agent_max_decisions),
             ("MAIN_AGENT_MAX_TOOL_CALLS", self.main_agent_max_tool_calls),
             ("MAIN_AGENT_MAX_RETRIEVAL_CALLS", self.main_agent_max_retrieval_calls),
@@ -405,9 +387,18 @@ def _to_attr(env_suffix: str) -> str:
     return env_suffix.lower()
 
 
+def removed_configuration(env: Mapping[str, str] | None = None) -> list[str]:
+    """返回仍存在于环境中的废弃配置名，供启动诊断和迁移检查使用。"""
+    env_source: Mapping[str, str] = os.environ if env is None else env
+    return [name for name in REMOVED_CONFIGURATION if env_source.get(_env_name(name), "").strip()]
+
+
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     """从环境变量加载配置。env 参数用于测试注入，默认读 os.environ。"""
     env_source: Mapping[str, str] = os.environ if env is None else env
+    removed = removed_configuration(env_source)
+    if removed:
+        raise ValueError("已移除配置，请删除：" + ", ".join(_env_name(name) for name in removed))
 
     def get(name: str) -> str | None:
         v = env_source.get(_env_name(name))
@@ -454,16 +445,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         milvus_collection=get("MILVUS_COLLECTION"),
         checkpoint_backend=get("CHECKPOINT_BACKEND") or "sqlite",
         checkpoint_dsn=get("CHECKPOINT_DSN"),
-        supervisor_model=get("SUPERVISOR_MODEL"),
-        supervisor_planner_mode=get("SUPERVISOR_PLANNER_MODE") or "off",
-        supervisor_planner_timeout_seconds=getf("SUPERVISOR_PLANNER_TIMEOUT_SECONDS"),
-        supervisor_planner_max_repairs=geti("SUPERVISOR_PLANNER_MAX_REPAIRS"),
-        supervisor_planner_max_tokens=geti("SUPERVISOR_PLANNER_MAX_TOKENS"),
-        execution_mode=get("EXECUTION_MODE") or "workflow",
         main_agent_model=get("MAIN_AGENT_MODEL"),
         subagent_model=get("SUBAGENT_MODEL"),
-        research_subagent_enabled=getb("RESEARCH_SUBAGENT_ENABLED", False),
-        verification_subagent_enabled=getb("VERIFICATION_SUBAGENT_ENABLED", False),
         main_agent_max_decisions=geti("MAIN_AGENT_MAX_DECISIONS"),
         main_agent_max_tool_calls=geti("MAIN_AGENT_MAX_TOOL_CALLS"),
         main_agent_max_retrieval_calls=geti("MAIN_AGENT_MAX_RETRIEVAL_CALLS"),
@@ -474,9 +457,6 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         subagent_max_tool_calls=geti("SUBAGENT_MAX_TOOL_CALLS"),
         subagent_max_seconds=getf("SUBAGENT_MAX_SECONDS"),
         subagent_max_tokens=geti("SUBAGENT_MAX_TOKENS"),
-        max_agent_tasks=geti("MAX_AGENT_TASKS"),
-        max_supervisor_replans=geti("MAX_SUPERVISOR_REPLANS"),
-        agent_task_timeout_seconds=getf("AGENT_TASK_TIMEOUT_SECONDS"),
         request_ledger_backend=get("REQUEST_LEDGER_BACKEND") or "sqlite",
         request_ledger_dsn=get("REQUEST_LEDGER_DSN"),
         trace_backend=get("TRACE_BACKEND") or "structlog",
@@ -530,11 +510,12 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         memory_confirmation_required=getb("MEMORY_CONFIRMATION_REQUIRED", True),
         cache_backend=get("CACHE_BACKEND") or "disabled",
         cache_dsn=get("CACHE_DSN"),
-        retrieval_fusion_strategy=get("RETRIEVAL_FUSION_STRATEGY") or "weighted",
         retrieval_rrf_k=geti("RETRIEVAL_RRF_K"),
-        retrieval_rerank_limit=geti("RETRIEVAL_RERANK_LIMIT"),
-        retrieval_rerank_enabled=getb("RETRIEVAL_RERANK_ENABLED", False),
         retrieval_index_version=get("RETRIEVAL_INDEX_VERSION"),
+        retrieval_initial_max_queries=geti("RETRIEVAL_INITIAL_MAX_QUERIES"),
+        retrieval_supplement_max_queries=geti("RETRIEVAL_SUPPLEMENT_MAX_QUERIES"),
+        retrieval_max_db_search_attempts=geti("RETRIEVAL_MAX_DB_SEARCH_ATTEMPTS"),
+        retrieval_query_concurrency=geti("RETRIEVAL_QUERY_CONCURRENCY"),
         event_store_backend=get("EVENT_STORE_BACKEND") or "disabled",
         event_store_dsn=get("EVENT_STORE_DSN"),
         preference_weights={

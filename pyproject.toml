@@ -1,7 +1,7 @@
 [project]
 name = "shijiajing-agent"
 version = "0.1.0"
-description = "识价镜 Agent：由 Supervisor 编排识别、意图、检索、解释与记忆 Agent 的可恢复层级式 Multi-Agent"
+description = "识价镜 Agent：主 Agent 按需委派子 Agent 的可恢复商品检索与比价 runtime"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
@@ -49,7 +49,6 @@ shijiajing-preflight = "shijiajing_agent.tools.preflight:main"
 shijiajing-reconstruct-turn = "shijiajing_agent.tools.reconstruct_turn:main"
 shijiajing-benchmark = "shijiajing_agent.tools.benchmark:main"
 shijiajing-release-check = "shijiajing_agent.tools.release_check:main"
-shijiajing-planner-shadow = "shijiajing_agent.tools.run_planner_shadow:main"
 
 [build-system]
 requires = ["hatchling"]

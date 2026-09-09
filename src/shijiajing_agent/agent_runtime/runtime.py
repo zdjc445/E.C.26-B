@@ -162,12 +162,8 @@ class MainAgentRuntime:
         )
         self._guard = ActionGuard(
             DelegationPolicy(
-                research_enabled=(
-                    deps.settings.research_subagent_enabled and self._research is not None
-                ),
-                verification_enabled=(
-                    deps.settings.verification_subagent_enabled and self._verification is not None
-                ),
+                research_enabled=self._research is not None,
+                verification_enabled=self._verification is not None,
                 offer_details=offer_details,
             )
         )
@@ -241,14 +237,8 @@ class MainAgentRuntime:
                 )
             allowed = allowed_actions_for(
                 state,
-                research_enabled=(
-                    self._settings.execution_mode == "main_with_subagents"
-                    and self._settings.research_subagent_enabled
-                    and self._research is not None
-                ),
-                verification_enabled=self._settings.execution_mode == "main_with_subagents"
-                and self._settings.verification_subagent_enabled
-                and self._verification is not None,
+                research_enabled=self._research is not None,
+                verification_enabled=self._verification is not None,
             )
             observation = observation_for(state, allowed)
             try:
@@ -464,12 +454,6 @@ class MainAgentRuntime:
         reset_results: bool,
     ) -> None:
         request = state.current_request
-        if (
-            self._settings.verification_subagent_enabled
-            and self._verification is None
-            and "verification_subagent_unavailable" not in state.notices
-        ):
-            state.notices.append("核验 subagent 已关闭：未装配可补充详情的数据能力")
         if reset_results:
             state.ranked_groups = []
             state.last_candidates = []

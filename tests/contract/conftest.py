@@ -66,6 +66,7 @@ def make_ark_settings(**overrides: Any) -> Settings:
         "ark_base_url": "https://ark.example.local/v1",
         "ark_vision_model": "vision-test",
         "ark_text_model": "text-test",
+        "main_agent_model": "main-test",
     }
     base.update(overrides)
     return Settings(**base)

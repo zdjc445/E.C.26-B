@@ -18,13 +18,12 @@ import pytest
 
 import shijiajing_agent
 import shijiajing_agent.deps as deps_module
-from shijiajing_agent.adapters.ark_supervisor_planner import ArkSupervisorPlanner
 from shijiajing_agent.adapters.local_retrieval import LocalLexicalRetrievalAdapter
 from shijiajing_agent.adapters.milvus_retrieval import MilvusHybridRetrievalAdapter
 from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import RetrievalQuery
 from shijiajing_agent.deps import make_deps, make_retrieval
-from tests.multi_agent.conftest import make_offer
+from tests.agent_runtime.conftest import make_offer
 
 # ---------------------------------------------------------------------------
 # make_retrieval 分支
@@ -115,6 +114,7 @@ def test_make_deps_assembles_with_full_config(tmp_path: Path) -> None:
         taxonomy_path=str(taxonomy_file),
         local_product_snapshot_path=str(snapshot),
         checkpoint_dsn=str(tmp_path / "checkpoint.db"),
+        main_agent_model="mock-main",
     )
     deps = make_deps(settings)
     assert deps.taxonomy is not None
@@ -122,23 +122,6 @@ def test_make_deps_assembles_with_full_config(tmp_path: Path) -> None:
     assert isinstance(deps.retrieval, MilvusHybridRetrievalAdapter)
     assert deps.retrieval._metrics is deps.metrics
     assert deps.vision._client._metrics is deps.metrics
-
-
-def test_make_deps_assembles_configured_supervisor_planner(tmp_path: Path) -> None:
-    snapshot = tmp_path / "offers.jsonl"
-    snapshot.write_text(make_offer("o-planner", price=1999.0).model_dump_json(), encoding="utf-8")
-    settings = Settings(
-        ark_api_key="mock-key",
-        ark_base_url="https://mock-ark.example/v1",
-        ark_vision_model="mock-vision",
-        ark_text_model="mock-text",
-        supervisor_model="mock-supervisor",
-        supervisor_planner_mode="active_replan",
-        local_product_snapshot_path=str(snapshot),
-        checkpoint_dsn=str(tmp_path / "checkpoint.db"),
-    )
-    deps = make_deps(settings)
-    assert isinstance(deps.supervisor_planner, ArkSupervisorPlanner)
 
 
 def test_make_deps_assembles_with_local_snapshot_only(tmp_path: Path) -> None:
@@ -153,6 +136,7 @@ def test_make_deps_assembles_with_local_snapshot_only(tmp_path: Path) -> None:
         embedding_model="mock-embed",
         local_product_snapshot_path=str(snapshot),
         checkpoint_dsn=str(tmp_path / "checkpoint.db"),
+        main_agent_model="mock-main",
     )
     deps = make_deps(settings)
     assert isinstance(deps.retrieval, LocalLexicalRetrievalAdapter)
@@ -171,12 +155,15 @@ def test_local_snapshot_does_not_require_embedding_model(tmp_path: Path) -> None
         ark_text_model="mock-text",
         local_product_snapshot_path=str(snapshot),
         checkpoint_dsn=str(tmp_path / "checkpoint.db"),
+        main_agent_model="mock-main",
     )
 
     deps = make_deps(settings)
 
     assert isinstance(deps.retrieval, LocalLexicalRetrievalAdapter)
     assert deps.retrieval._metrics is deps.metrics
+    assert deps.agent_decision is not None
+    assert deps.research_decision is not None
 
 
 def test_milvus_requires_embedding_model(tmp_path: Path) -> None:
@@ -190,6 +177,7 @@ def test_milvus_requires_embedding_model(tmp_path: Path) -> None:
         milvus_collection="products_v1",
         local_product_snapshot_path=str(tmp_path / "offers.jsonl"),
         checkpoint_dsn=str(tmp_path / "checkpoint.db"),
+        main_agent_model="mock-main",
     )
 
     assert settings.validate(require_real_adapters=True) == ["EMBEDDING_MODEL"]
@@ -210,6 +198,7 @@ async def test_make_deps_registers_owners_before_later_construction_fails(
 
     trace = ConstructedResource("trace")
     vision = ConstructedResource("vision")
+    vision.client = object()
 
     monkeypatch.setattr(deps_module, "make_trace_sink", lambda _: trace)
     monkeypatch.setattr(
@@ -230,6 +219,7 @@ async def test_make_deps_registers_owners_before_later_construction_fails(
         ark_text_model="mock-text",
         local_product_snapshot_path=str(tmp_path / "offers.jsonl"),
         checkpoint_dsn=str(tmp_path / "checkpoint.db"),
+        main_agent_model="mock-main",
     )
 
     async def close_resource(resource: ConstructedResource) -> None:

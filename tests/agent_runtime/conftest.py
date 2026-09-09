@@ -6,6 +6,19 @@ from typing import Any
 
 import pytest
 
+from shijiajing_agent.agent_runtime.contracts import (
+    ActionKind,
+    AgentRuntimeUsage,
+    AnswerAction,
+    AskUserAction,
+    DecisionObservation,
+    DecisionResult,
+    FinishNoResultsAction,
+    SubagentActionKind,
+    SubagentDecisionResult,
+    SubagentFinishAction,
+    SubagentObservation,
+)
 from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import (
     AgentEvent,
@@ -175,6 +188,80 @@ class FakeMetrics:
         self.observations.append((name, value))
 
 
+class FakeMainDecision:
+    """唯一主 runtime 的确定性 Fake：首轮检索，结果充分后回答。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.observations: list[DecisionObservation] = []
+
+    async def decide(
+        self,
+        observation: DecisionObservation,
+        allowed_actions: tuple[ActionKind, ...],
+    ) -> DecisionResult:
+        self.calls += 1
+        self.observations.append(observation)
+        if ActionKind.ASK_USER in allowed_actions and (
+            observation.constraints is None or not observation.constraints.category_id.value
+        ):
+            action = AskUserAction(
+                missing_fields=["category_id"],
+                question_type="missing_category",
+            )
+        elif ActionKind.ANSWER in allowed_actions and observation.evidence_summary:
+            action = AnswerAction(
+                evidence_ids=[item["evidence_id"] for item in observation.evidence_summary]
+            )
+        elif (
+            ActionKind.FINISH_NO_RESULTS in allowed_actions
+            and "no_qualified_candidates" in observation.gaps
+        ):
+            action = FinishNoResultsAction(
+                searched_scope=observation.objective_summary,
+                reason_code="no_qualified_candidates",
+            )
+        elif ActionKind.SEARCH_AND_COMPARE in allowed_actions:
+            from shijiajing_agent.agent_runtime.contracts import SearchAndCompareAction
+
+            action = SearchAndCompareAction(query_text="")
+        else:
+            action = FinishNoResultsAction(
+                searched_scope=observation.objective_summary,
+                reason_code="fake_no_action",
+            )
+        return DecisionResult(
+            action=action,
+            usage=AgentRuntimeUsage(decisions=1, model_calls=1),
+            model="fake-main",
+            prompt_version="fake-main-v1",
+        )
+
+
+class FakeSubagentDecision:
+    """Research Fake 默认结束，测试可替换其行为队列。"""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def decide(
+        self,
+        observation: SubagentObservation,
+        allowed_actions: tuple[SubagentActionKind, ...],
+    ) -> SubagentDecisionResult:
+        self.calls += 1
+        del observation
+        action = SubagentFinishAction(status="partial", end_reason="fake_complete")
+        if action.kind not in allowed_actions:
+            action = SubagentFinishAction(status="failed", end_reason="fake_no_action")
+        return SubagentDecisionResult(
+            action=action,
+            usage=AgentRuntimeUsage(decisions=1, model_calls=1),
+            model="fake-subagent",
+            prompt_version="fake-subagent-v1",
+        )
+
+
 # ---------------------------------------------------------------------------
 # 数据工厂
 # ---------------------------------------------------------------------------
@@ -309,7 +396,7 @@ def taxonomy() -> Taxonomy:
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings()
+    return Settings(main_agent_model="fake-main")
 
 
 def make_deps(
@@ -345,6 +432,8 @@ def make_deps(
         "retrieval": retrieval or FakeRetrieval(),
         "trace": trace or FakeTraceSink(),
         "metrics": metrics or FakeMetrics(),
+        "agent_decision": FakeMainDecision(),
+        "research_decision": FakeSubagentDecision(),
     }
     deps = AgentDependencies(
         taxonomy=taxonomy,
@@ -356,6 +445,8 @@ def make_deps(
         retrieval=fakes["retrieval"],
         trace=fakes["trace"],
         metrics=fakes["metrics"],
+        agent_decision=fakes["agent_decision"],
+        research_decision=fakes["research_decision"],
     )
     return deps, fakes
 
@@ -369,7 +460,7 @@ def deps_factory(taxonomy: Taxonomy) -> Any:
     ) -> tuple[AgentDependencies, dict[str, Any]]:
         return make_deps(
             taxonomy,
-            settings or Settings(),
+            settings or Settings(main_agent_model="fake-main"),
             **overrides,
         )
 

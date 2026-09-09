@@ -15,7 +15,6 @@ from shijiajing_agent.adapters.ark_models import (
     ArkDynamicSchemaInducer,
     build_ark_models,
 )
-from shijiajing_agent.adapters.ark_supervisor_planner import ArkSupervisorPlanner
 from shijiajing_agent.adapters.embeddings import build_embedding_ports
 from shijiajing_agent.adapters.local_retrieval import LocalLexicalRetrievalAdapter
 from shijiajing_agent.adapters.milvus_retrieval import MilvusHybridRetrievalAdapter
@@ -98,29 +97,17 @@ def make_deps(
         # Ark Port 共享同一个客户端，只登记 Vision owner。
         resource_registrar(vision)
 
-    supervisor_planner = None
-    if settings.supervisor_planner_mode != "off":
-        client = getattr(vision, "client", None)
-        if client is None:
-            raise ValueError("Supervisor Planner 无法取得共享 ArkModelClient")
-        supervisor_planner = ArkSupervisorPlanner(client, taxonomy, settings)
-
-    agent_decision = None
+    client = getattr(vision, "client", None)
+    if client is None:
+        raise ValueError("Main Agent 无法取得共享 ArkModelClient")
+    if not settings.main_agent_model:
+        raise ValueError("主 Agent 配置缺失：SHIJIAJING_MAIN_AGENT_MODEL")
+    agent_decision = ArkAgentDecision(client, settings.main_agent_model)
     research_decision = None
     verification_decision = None
-    if settings.execution_mode != "workflow":
-        client = getattr(vision, "client", None)
-        if client is None:
-            raise ValueError("Main Agent 无法取得共享 ArkModelClient")
-        if not settings.main_agent_model:
-            raise ValueError("主 Agent 配置缺失：SHIJIAJING_MAIN_AGENT_MODEL")
-        agent_decision = ArkAgentDecision(client, settings.main_agent_model)
-        subagent_model = settings.subagent_model_effective
-        if settings.execution_mode == "main_with_subagents" and subagent_model:
-            if settings.research_subagent_enabled:
-                research_decision = ArkSubagentDecision(client, subagent_model, "research")
-            if settings.verification_subagent_enabled:
-                verification_decision = ArkSubagentDecision(client, subagent_model, "verification")
+    subagent_model = settings.subagent_model_effective
+    if subagent_model:
+        research_decision = ArkSubagentDecision(client, subagent_model, "research")
 
     retrieval = make_retrieval(settings, metrics=metrics)
     if resource_registrar is not None:
@@ -136,7 +123,6 @@ def make_deps(
         retrieval=retrieval,
         trace=trace,
         metrics=metrics,
-        supervisor_planner=supervisor_planner,
         agent_decision=agent_decision,
         research_decision=research_decision,
         verification_decision=verification_decision,

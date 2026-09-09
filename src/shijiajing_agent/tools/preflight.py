@@ -22,7 +22,7 @@ from shijiajing_agent.tools.cli_support import configure_utf8_output, public_err
 
 
 def _checked_resource_names(settings: Settings) -> list[str]:
-    names = ["multi_agent_checkpointer"]
+    names = ["agent_runtime_checkpointer"]
     if settings.request_ledger_backend != "disabled":
         names.append("request_ledger")
     if settings.memory_backend != "disabled":
@@ -128,8 +128,7 @@ async def run_preflight(
         "trace_backend": settings.trace_backend,
         "hitl_enabled": settings.hitl_enabled,
         "memory_confirmation_required": settings.memory_confirmation_required,
-        "retrieval_fusion_strategy": settings.retrieval_fusion_strategy,
-        "retrieval_rerank_enabled": settings.retrieval_rerank_enabled,
+        "retrieval_fusion_strategy": "best-query-channel-rrf-v1",
         "retrieval_index_version": settings.retrieval_index_version,
         "cache_ttl_seconds": {
             "vision": settings.vision_cache_ttl_seconds,

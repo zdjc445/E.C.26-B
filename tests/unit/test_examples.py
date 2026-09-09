@@ -18,8 +18,8 @@ from examples import _common, correction_example, image_example, text_example
 
 from shijiajing_agent.config import Settings
 from shijiajing_agent.contracts import AgentRequest, AgentResponse, AgentStatus
-from tests.multi_agent.conftest import make_deps as make_fake_deps
-from tests.multi_agent.conftest import two_candidate_result
+from tests.agent_runtime.conftest import make_deps as make_fake_deps
+from tests.agent_runtime.conftest import two_candidate_result
 
 # SHIJIAJING_* 外部配置清单（validate(require_real_adapters=True) 所需）
 _REQUIRED_ENV = {
@@ -27,6 +27,7 @@ _REQUIRED_ENV = {
     "SHIJIAJING_ARK_BASE_URL": "https://mock-ark.example/v1",
     "SHIJIAJING_ARK_VISION_MODEL": "mock-vision",
     "SHIJIAJING_ARK_TEXT_MODEL": "mock-text",
+    "SHIJIAJING_MAIN_AGENT_MODEL": "mock-main",
     "SHIJIAJING_EMBEDDING_MODEL": "mock-embed",
     "SHIJIAJING_MILVUS_URI": "https://mock-milvus.example:19530",
     "SHIJIAJING_MILVUS_TOKEN": "mock-token",
@@ -45,7 +46,7 @@ _PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0dIHDR" + b"\x00" * 40
 @pytest.fixture
 def fake_deps(taxonomy: Any) -> tuple[Any, dict[str, Any]]:
     """Fake 端口依赖（不发起任何真实网络）。"""
-    return make_fake_deps(taxonomy, Settings())
+    return make_fake_deps(taxonomy, Settings(main_agent_model="fake-main"))
 
 
 @pytest.fixture
@@ -72,7 +73,7 @@ def test_run_session_with_fake_deps(patch_make_deps: dict[str, Any]) -> None:
     responses = asyncio.run(
         _common.run_session(
             [AgentRequest(session_id="s-1", request_id="r-1", text="索尼耳机")],
-            settings=Settings(),
+            settings=Settings(main_agent_model="fake-main"),
         )
     )
     assert len(responses) == 1
@@ -87,7 +88,7 @@ def test_print_response_renders(
     responses = asyncio.run(
         _common.run_session(
             [AgentRequest(session_id="s-1", request_id="r-1", text="索尼耳机")],
-            settings=Settings(),
+            settings=Settings(main_agent_model="fake-main"),
         )
     )
     _common.print_response(responses[0], index=1)
@@ -166,7 +167,7 @@ def test_run_and_print_uses_asyncio_compat_runner(
     assert (
         _common.run_and_print(
             [AgentRequest(session_id="s-1", request_id="r-1", text="索尼耳机")],
-            settings=Settings(),
+            settings=Settings(main_agent_model="fake-main"),
         )
         == 0
     )
