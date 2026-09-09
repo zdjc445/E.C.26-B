@@ -50,19 +50,26 @@ CLI：`shijiajing-index-products <snapshot.jsonl> [--batch 100]`
 - **sparse**：`text_sparse` 词法分数。
 - **metadata**：`filter` 表达式实现硬过滤（与 `offer_matches_hard_filters`
   同一语义）——平台、价格区间、品牌、型号、评分/销量下限。
-- 通道合并（分数归一化 + 加权）取 `RETRIEVAL_UNION_LIMIT`，候选再经
-  `MATCHING_CANDIDATE_LIMIT` 截断。
+- 适配器保留各通道有界命中，不在这里做跨通道分数归一化。服务层按固定
+  `best-query-channel-rrf-v1` 融合：每通道取同一 Offer 的最佳查询名次，RRF `k=RETRIEVAL_RRF_K`，
+  截断到 `RETRIEVAL_UNION_LIMIT`（默认 200）。
+- RRF 非空时固定进入云端 Reranker（生产百炼 `qwen3-rerank`），然后按商品/卖家桶轮转选择
+  `MATCHING_CANDIDATE_LIMIT`（默认 60）条；精排失败完整回退 RRF 后再选择窗口。
 
 每个 `PreparedQuery` 绑定当前 manifest 身份；约束版本、图片哈希、查询文本或 manifest 变化
 都会改变 fingerprint。
 
 返回 `RetrievalResult`（领域协议），每候选带 `channel_sources` 如实标注命中通道。
 
+精排输入由安全摘要构造器生成，价格、评分、销量、店铺质量、`source_payload_ref`、联系方式、凭证、
+session/request/owner 标识不进入模型文本。`RerankResult` 保存模型/指令/摘要/Token 版本、候选集指纹、
+全量分数、延迟、费用和降级原因；未知/重复/缺失 ID、非有限分数或候选版本漂移整批拒绝。
+
 ## 4. 物理调用计量与降级路径
 
 逻辑 `retrieval_calls` 不等于物理调用次数。Milvus 每次数据库搜索、Embedding provider
-每次请求都会写入 runtime usage；批量检索在执行前预留 `db_search_attempts` 和
-`embedding_calls`，失败与重试仍按真实尝试计量。
+每次请求以及 Reranker 每次云端请求都会写入 runtime usage；批量检索在执行前预留
+`db_search_attempts`、`embedding_calls` 和 `reranker_requests`，失败与重试仍按真实尝试计量。
 
 Milvus 不可用（超时/连接失败）→ `local_fallback`：同一快照的本地 BM25
 词法检索 + 相同硬过滤语义；响应标记 `fallback_used`，**不声称执行了向量检索**。

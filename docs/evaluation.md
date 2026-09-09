@@ -26,9 +26,15 @@
 
 `shijiajing-eval --no-gate` 会额外生成 `engineering_eval_report.{json,md}` 和
 `retrieval_strategy_comparison.{json,md}`。前者执行四类工程夹具，并输出 §15.7 六项固定
-不变量的样本数、违规数和证据来源；后者使用生产 `WeightedScoreFusion`、
-`ReciprocalRankFusion`、`CandidateRelevanceReranker` 运行三组比较。两者都不改变商品质量
-门禁或生产默认策略；固定不变量报告没有样本时显示为待测，不会计为通过。
+不变量的样本数、违规数和证据来源；后者只在离线 benchmark 中显式比较
+`WeightedScoreFusion`、`ReciprocalRankFusion`、`CandidateRelevanceReranker`。规则 reranker
+是工程基线，不代表生产云端精排。两者都不改变商品质量门禁或生产默认策略；固定不变量报告
+没有样本时显示为待测，不会计为通过。
+
+生产检索链路的评测顺序是 `RRF Top 200 → 云端 Reranker → 多样性 Top 60`。云端 endpoint 只进入
+显式 live/integration 评测；离线 Fake 只能验证数据通路、响应防护、调用次数、缓存和预算，不能证明
+真实模型的跨语言召回或排序质量。正式报告需分别记录 RRF 基线、RRF+多样性、Reranker+多样性，
+并报告模型/指令/摘要版本、候选窗口截断、Token、费用、P50/P95、降级率和被挤出候选数。
 
 **数据诚实性（方案 §3.2 非目标与 §16 数据扩展）**：仓库内数据集是 CI 回归种子样例，**不是**正式冻结
 评测集——商品、价格、平台均为样例数据，平台标识按真实数据契约使用 ID

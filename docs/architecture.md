@@ -13,7 +13,7 @@ src/shijiajing_agent/
 ├── services/          识别、意图、检索、比较、证据、回答和记忆服务
 ├── domain/            约束、动态 Schema、同款、SKU、排序和过滤等纯逻辑
 ├── ports/             模型、检索、存储和可观测性 Protocol
-├── adapters/          Ark、Milvus/本地快照、Memory、Cache、Event、Trace
+├── adapters/          Ark、Milvus/本地快照、百炼 Reranker、Memory、Cache、Event、Trace
 ├── prompts/           带版本的模型 Prompt
 └── tools/             评测、索引、运维和发布 CLI
 ```
@@ -42,16 +42,17 @@ src/shijiajing_agent/
 追问、回答和无结果结束。补查和 Research 共享当前约束版本、查询指纹、检索预算和召回池；
 不允许递归委派或自由网络搜索。
 
-商品处理的固定顺序是：原始 Offer 保真 → 单一 raw search text → 有界混合召回 → 动态局部
-Schema/通用基线 → 需求三态资格校验 → 同款 Complete-Link → SKU 拆分 → 价格排序 → 证据回答。
+商品处理的固定顺序是：原始 Offer 保真 → 单一 raw search text → 有界混合召回 → 固定 RRF Top 200
+→ 云端 Reranker → 商品多样性窗口 Top 60 → 动态局部 Schema/通用基线 → 需求三态资格校验
+→ 同款 Complete-Link → SKU 拆分 → 价格排序 → 证据回答。
 未满足硬要求或证据未知的候选不会进入确认推荐。
 
 ## 3. 状态、版本与恢复
 
 - `MainRuntimeState` 是当前 turn 的规范状态；`RuntimeSessionSnapshot` 保存有界会话摘要。
 - `constraints_version`、`evidence_version` 和索引 manifest 身份绑定动作、查询和子结果。
-- `AgentRuntimeUsage` 区分逻辑 `retrieval_calls`、物理 `db_search_attempts` 和
-  `embedding_calls`；批量动作执行前预留剩余额度，结算后按真实用量释放。
+- `AgentRuntimeUsage` 区分逻辑 `retrieval_calls`、物理 `db_search_attempts`、`embedding_calls` 和
+  `reranker_requests`；批量动作执行前预留剩余额度，结算后按真实用量释放。
 - 当前请求和会话使用 `agent-runtime-v2` namespace。已提交动作/查询可复用；旧 Supervisor/DAG
   checkpoint 不转换为新状态，无法匹配的新恢复请求必须重新开始会话。
 - Checkpoint 写入前脱敏；不保存用户全文、图片 data URL、Prompt、模型原始响应或自由 metadata。
@@ -64,6 +65,7 @@ Schema/通用基线 → 需求三态资格校验 → 同款 Complete-Link → SK
 | `QueryRewritePort` | Ark | 一次生成有界查询计划 |
 | `AgentDecisionPort` / `SubagentDecisionPort` | Ark 或 Fake | 主/子 Agent 严格动作 |
 | `ProductRetrievalPort` | Milvus / 本地快照 | 混合召回与明确降级 |
+| `RerankerPort` | 阿里云百炼 / 开发 Fake | RRF 后全量候选精排与 RRF 回退 |
 | `DynamicSchemaInductionPort` | Ark | 请求级局部 Schema |
 | `MemoryPort` / `RequestLedgerPort` | SQLite / PostgreSQL | 记忆与幂等 |
 | `TraceSinkPort` / `MetricsPort` | structlog / OTLP / Prometheus | 诊断与计量 |

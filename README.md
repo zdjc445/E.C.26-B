@@ -26,6 +26,7 @@ cp .env.example .env      # 然后按注释填写
 | 组 | 变量 |
 |---|---|
 | 模型 | `SHIJIAJING_ARK_API_KEY` `SHIJIAJING_ARK_BASE_URL` `SHIJIAJING_ARK_VISION_MODEL` `SHIJIAJING_ARK_TEXT_MODEL` `SHIJIAJING_EMBEDDING_MODEL` |
+| 云端精排 | 生产必填 `SHIJIAJING_RERANKER_PROVIDER=aliyun_bailian`、`RERANKER_BASE_URL`、`RERANKER_API_KEY`、`RERANKER_MODEL`；开发/单测显式使用 Fake |
 | 检索 | `SHIJIAJING_MILVUS_URI` `SHIJIAJING_MILVUS_TOKEN` `SHIJIAJING_MILVUS_COLLECTION`（或 `SHIJIAJING_LOCAL_PRODUCT_SNAPSHOT_PATH` 本地词法降级） |
 | 持久化 | `SHIJIAJING_CHECKPOINT_BACKEND` `SHIJIAJING_CHECKPOINT_DSN` `SHIJIAJING_REQUEST_LEDGER_BACKEND` `SHIJIAJING_REQUEST_LEDGER_DSN` |
 | 主 Agent / subagent | `SHIJIAJING_MAIN_AGENT_MODEL` `SHIJIAJING_SUBAGENT_MODEL`；预算由 `MAIN_AGENT_*`、`SUBAGENT_*` 和 `RETRIEVAL_*` 控制，不选择架构 |
@@ -87,9 +88,9 @@ uv run shijiajing-eval --live --output-datasets-dir <dir>  # 真实数据实时�
 | 真实数据接入 | `shijiajing-index-products` 索引真实快照 → Milvus；`shijiajing-eval --live --output-datasets-dir` 产出待仲裁副本，随后用 `shijiajing-build-eval freeze` 产出正式评测集 |
 
 **降级状态**：Milvus 不可用时自动降级本地词法检索（同一领域协议，响应标记
-`fallback_used`，不声称执行了向量检索）；模型失败时规则/模板降级并在 notice 中
-标注。测试环境通过 Fake 端口注入样例数据（tests/multi_agent/conftest.py），
-生产装配不会静默回退到样例数据。
+`fallback_used`，不声称执行了向量检索）；Reranker 超时、限流、网络或非法响应时保留完整
+RRF 顺序并继续多样性窗口，结果记录 `RerankResult` 降级原因；模型失败时规则/模板降级并在 notice 中
+标注。测试环境通过 Fake 端口注入样例数据，生产装配不会静默回退到样例数据或静默跳过精排。
 
 ## 架构
 
@@ -105,7 +106,7 @@ uv run shijiajing-eval --live --output-datasets-dir <dir>  # 真实数据实时�
 - 分层：contracts（Pydantic）→ domain/services（业务能力）→ agent_runtime（主/子 Agent 运行时）→ adapters（外部能力）
 - `AgentFacade` 始终进入 `MainAgentRuntime`；主 Agent 的动作、预算、HITL、证据和恢复由确定性
   runtime 控制，subagent 没有主状态或长期记忆写权限。
-- 全部外部能力通过 Protocol 端口注入（VLM/意图/改写/解释/检索/Checkpoint/Trace/指标）
+- 全部外部能力通过 Protocol 端口注入（VLM/意图/改写/解释/检索/Reranker/Checkpoint/Trace/指标）
 - 幂等（request_id）、乐观版本冲突重放、同会话并发控制
 - 详细：[docs/architecture.md](docs/architecture.md)、[docs/multi_agent.md](docs/multi_agent.md)
 

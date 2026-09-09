@@ -359,7 +359,9 @@ runtime 在启动阶段打开 LangGraph Checkpointer。resume 从活动 `agent-r
 2. 存在 active interrupt 时，先完成 resume，或在业务确认后清理对应会话。
 3. Checkpoint 故障时停止需要恢复或 HITL 的请求；Event Store 不得覆盖 Checkpoint。
 4. Memory、Cache、Event Store 或 OpenTelemetry 故障分别切换到 `disabled`，不得删除正确性数据；Cache 关闭只产生 miss。
-5. RRF/rerank 回归只能在离线 benchmark 中显式选择策略；生产配置不再切换融合或重排引擎。
+5. RRF 与规则 rerank 回归只能在离线 benchmark 中显式选择策略；生产固定
+   `best-query-channel-rrf-v1 → Aliyun qwen3-rerank → 多样性窗口`。云端故障只允许按请求回退 RRF，
+   不允许用配置开关长期跳过精排；生产缺少 Reranker endpoint/model/key 先阻断启动。
 6. 完成恢复后重新执行 preflight、离线测试和 `shijiajing-repair-events --dry-run`，再开放写入。
 
 回滚完成条件是：Checkpoint schema 可读、Request Ledger 可重放、Memory owner 隔离仍成立、Event Store 不出现新的冲突事件，且 active interrupt 清单与切换前一致或已被明确消费。

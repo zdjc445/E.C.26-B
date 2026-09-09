@@ -14,6 +14,8 @@
 - 只想用本地词法降级跑通：补 `SHIJIAJING_TAXONOMY_PATH`（或使用包内置）
   + `SHIJIAJING_LOCAL_PRODUCT_SNAPSHOT_PATH` + 模型三件套（Key/BaseURL/Text 模型）+ checkpoint DSN。
 - 完整检索：再补 `SHIJIAJING_MILVUS_URI/TOKEN/COLLECTION` 与 `SHIJIAJING_EMBEDDING_MODEL`。
+- 生产精排：必须再补 `SHIJIAJING_RERANKER_BASE_URL`、`SHIJIAJING_RERANKER_API_KEY` 和
+  `SHIJIAJING_RERANKER_MODEL`；`dev`/`test` 才允许由装配入口使用显式 Fake。
 
 ## 2. 检索问题
 
@@ -22,6 +24,7 @@
 | 响应 notice 含"本地词法降级" | Milvus 不可用（超时/连接失败/TLS/网络），已自动降级；检查 `MILVUS_URI` 可达性，`RETRIEVAL_TIMEOUT_SECONDS` 是否过短 |
 | `本地商品快照不可用` | `LOCAL_PRODUCT_SNAPSHOT_PATH` 路径不存在或解析失败；确认 JSONL 每行是合法 Offer（`python -c "import json;[json.loads(l) for l in open(p,encoding='utf-8')]"`） |
 | 检索结果为空但快照有数据 | 硬过滤过严（预算/平台/评分约束无命中属正常）；观察 `fallback_used` 与 trace 中的过滤条件 |
+| `RerankResult` 为 `failed`/`fallback` | 云端超时、限流、鉴权、配额或响应校验失败；检查降级原因和 provider 告警，结果应仍是完整 RRF 顺序，不要清空候选或让 Agent 重试供应商 |
 | 初始化/索引报"集合已存在" | `shijiajing-init-milvus --drop` 显式重建（会丢数据，谨慎）；索引用 `shijiajing-index-products` 重灌 |
 
 ## 3. 模型输出问题
@@ -53,9 +56,11 @@
 
 - `PreparedQuery` 与返回结果的 manifest 不一致：确认应用使用同一份 `IndexManifest`，并清理旧
   查询/Schema 缓存；不能用旧查询绑定新索引。
-- 物理检索预算耗尽：查看 `db_search_attempts`、`embedding_calls` 和保留量，而不是只看逻辑
+- 物理检索预算耗尽：查看 `db_search_attempts`、`embedding_calls`、`reranker_requests` 和保留量，而不是只看逻辑
   `retrieval_calls`。失败和重试也会消耗真实尝试额度；应降低初始/补查查询数或检查 provider
   超时，不要通过重启 runtime 绕过预算。
+- 精排费用/延迟异常：查看 `reranker_input_tokens`、`reranker_total_tokens`、`reranker_latency_ms`、
+  `reranker_estimated_cost`、`reranker_cache_hits` 和 `reranker_fallbacks`；模型或候选集版本变化会使 cache 失效。
 - 本地降级结果被误认为向量结果：检查响应的 `fallback_used` 和通道状态；本地 BM25 不会产生
   dense 命中。
 

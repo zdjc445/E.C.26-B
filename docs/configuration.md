@@ -30,6 +30,8 @@ cp .env.example .env
 | `SHIJIAJING_ARK_VISION_MODEL` | 图片识别模型 |
 | `SHIJIAJING_ARK_TEXT_MODEL` | 意图、查询改写和解释模型 |
 | `SHIJIAJING_EMBEDDING_MODEL` | Milvus 文本向量模型；仅本地词法快照时可不填 |
+| `SHIJIAJING_RERANKER_PROVIDER` | 生产固定为 `aliyun_bailian`；依赖标识，不是请求级模式 |
+| `SHIJIAJING_RERANKER_BASE_URL` / `API_KEY` / `MODEL` | 生产必填的百炼精排 endpoint、密钥和固定模型；密钥只来自秘密管理/环境 |
 | `SHIJIAJING_MILVUS_URI` / `TOKEN` / `COLLECTION` | Milvus 连接和集合；三项必须同时提供 |
 | `SHIJIAJING_LOCAL_PRODUCT_SNAPSHOT_PATH` | 本地 Offer JSONL；Milvus 不可用时也可作为降级路径 |
 | `SHIJIAJING_CHECKPOINT_BACKEND` / `CHECKPOINT_DSN` | `sqlite` 或 `postgres` 的 runtime checkpoint |
@@ -79,6 +81,19 @@ Planner 或其他执行模式。
 | `SHIJIAJING_MATCHING_CANDIDATE_LIMIT` | 60 | 同款匹配候选上限 |
 | `SHIJIAJING_RETRIEVAL_INDEX_VERSION` | 空 | 结果缓存使用的索引身份；manifest 发布时优先使用其身份 |
 | `SHIJIAJING_RETRIEVAL_RRF_K` | 60 | RRF 计算参数 |
+| `SHIJIAJING_MAIN_AGENT_MAX_RERANKER_REQUESTS` | 4 | 父请求精排物理调用硬上限，主/Research 共用 |
+| `SHIJIAJING_RERANKER_TIMEOUT_SECONDS` | 5 | 单次云端精排超时；必须小于请求剩余时限 |
+| `SHIJIAJING_RERANKER_MAX_ATTEMPTS` | 2 | 仅瞬时网络/限流错误可使用第二次尝试 |
+| `SHIJIAJING_RERANKER_MAX_DOCUMENTS` | 200 | RRF 召回池精排输入上限 |
+| `SHIJIAJING_RERANKER_QUERY_MAX_TOKENS` / `DOCUMENT_MAX_TOKENS` | 128 / 384 | 与部署 tokenizer 计量的摘要上限 |
+| `SHIJIAJING_RERANKER_REQUEST_MAX_TOKENS` | 120000 | 单次请求 query×文档数+文档 Token 总量上限 |
+| `SHIJIAJING_RERANKER_CACHE_TTL_SECONDS` | 300 | 精排 cache TTL；key 绑定模型/指令/摘要/约束/候选集版本 |
+| `SHIJIAJING_RERANKER_COST_PER_MILLION_TOKENS` | 0.5 | usage 估算费用，不能替代供应商账单 |
+
+RRF 后的最多 200 条候选固定进入 Reranker，再按平台/卖家/listing/商品桶轮转选最多 60 条进入动态
+Schema 和资格校验。生产缺少 endpoint、key 或 model 时启动失败；`dev`/`test` 没有云端配置时只装配
+显式 `FakeReranker`，不能把开发 Fake 当作生产质量或上线验收。云端超时、限流、网络、鉴权、配额或
+非法响应会保留完整 RRF 顺序并继续多样性选择，同时增加降级用量和原因。
 
 ## 4. 动态 Schema 与商品处理
 
@@ -139,8 +154,8 @@ PostgreSQL 业务适配器连接池参数为 `SHIJIAJING_POSTGRES_POOL_MIN_SIZE=
 正整数（`MAIN_AGENT_MAX_SUBAGENT_STARTS` 可为 0）；置信度和同款阈值必须在 `0..1`，且
 `SAME_ITEM_REVIEW_THRESHOLD` 不得大于 `SAME_ITEM_ACCEPT_THRESHOLD`。
 
-主模型、checkpoint、trace 和检索来源的缺失检查由真实装配入口执行；Fake 端口只应由测试
-或离线示例显式注入。
+主模型、checkpoint、trace、检索来源和生产 Reranker 的缺失检查由真实装配入口执行；Fake 端口只应由测试、
+开发环境或离线示例显式注入。
 
 ## 7. 已移除配置
 

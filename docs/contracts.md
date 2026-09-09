@@ -24,7 +24,10 @@
 - `PreparedQuery`：服务端重建 hard filters，并绑定 `constraints_version`、图片哈希、查询
   指纹和 `index_manifest_id`；补查文本不能再次触发 query rewrite。
 - `AgentRuntimeUsage`：区分逻辑 `retrieval_calls`、物理 `db_search_attempts`、
-  `embedding_calls` 与模型/token 用量。
+  `embedding_calls` 与模型/token 用量；另记录 `reranker_requests`、候选数、输入/输出/总 Token、
+  延迟、估算费用、截断、cache hit 和降级次数。父 runtime 对精排请求预留独立物理额度。
+- `RerankerPort`：供应商无关的 `RerankDocument`/`RerankResult`。摘要只允许标题、原始类目、品牌/型号、
+  SKU 属性和少量 product/offer 属性；结果必须覆盖本次候选集且 ID 唯一，不能把精排分数当作事实置信度。
 - `IndexManifest`：声明快照、文本生成、tokenizer、embedding、维度、距离和有效行数；
   `manifest_id` 是发布身份。
 
@@ -65,5 +68,5 @@
 
 ## 6. 固定错误语义
 
-模型或外部服务异常可以触发明确的 fallback，但不能把降级结果标记为原服务成功；全通道不可用
+RRF 后精排异常会完整回退到 RRF 顺序，但不能把降级结果标记为云端成功；全通道不可用
 与真实空结果分开。不可恢复的动作以 `FAILED` 结束，并保留已验证结果和可操作 notice。
