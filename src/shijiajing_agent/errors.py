@@ -29,10 +29,7 @@ class ErrorCode(StrEnum):
     CACHE_UNAVAILABLE = "CACHE_UNAVAILABLE"
     EVENT_STORE_UNAVAILABLE = "EVENT_STORE_UNAVAILABLE"
     EVENT_CONFLICT = "EVENT_CONFLICT"
-    TASK_RESULT_CONFLICT = "TASK_RESULT_CONFLICT"
-    PLAN_INVALID = "PLAN_INVALID"
     CAPABILITY_DENIED = "CAPABILITY_DENIED"
-    HANDOFF_REJECTED = "HANDOFF_REJECTED"
 
 
 class ShijiajingError(Exception):
@@ -131,24 +128,9 @@ class EventConflictError(ShijiajingError):
     user_message = "事件内容冲突"
 
 
-class TaskResultConflictError(ShijiajingError):
-    code = ErrorCode.TASK_RESULT_CONFLICT
-    user_message = "任务结果冲突，未覆盖已有结果"
-
-
-class PlanValidationError(ShijiajingError):
-    code = ErrorCode.PLAN_INVALID
-    user_message = "执行计划非法"
-
-
 class CapabilityDeniedError(ShijiajingError):
     code = ErrorCode.CAPABILITY_DENIED
     user_message = "Agent 没有执行该能力的权限"
-
-
-class HandoffRejectedError(ShijiajingError):
-    code = ErrorCode.HANDOFF_REJECTED
-    user_message = "Agent 委派未通过运行时能力校验"
 
 
 def validation_to_code(exc: ValidationError) -> ErrorCode:
