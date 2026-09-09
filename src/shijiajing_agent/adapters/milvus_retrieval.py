@@ -33,12 +33,12 @@ from shijiajing_agent.contracts import (
     RetrievalCandidate,
     RetrievalQuery,
 )
-from shijiajing_agent.domain.retrieval_fusion import ReciprocalRankFusion
 from shijiajing_agent.errors import RetrievalUnavailableError
 from shijiajing_agent.ports.milvus import MilvusClientPort, make_milvus_client
 from shijiajing_agent.ports.models import ImageEmbeddingPort, TextEmbeddingPort
 from shijiajing_agent.ports.observability import MetricsPort
 from shijiajing_agent.ports.retrieval import RetrievalResult
+from shijiajing_agent.rag_contracts import ChannelKind, ChannelResult, ChannelStatus
 
 # 所有 Offer 标量字段 + 三个 JSON 属性字段。
 _OUTPUT_FIELDS = [
@@ -193,8 +193,6 @@ class MilvusHybridRetrievalAdapter:
             return await self._search_milvus(
                 query, image=image, top_k=top_k, union_limit=union_limit
             )
-        except RetrievalUnavailableError:
-            raise
         except Exception:
             # Milvus 连接失败/超时/schema 不匹配 → 本地词法降级
             if self._metrics is not None:
@@ -247,37 +245,54 @@ class MilvusHybridRetrievalAdapter:
         results_by_id: dict[str, dict[str, Any]] = {}
         channel_scores: dict[str, dict[str, float]] = {"dense": {}, "sparse": {}, "image": {}}
         sources_by_id: dict[str, list[str]] = {}
+        channel_health: dict[str, ChannelStatus] = {}
         # __init__ 已校验非空；`or ""` 仅为把类型收窄到 str
         coll = self._settings.milvus_collection or ""
 
         # dense 文本通道
-        dense_vec = (await self._text_embeddings.embed_texts([query.query_text or ""]))[0]
-        dense_hits = client.search(
-            collection_name=coll,
-            data=[dense_vec],
-            anns_field="text_dense",
-            search_params={"metric_type": "IP", "params": {}},
-            limit=top_k,
-            filter=expr,
-            output_fields=_OUTPUT_FIELDS,
-        )
-        self._collect(dense_hits, results_by_id, channel_scores["dense"], sources_by_id, "dense")
+        try:
+            dense_vectors = await self._text_embeddings.embed_texts([query.query_text or ""])
+            if not dense_vectors:
+                raise RetrievalUnavailableError("文本 embedding 返回空向量")
+            dense_hits = await self._search_channel(
+                client,
+                coll,
+                dense_vectors[0],
+                "text_dense",
+                expr,
+                top_k,
+            )
+            self._collect(
+                dense_hits, results_by_id, channel_scores["dense"], sources_by_id, "dense"
+            )
+            channel_health["dense"] = (
+                ChannelStatus.SUCCESS if channel_scores["dense"] else ChannelStatus.EMPTY
+            )
+        except Exception:
+            channel_health["dense"] = ChannelStatus.FAILED
 
         # sparse 词法通道
         sparse_vec = query_sparse_vector(query.query_text)
         if sparse_vec:
-            sparse_hits = client.search(
-                collection_name=coll,
-                data=[sparse_vec],
-                anns_field="text_sparse",
-                search_params={"metric_type": "IP"},
-                limit=top_k,
-                filter=expr,
-                output_fields=_OUTPUT_FIELDS,
-            )
-            self._collect(
-                sparse_hits, results_by_id, channel_scores["sparse"], sources_by_id, "sparse"
-            )
+            try:
+                sparse_hits = await self._search_channel(
+                    client,
+                    coll,
+                    sparse_vec,
+                    "text_sparse",
+                    expr,
+                    top_k,
+                )
+                self._collect(
+                    sparse_hits, results_by_id, channel_scores["sparse"], sources_by_id, "sparse"
+                )
+                channel_health["sparse"] = (
+                    ChannelStatus.SUCCESS if channel_scores["sparse"] else ChannelStatus.EMPTY
+                )
+            except Exception:
+                channel_health["sparse"] = ChannelStatus.FAILED
+        else:
+            channel_health["sparse"] = ChannelStatus.EMPTY
 
         # 图像通道：只在有图片且 provider 可用时执行
         if image is not None:
@@ -285,82 +300,74 @@ class MilvusHybridRetrievalAdapter:
                 image_vec = await self._image_embeddings.embed_image(image)
             except RetrievalUnavailableError:
                 image_vec = None
+                channel_health["image"] = ChannelStatus.UNAVAILABLE
+            except Exception:
+                image_vec = None
+                channel_health["image"] = ChannelStatus.FAILED
             if image_vec is not None:
-                image_hits = client.search(
-                    collection_name=coll,
-                    data=[image_vec],
-                    anns_field="image_dense",
-                    search_params={"metric_type": "IP", "params": {}},
-                    limit=top_k,
-                    filter=expr,
-                    output_fields=_OUTPUT_FIELDS,
-                )
-                self._collect(
-                    image_hits, results_by_id, channel_scores["image"], sources_by_id, "image"
-                )
+                try:
+                    image_hits = await self._search_channel(
+                        client,
+                        coll,
+                        image_vec,
+                        "image_dense",
+                        expr,
+                        top_k,
+                    )
+                    self._collect(
+                        image_hits, results_by_id, channel_scores["image"], sources_by_id, "image"
+                    )
+                    channel_health["image"] = (
+                        ChannelStatus.SUCCESS if channel_scores["image"] else ChannelStatus.EMPTY
+                    )
+                except Exception:
+                    channel_health["image"] = ChannelStatus.FAILED
+
+        core_statuses = [channel_health.get("dense"), channel_health.get("sparse")]
+        if not results_by_id and ChannelStatus.FAILED in core_statuses:
+            raise RetrievalUnavailableError("Milvus 所有可用召回通道均失败")
 
         # 融合前保留各通道的全部有界命中；不能因 dense 先返回而丢弃 sparse 命中。
-        candidates = list(results_by_id.values())
+        candidates_by_id: dict[str, RetrievalCandidate] = {}
+        for row in results_by_id.values():
+            offer = _entity_to_offer(row)
+            candidates_by_id[offer.offer_id] = RetrievalCandidate(
+                offer=offer,
+                dense_text_score=channel_scores["dense"].get(offer.offer_id),
+                sparse_score=channel_scores["sparse"].get(offer.offer_id),
+                image_similarity=channel_scores["image"].get(offer.offer_id),
+                metadata_match=metadata_match(query, offer),
+                recall_score=0.0,
+                channel_sources=sources_by_id.get(offer.offer_id, []),
+            )
+        candidates = list(candidates_by_id.values())
         if not candidates:
             return RetrievalResult(
                 candidates=[],
                 total_found=0,
                 index_version=self._settings.retrieval_index_version,
-                fusion_version="best-query-channel-rrf-v1",
+                channel_counts={
+                    name: len(scores)
+                    for name, scores in channel_scores.items()
+                    if channel_health.get(name) == ChannelStatus.SUCCESS
+                },
+                channel_results=self._channel_results(candidates_by_id, channel_health),
+                channel_health=channel_health,
+                selected_candidates=[],
             )
 
-        # 原始相似度只作为调试字段保留，不跨通道 min-max 后当作概率。
-        ranked: list[RetrievalCandidate] = []
-        for row in candidates:
-            offer = _entity_to_offer(row)
-            scores = {
-                "dense": channel_scores["dense"].get(offer.offer_id),
-                "sparse": channel_scores["sparse"].get(offer.offer_id),
-                "image": channel_scores["image"].get(offer.offer_id),
-            }
-            meta = metadata_match(query, offer)  # 恒为 [0,1] 的 float，metadata 通道恒参与
-            ranked.append(
-                RetrievalCandidate(
-                    offer=offer,
-                    dense_text_score=scores["dense"],
-                    sparse_score=scores["sparse"],
-                    image_similarity=scores["image"],
-                    metadata_match=meta,
-                    recall_score=0.0,
-                    channel_sources=sources_by_id.get(offer.offer_id, []),
-                )
-            )
-        # metadata 是过滤/辅助信息，不作为独立召回通道；应用层跨 query 合并时
-        # 复用同一固定 RRF 版本。
-        channel_results: dict[str, list[RetrievalCandidate]] = {}
-        score_fields = {
-            "dense": "dense_text_score",
-            "sparse": "sparse_score",
-            "image": "image_similarity",
-        }
-        for channel, field in score_fields.items():
-            channel_candidates = [
-                candidate.model_copy(
-                    update={"recall_score": float(getattr(candidate, field) or 0.0)}
-                )
-                for candidate in ranked
-                if getattr(candidate, field) is not None
-            ]
-            if channel_candidates:
-                channel_results[channel] = sorted(
-                    channel_candidates,
-                    key=lambda candidate: (
-                        -candidate.recall_score,
-                        candidate.offer.offer_id,
-                    ),
-                )
-        fusion = ReciprocalRankFusion(self._settings.retrieval_rrf_k)
-        ranked = fusion.fuse(channel_results, union_limit)
-        ranked = [
-            candidate.model_copy(update={"recall_score": 1.0 / rank})
-            for rank, candidate in enumerate(ranked, start=1)
-        ]
-        fusion_version = "best-query-channel-rrf-v1"
+        # ``candidates`` 是命中池的并集；每通道命中保持独立有序，融合交给服务层。
+        ranked = sorted(
+            candidates,
+            key=lambda candidate: (
+                -max(
+                    candidate.dense_text_score or 0.0,
+                    candidate.sparse_score or 0.0,
+                    candidate.image_similarity or 0.0,
+                ),
+                candidate.offer.offer_id,
+            ),
+        )
 
         if self._metrics is not None:
             self._metrics.inc("retrieval_candidate_count", value=float(len(ranked)))
@@ -369,10 +376,68 @@ class MilvusHybridRetrievalAdapter:
         return RetrievalResult(
             candidates=ranked,
             total_found=len(ranked),
-            channel_counts={name: len(ids) for name, ids in channel_scores.items() if ids},
+            channel_counts={
+                name: len(scores)
+                for name, scores in channel_scores.items()
+                if channel_health.get(name) == ChannelStatus.SUCCESS
+            },
             index_version=self._settings.retrieval_index_version,
-            fusion_version=fusion_version,
+            channel_results=self._channel_results(candidates_by_id, channel_health),
+            channel_health=channel_health,
+            selected_candidates=ranked,
         )
+
+    async def _search_channel(
+        self,
+        client: MilvusClientPort,
+        collection: str,
+        vector: Any,
+        anns_field: str,
+        expr: str,
+        top_k: int,
+    ) -> list[list[dict[str, Any]]]:
+        """把同步 pymilvus 调用放入受控线程，避免阻塞事件循环。"""
+        return await asyncio.to_thread(
+            client.search,
+            collection_name=collection,
+            data=[vector],
+            anns_field=anns_field,
+            search_params={"metric_type": "IP", "params": {}},
+            limit=top_k,
+            filter=expr,
+            output_fields=_OUTPUT_FIELDS,
+        )
+
+    @staticmethod
+    def _channel_results(
+        candidates: dict[str, RetrievalCandidate],
+        health: dict[str, ChannelStatus],
+    ) -> list[ChannelResult]:
+        fields = {
+            "dense": (ChannelKind.DENSE, "dense_text_score"),
+            "sparse": (ChannelKind.SPARSE, "sparse_score"),
+            "image": (ChannelKind.IMAGE, "image_similarity"),
+        }
+        result: list[ChannelResult] = []
+        for name, (kind, field) in fields.items():
+            status = health.get(name)
+            if status is None:
+                continue
+            hits = [
+                item.model_copy(update={"recall_score": float(getattr(item, field) or 0.0)})
+                for item in candidates.values()
+                if getattr(item, field) is not None
+            ]
+            hits.sort(key=lambda item: (-item.recall_score, item.offer.offer_id))
+            result.append(
+                ChannelResult(
+                    query_id="q:adapter",
+                    channel=kind,
+                    hits=hits,
+                    status=status,
+                )
+            )
+        return result
 
     @staticmethod
     def _collect(

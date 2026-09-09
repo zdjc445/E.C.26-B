@@ -20,6 +20,7 @@ from shijiajing_agent.domain.raw_offer import RecordKind, prepare_raw_offer
 from shijiajing_agent.errors import RetrievalUnavailableError
 from shijiajing_agent.ports.observability import MetricsPort
 from shijiajing_agent.ports.retrieval import RetrievalResult
+from shijiajing_agent.rag_contracts import ChannelKind, ChannelResult, ChannelStatus
 
 
 class LocalLexicalRetrievalAdapter:
@@ -111,12 +112,22 @@ class LocalLexicalRetrievalAdapter:
             self._metrics.inc("retrieval_candidate_count", value=float(len(candidates)))
             if not candidates:
                 self._metrics.inc("retrieval_zero_result_rate")
+        status = ChannelStatus.SUCCESS if candidates else ChannelStatus.EMPTY
+        channel = ChannelResult(
+            query_id=_query_id(query),
+            channel=ChannelKind.SPARSE,
+            hits=candidates,
+            status=status,
+            index_version=digest,
+        )
         return RetrievalResult(
             candidates=candidates,
             total_found=total_found,
             channel_counts={"sparse": len(candidates)},
             index_version=digest,
-            fusion_version="best-query-channel-rrf-v1",
+            channel_results=[channel],
+            channel_health={"sparse": status},
+            selected_candidates=candidates,
         )
 
 
@@ -148,3 +159,8 @@ def _snapshot_digest(path: Path, n_lines: int) -> str:
     """快照版本指纹：mtime + 行数哈希，进入 RetrievalResult.index_version。"""
     stat = path.stat()
     return hashlib.sha256(f"{stat.st_mtime_ns}:{n_lines}".encode()).hexdigest()[:12]
+
+
+def _query_id(query: RetrievalQuery) -> str:
+    payload = query.model_dump_json(exclude_none=True, by_alias=True)
+    return "q:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]

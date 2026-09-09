@@ -137,6 +137,10 @@ class MainAgentRuntime:
             category_names=categories,
             top_k=deps.settings.retrieval_top_k_per_channel,
             union_limit=deps.settings.retrieval_union_limit,
+            candidate_window_limit=deps.settings.matching_candidate_limit,
+            rrf_k=deps.settings.retrieval_rrf_k,
+            initial_max_queries=deps.settings.retrieval_initial_max_queries,
+            query_concurrency=deps.settings.retrieval_query_concurrency,
         )
         self._evidence = EvidenceService()
         self._answer = AnswerService(self._evidence, deps.explanation)
@@ -553,6 +557,7 @@ class MainAgentRuntime:
                 recognition=state.understanding.recognition,
                 image=state.current_request.image,
                 soft_terms=action.soft_terms,
+                constraints_version=state.constraints_version,
             )
             previous_ids = {item.offer.offer_id for item in state.last_candidates}
             current_ids = {item.offer.offer_id for item in result.search.candidates}

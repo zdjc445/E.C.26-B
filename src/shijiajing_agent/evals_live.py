@@ -76,6 +76,7 @@ from shijiajing_agent.ports.models import (
     VisionModelPort,
 )
 from shijiajing_agent.ports.retrieval import ProductRetrievalPort, RetrievalResult
+from shijiajing_agent.rag_contracts import QueryPlan
 
 # ---------------------------------------------------------------------------
 # 端口计数包装器（§10：evaluation-only，不修改生产响应协议）
@@ -155,7 +156,7 @@ class CountedQueryRewrite:
         text: str,
         constraints: ShoppingConstraints | None,
         recognition: RecognitionResult | None,
-    ) -> RetrievalQuery:
+    ) -> RetrievalQuery | QueryPlan:
         self._counts.model_calls += 1
         self._counts.query_rewrite_calls += 1
         return await self._inner.rewrite(text, constraints, recognition)

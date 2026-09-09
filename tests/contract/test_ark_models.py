@@ -28,13 +28,13 @@ from shijiajing_agent.contracts import (
     ImageRef,
     IntentPatch,
     RecognitionResult,
-    RetrievalQuery,
     ShoppingConstraints,
     SourcedValue,
 )
 from shijiajing_agent.domain.evidence import EvidenceBundle
 from shijiajing_agent.domain.filters import HardFilterBuilder
 from shijiajing_agent.errors import ModelOutputInvalidError, VisionUnavailableError
+from shijiajing_agent.rag_contracts import QueryPlan
 
 VALID_VISION_JSON = """{
   "recognition_id": "rec-abc12345",
@@ -259,10 +259,11 @@ async def test_rewrite_preserves_hard_filters(ark_client: Any, ark_settings: Any
 
     client, _ = ark_client([rewrite_json])
     model = ArkQueryRewrite(client)
-    query = await model.rewrite("索尼 头戴式耳机 不要线控", constraints, None)
+    plan = await model.rewrite("索尼 头戴式耳机 不要线控", constraints, None)
 
-    assert isinstance(query, RetrievalQuery)
-    assert query.query_text == "Sony WH-1000XM5 头戴式"
+    assert isinstance(plan, QueryPlan)
+    query = plan.original_query
+    assert query.text == "Sony WH-1000XM5 头戴式"
     assert query.soft_terms == ["降噪"]
     assert query.negative_terms == ["线控"]
     assert query.hard_filters == expected_hf  # 与节点内确定性构建逐字段一致
@@ -273,8 +274,9 @@ async def test_rewrite_missing_output_uses_fallback_text(ark_client: Any) -> Non
     """模型未给 query_text 时回退用户原文。"""
     client, _ = ark_client(['{"soft_terms": []}'])
     model = ArkQueryRewrite(client)
-    query = await model.rewrite("索尼耳机", None, None)
-    assert query.query_text == "索尼耳机"
+    plan = await model.rewrite("索尼耳机", None, None)
+    assert isinstance(plan, QueryPlan)
+    assert plan.original_query.text == "索尼耳机"
     await client.close()
 
 

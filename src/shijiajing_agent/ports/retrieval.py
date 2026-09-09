@@ -11,6 +11,7 @@ from typing import Protocol
 
 from shijiajing_agent.contracts import ImageRef, RetrievalCandidate, RetrievalQuery
 from shijiajing_agent.ports.lifecycle import ResourceLifecyclePort
+from shijiajing_agent.rag_contracts import ChannelResult, ChannelStatus
 
 
 @dataclass
@@ -23,6 +24,12 @@ class RetrievalResult:
     index_version: str | None = None
     fusion_version: str | None = None
     rerank_version: str | None = None
+    channel_results: list[ChannelResult] = dc_field(default_factory=list[ChannelResult])
+    channel_health: dict[str, ChannelStatus] = dc_field(default_factory=dict[str, ChannelStatus])
+    selected_candidates: list[RetrievalCandidate] = dc_field(
+        default_factory=list[RetrievalCandidate]
+    )
+    truncated_count: int = 0
 
 
 class ProductRetrievalPort(ResourceLifecyclePort, Protocol):

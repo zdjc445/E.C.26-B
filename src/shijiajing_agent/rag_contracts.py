@@ -59,8 +59,10 @@ class PreparedQuery(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     query_id: str = Field(min_length=1, max_length=128)
-    text: str = Field(min_length=1, max_length=2000)
+    text: str = Field(min_length=0, max_length=2000)
     hard_filters: HardFilters = Field(default_factory=HardFilters)
+    soft_terms: list[str] = Field(default_factory=list[str], max_length=20)
+    negative_terms: list[str] = Field(default_factory=list[str], max_length=20)
     constraints_version: int = Field(ge=1)
     source: QuerySource
     requirement_ids: list[str] = Field(default_factory=list[str], max_length=20)

@@ -271,6 +271,7 @@ class ResearchSubagent:
                 recognition=recognition,
                 image=image,
                 soft_terms=soft_terms,
+                constraints_version=task.constraints_version,
             )
 
     @staticmethod

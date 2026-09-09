@@ -1238,6 +1238,7 @@ class RetrievalCandidate(BaseModel):
     rerank_score: float | None = None
     rerank_version: str | None = None
     channel_sources: list[str] = Field(default_factory=list[str])
+    query_ids: list[str] = Field(default_factory=list[str], max_length=20)
 
 
 # ---------------------------------------------------------------------------

@@ -342,18 +342,15 @@ async def test_milvus_text_fusion_formula(tmp_path: Path) -> None:
     )
     assert {c.offer.offer_id for c in result.candidates} == {"o-dense", "o-sparse", "o-both"}
     by_id = {c.offer.offer_id: c for c in result.candidates}
-    dense = by_id["o-dense"]
-    assert dense.recall_score == pytest.approx(0.5)
-    sparse = by_id["o-sparse"]
-    assert sparse.recall_score == pytest.approx(1.0 / 3.0)
-    both = by_id["o-both"]
-    assert both.recall_score == pytest.approx(1.0)
-    assert both.channel_sources == ["dense", "sparse"]
+    assert by_id["o-both"].channel_sources == ["dense", "sparse"]
+    by_channel = {item.channel.value: item for item in result.channel_results}
+    assert by_channel["dense"].hits[0].offer.offer_id == "o-dense"
+    assert by_channel["sparse"].hits[0].offer.offer_id == "o-sparse"
+    assert by_channel["dense"].hits[0].recall_score == pytest.approx(0.9)
+    assert by_channel["sparse"].hits[0].recall_score == pytest.approx(0.9)
     # filter 表达式传入 fake
     assert client.calls and client.calls[0]["filter"] == "category_id == 'headphone'"
-    assert result.fusion_version == "best-query-channel-rrf-v1"
-    # 两个通道都命中，o-both 获得最佳排名
-    assert result.candidates[0].offer.offer_id == "o-both"
+    assert result.fusion_version is None
 
 
 async def test_milvus_image_channel_and_weights(tmp_path: Path) -> None:
@@ -374,7 +371,8 @@ async def test_milvus_image_channel_and_weights(tmp_path: Path) -> None:
     )
     c = result.candidates[0]
     assert c.image_similarity is not None
-    assert c.recall_score == pytest.approx(1.0)
+    image_channel = next(item for item in result.channel_results if item.channel.value == "image")
+    assert image_channel.hits[0].recall_score == pytest.approx(0.5)
     assert c.channel_sources == ["dense", "image"]
     assert result.channel_counts == {"dense": 1, "image": 1}
     fields_searched = {call["anns_field"] for call in client.calls}

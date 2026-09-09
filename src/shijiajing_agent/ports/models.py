@@ -23,6 +23,7 @@ from shijiajing_agent.contracts import (
 from shijiajing_agent.domain.evidence import EvidenceBundle
 from shijiajing_agent.domain.taxonomy import Taxonomy
 from shijiajing_agent.ports.lifecycle import ResourceLifecyclePort
+from shijiajing_agent.rag_contracts import QueryPlan
 
 
 class VisionModelPort(ResourceLifecyclePort, Protocol):
@@ -52,7 +53,7 @@ class QueryRewritePort(Protocol):
         text: str,
         constraints: ShoppingConstraints | None,
         recognition: RecognitionResult | None,
-    ) -> RetrievalQuery: ...
+    ) -> RetrievalQuery | QueryPlan: ...
 
 
 class DynamicSchemaInductionPort(Protocol):

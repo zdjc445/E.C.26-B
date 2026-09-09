@@ -46,6 +46,7 @@ from shijiajing_agent.domain.filters import HardFilterBuilder
 from shijiajing_agent.domain.taxonomy import Taxonomy
 from shijiajing_agent.errors import ModelOutputInvalidError, VisionUnavailableError
 from shijiajing_agent.ports.observability import MetricsPort
+from shijiajing_agent.rag_contracts import PreparedQuery, QueryPlan, QuerySource
 
 # ---------------------------------------------------------------------------
 # Prompt 加载与版本
@@ -534,6 +535,7 @@ class _QueryRewriteOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     query_text: str | None = None
+    query_variants: list[str] = Field(default_factory=list, max_length=2)
     soft_terms: list[str] = Field(default_factory=list)
     negative_terms: list[str] = Field(default_factory=list)
 
@@ -554,7 +556,7 @@ class ArkQueryRewrite:
         text: str,
         constraints: ShoppingConstraints | None,
         recognition: RecognitionResult | None,
-    ) -> RetrievalQuery:
+    ) -> RetrievalQuery | QueryPlan:
         s = self._client.settings
         hf = (
             HardFilterBuilder(
@@ -591,12 +593,49 @@ class ArkQueryRewrite:
             error_kind=ModelOutputInvalidError,
         )
         out: _QueryRewriteOutput = obj  # type: ignore[assignment]
-        return RetrievalQuery(
-            query_text=(out.query_text or "").strip() or (text or ""),
-            hard_filters=hf,
-            soft_terms=list(out.soft_terms or []),
-            negative_terms=list(out.negative_terms or []),
-        )
+        primary_text = (out.query_text or "").strip() or (text or "")
+        proposed = [primary_text, *(item.strip() for item in out.query_variants)]
+        unique = list(dict.fromkeys(item for item in proposed if item))[:3]
+        prepared: list[PreparedQuery] = []
+        for index, query_text in enumerate(unique):
+            fingerprint = hashlib.sha256(
+                json.dumps(
+                    {
+                        "text": query_text,
+                        "hard_filters": hf.model_dump(mode="json"),
+                        "soft_terms": out.soft_terms,
+                        "negative_terms": out.negative_terms,
+                        "index": index,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            prepared.append(
+                PreparedQuery(
+                    query_id=f"q:{fingerprint[:24]}",
+                    text=query_text,
+                    hard_filters=hf,
+                    soft_terms=list(out.soft_terms or []),
+                    negative_terms=list(out.negative_terms or []),
+                    constraints_version=1,
+                    source=QuerySource.ORIGINAL if index == 0 else QuerySource.INITIAL_EXPANSION,
+                    fingerprint=fingerprint,
+                )
+            )
+        if not prepared:
+            prepared.append(
+                PreparedQuery(
+                    query_id="q:empty",
+                    text="",
+                    hard_filters=hf,
+                    constraints_version=1,
+                    source=QuerySource.ORIGINAL,
+                    fingerprint=hashlib.sha256(b"empty").hexdigest(),
+                )
+            )
+        return QueryPlan(original_query=prepared[0], variants=prepared[1:])
 
 
 class ArkDynamicSchemaInducer:

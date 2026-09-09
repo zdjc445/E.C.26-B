@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import ClassVar, Protocol
 
 from shijiajing_agent.contracts import RetrievalCandidate
@@ -87,4 +88,86 @@ class ReciprocalRankFusion:
         return sorted(
             candidates.values(),
             key=lambda candidate: (-scores[candidate.offer.offer_id], candidate.offer.offer_id),
+        )[:limit]
+
+
+class BestQueryChannelRRF:
+    """生产固定融合：每个通道只取同一 Offer 的最佳查询名次。"""
+
+    version = "best-query-channel-rrf-v1"
+
+    def __init__(self, k: int = 60) -> None:
+        if k < 1:
+            raise ValueError("RRF k 必须大于 0")
+        self.k = k
+
+    def fuse(
+        self,
+        query_channels: Mapping[str, Mapping[str, Sequence[RetrievalCandidate]]],
+        limit: int,
+        *,
+        usable_channels: Sequence[str] | None = None,
+    ) -> list[RetrievalCandidate]:
+        """按 ``max_q(1/(k+rank))`` 融合，成功但零命中的通道仍计入权重。"""
+        usable = (
+            set(usable_channels)
+            if usable_channels is not None
+            else {channel for channels in query_channels.values() for channel in channels}
+        )
+        if not usable:
+            return []
+        weights = 1.0 / len(usable)
+        best_scores: dict[str, dict[str, float]] = {}
+        candidates: dict[str, RetrievalCandidate] = {}
+        for _query_id, channels in query_channels.items():
+            for channel, ranked in channels.items():
+                if channel not in usable:
+                    continue
+                seen: set[str] = set()
+                for rank, candidate in enumerate(ranked, start=1):
+                    offer_id = candidate.offer.offer_id
+                    if offer_id in seen:
+                        continue
+                    seen.add(offer_id)
+                    existing = candidates.get(offer_id)
+                    if existing is None:
+                        candidates[offer_id] = candidate.model_copy(
+                            update={
+                                "channel_sources": list(
+                                    dict.fromkeys([*candidate.channel_sources, channel])
+                                )
+                            }
+                        )
+                    else:
+                        candidates[offer_id] = existing.model_copy(
+                            update={
+                                "query_ids": list(
+                                    dict.fromkeys([*existing.query_ids, *candidate.query_ids])
+                                ),
+                                "channel_sources": list(
+                                    dict.fromkeys(
+                                        [
+                                            *existing.channel_sources,
+                                            *candidate.channel_sources,
+                                            channel,
+                                        ]
+                                    )
+                                ),
+                            }
+                        )
+                    per_channel = best_scores.setdefault(offer_id, {})
+                    score = 1.0 / (self.k + rank)
+                    per_channel[channel] = max(per_channel.get(channel, 0.0), score)
+        scored = [
+            candidate.model_copy(
+                update={
+                    "recall_score": weights
+                    * sum(best_scores.get(candidate.offer.offer_id, {}).values())
+                }
+            )
+            for candidate in candidates.values()
+        ]
+        return sorted(
+            scored,
+            key=lambda candidate: (-candidate.recall_score, candidate.offer.offer_id),
         )[:limit]
