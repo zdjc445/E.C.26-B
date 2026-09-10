@@ -52,22 +52,23 @@
 
 - 标题：引用只绑定真实对象，扩写绝不改变硬约束
 - 布局：上下两条实例链路；上半区展示“指代如何落到当前候选”，下半区展示“状态如何变成安全检索查询”
+- 背景：纯白色不透明背景，不使用透明底或棋盘格
 - 上半区，候选指代实例：
-  1. 当前候选：① Bose QC Ultra　② Sony XM5　③ AirPods Max
+  1. 当前候选：① iPhone 15 Pro 128GB　② iPhone 15 Pro 256GB　③ iPhone 15 Pro 512GB
   2. 用户：「第二款为什么更贵？」
   3. 理解结果：目标是解释价格差异；待解析指代是“第二款”
   4. 引用范围：只在产生“第一款、第二款、第三款”的当前候选列表中查找，不跨到其他历史列表
-  5. 绑定结果：“第二款”唯一对应 Sony XM5，将该商品作为本轮解释对象
+  5. 绑定结果：“第二款”唯一对应 iPhone 15 Pro 256GB，将该商品作为本轮解释对象
   6. 后续动作：价格、规格和来源证据充分 → 直接解释；缺少关键证据 → 只补查对应缺口
   7. 失败分支：候选列表不存在、顺序已失效或出现多个匹配 → 先追问用户，不猜测对象
 - 下半区，跨轮改写与扩写实例：
-  1. 历史有效状态：Sony WH-1000XM5 / 预算 ≤ 2000 / 京东
+  1. 历史有效状态：iPhone 15 Pro / 256GB / 预算 ≤ 7000 / 京东
   2. 本轮：「这个要黑色的」
   3. 指代绑定当前主题；`IntentPatch = { colors:[黑色] }`
   4. `ConstraintMerger` 产出 `constraints_version = 8`
-  5. Query Rewrite 生成唯一基础查询：`Sony WH-1000XM5 黑色`
-  6. 独立硬过滤：`price <= 2000`、`platform = jd`
-  7. Query Expansion 最多增加两个高价值变体：`索尼 XM5 黑色`、`Sony WH-1000XM5 black`
+  5. Query Rewrite 生成唯一基础查询：`iPhone 15 Pro 256GB 黑色`
+  6. 独立硬过滤：`price <= 7000`、`platform = jd`
+  7. Query Expansion 最多增加两个高价值变体：`苹果 15 Pro 256G 黑色`、`iPhone 15 Pro 256GB Black Titanium`
   8. 每个查询共享同一份硬过滤和 `constraints_version = 8`，再编译到 Dense / Sparse 等物理通道
 - 右侧放意图路由小表：
   - 必须扩写：`product_search`
